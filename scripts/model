@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # alpha-mesh/scripts/model
 # Replaces manual settings.json swapping.
-# Tokens: stored in env vars or config/.env (never commit secrets to GitHub)
+# Tokens: stored in env vars or .env (never commit secrets to GitHub)
 # Usage:
 #   model use minimax
 #   model use openrouter-glm
@@ -11,7 +11,9 @@
 
 set -euo pipefail
 
-BRAIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Resolve script's real directory regardless of cwd
+SCRIPT_REALPATH="$(readlink -f "${BASH_SOURCE[0]}")"
+BRAIN_DIR="$(cd "$(dirname "$SCRIPT_REALPATH")/.." && pwd)"
 MODELS_JSON="$BRAIN_DIR/config/models.json"
 ACTIVE_JSON="$BRAIN_DIR/config/active.json"
 ENV_FILE="$BRAIN_DIR/.env"
@@ -31,6 +33,26 @@ if [[ -f "$ENV_FILE" ]]; then
 fi
 
 cmd="${1:-status}"
+
+# Resolve shorthand profile name to full name
+# e.g. "openrouter" → "openrouter-glm", "claude" → "claude-sonnet"
+resolve_profile() {
+  local shorthand="$1"
+  # Exact match
+  if jq -e --arg p "$shorthand" '.profiles[$p]' "$MODELS_JSON" > /dev/null 2>&1; then
+    echo "$shorthand"
+    return 0
+  fi
+  # Try adding common suffixes
+  for suffix in "-glm" "-claude" "-sonnet" "-haiku" "-opus"; do
+    local candidate="${shorthand}${suffix}"
+    if jq -e --arg p "$candidate" '.profiles[$p]' "$MODELS_JSON" > /dev/null 2>&1; then
+      echo "$candidate"
+      return 0
+    fi
+  done
+  echo "$shorthand"
+}
 
 list_profiles() {
   echo "Available model profiles:"
@@ -161,10 +183,15 @@ case "$cmd" in
   use)
     profile="${2:-}"
     if [[ -z "$profile" ]]; then
-      echo "Usage: model use <profile>" >&2
+      echo "Usage: model use <profile> [model]" >&2
+      echo "  e.g. model use openrouter glm-5.1" >&2
       list_profiles
       exit 1
     fi
+
+    # Resolve shorthand (e.g. "openrouter" → "openrouter-glm")
+    profile=$(resolve_profile "$profile")
+
     echo "Switching to: $profile"
     health_check "$profile" || {
       echo ""
