@@ -4,9 +4,10 @@
 # Tokens: stored in env vars or .env (never commit secrets to GitHub)
 # Usage:
 #   model use minimax
-#   model use openrouter-glm
+#   model use openrouter          # uses openrouter-default
+#   model use openrouter <model>  # override model, e.g. deepseek/deepseek-v4-flash
 #   model status
-#   model check minimax        # health check without switching
+#   model check minimax           # health check without switching
 #   model list
 
 set -euo pipefail
