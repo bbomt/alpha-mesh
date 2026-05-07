@@ -35,7 +35,7 @@ fi
 cmd="${1:-status}"
 
 # Resolve shorthand profile name to full name
-# e.g. "openrouter" → "openrouter-glm", "claude" → "claude-sonnet"
+# e.g. "openrouter" → "openrouter-default", "claude" → "claude-sonnet"
 resolve_profile() {
   local shorthand="$1"
   # Exact match
@@ -43,15 +43,21 @@ resolve_profile() {
     echo "$shorthand"
     return 0
   fi
-  # Try adding common suffixes
-  for suffix in "-glm" "-claude" "-sonnet" "-haiku" "-opus"; do
-    local candidate="${shorthand}${suffix}"
-    if jq -e --arg p "$candidate" '.profiles[$p]' "$MODELS_JSON" > /dev/null 2>&1; then
-      echo "$candidate"
-      return 0
-    fi
-  done
-  echo "$shorthand"
+  # Provider shorthand → profile mapping
+  case "$shorthand" in
+    openrouter) echo "openrouter-default" ;;
+    claude)     echo "claude-sonnet" ;;
+    *)          # Try appending common suffixes
+      for suffix in "-default" "-claude" "-sonnet" "-haiku" "-opus"; do
+        local candidate="${shorthand}${suffix}"
+        if jq -e --arg p "$candidate" '.profiles[$p]' "$MODELS_JSON" > /dev/null 2>&1; then
+          echo "$candidate"
+          return 0
+        fi
+      done
+      echo "$shorthand"
+      ;;
+  esac
 }
 
 list_profiles() {
@@ -71,17 +77,15 @@ get_active_profile() {
 }
 
 # Get token for a profile: env var takes precedence over models.json placeholder
-# Env var names: ALPHA_MESH_MINIMAX_TOKEN, ALPHA_MESH_OPENROUTER_TOKEN, ALPHA_MESH_ANTHROPIC_TOKEN
+# Env var name is ALPHA_MESH_{PROVIDER}_TOKEN where provider comes from models.json
+# e.g. "openrouter-default" has provider "openrouter" → ALPHA_MESH_OPENROUTER_TOKEN
+#       "claude-sonnet" has provider "anthropic" → ALPHA_MESH_ANTHROPIC_TOKEN
 get_token() {
   local profile="$1"
-  local token=""
-
-  # Map profile to env var name
-  case "$profile" in
-    minimax)        token="${ALPHA_MESH_MINIMAX_TOKEN:-}" ;;
-    openrouter-glm) token="${ALPHA_MESH_OPENROUTER_TOKEN:-}" ;;
-    claude-sonnet)  token="${ALPHA_MESH_ANTHROPIC_TOKEN:-}" ;;
-  esac
+  local provider
+  provider=$(jq -r --arg p "$profile" '.profiles[$p].provider // ($p | split("-")[0])' "$MODELS_JSON")
+  local env_var="ALPHA_MESH_${provider^^}_TOKEN"
+  local token="${!env_var:-}"
 
   # If env var is set, use it; otherwise fall back to models.json
   if [[ -n "$token" ]]; then
@@ -126,6 +130,7 @@ health_check() {
 
 write_settings() {
   local profile="$1"
+  local model_override="${2:-}"
 
   # Validate profile exists
   if ! jq -e --arg p "$profile" '.profiles[$p]' "$MODELS_JSON" > /dev/null 2>&1; then
@@ -134,15 +139,22 @@ write_settings() {
     exit 1
   fi
 
-  # Build env block from models.json, then overlay token from env var
+  # Build env block from models.json, then overlay token and optionally model
   local env_block token
   env_block=$(jq --arg p "$profile" '.profiles[$p].env' "$MODELS_JSON")
   token=$(get_token "$profile")
 
-  # Replace the token in env_block with the actual value (from env or placeholder)
-  env_block=$(echo "$env_block" | jq \
-    --arg token "$token" \
-    '.ANTHROPIC_AUTH_TOKEN = $token | .ANTHROPIC_API_KEY = $token')
+  # Replace the token and optionally override the model
+  if [[ -n "$model_override" ]]; then
+    env_block=$(echo "$env_block" | jq \
+      --arg token "$token" \
+      --arg model "$model_override" \
+      '.ANTHROPIC_AUTH_TOKEN = $token | .ANTHROPIC_API_KEY = $token | .ANTHROPIC_MODEL = $model | .ANTHROPIC_DEFAULT_SONNET_MODEL = $model | .ANTHROPIC_DEFAULT_OPUS_MODEL = $model')
+  else
+    env_block=$(echo "$env_block" | jq \
+      --arg token "$token" \
+      '.ANTHROPIC_AUTH_TOKEN = $token | .ANTHROPIC_API_KEY = $token')
+  fi
 
   # Backup existing settings
   if [[ -f "$CLAUDE_SETTINGS" ]]; then
@@ -158,7 +170,7 @@ write_settings() {
     --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     '{"profile": $profile, "activated_at": $ts}' > "$ACTIVE_JSON"
 
-  echo "✓ Active model: $profile"
+  echo "✓ Active model: $profile${model_override:+, model: '"$model_override"'}"
   jq -r --arg p "$profile" '.profiles[$p].description' "$MODELS_JSON"
 }
 
@@ -182,17 +194,26 @@ case "$cmd" in
 
   use)
     profile="${2:-}"
+    model_override="${3:-}"
+
     if [[ -z "$profile" ]]; then
       echo "Usage: model use <profile> [model]" >&2
-      echo "  e.g. model use openrouter glm-5.1" >&2
+      echo "  e.g. model use minimax" >&2
+      echo "  e.g. model use openrouter glm-5.1         # use profile's default model" >&2
+      echo "  e.g. model use openrouter deepseek/deepseek-v4-flash  # override model" >&2
       list_profiles
       exit 1
     fi
 
-    # Resolve shorthand (e.g. "openrouter" → "openrouter-glm")
+    # Support: model use provider/model  (slash-separated shorthand)
+    if [[ -z "$model_override" && "$profile" == *"/"* ]]; then
+      model_override="${profile#*/}"
+      profile="${profile%%/*}"
+    fi
+
     profile=$(resolve_profile "$profile")
 
-    echo "Switching to: $profile"
+    echo "Switching to: $profile${model_override:+, model: '"$model_override"'}"
     health_check "$profile" || {
       echo ""
       echo "WARNING: $profile appears unreachable. Checking fallbacks..."
@@ -206,7 +227,7 @@ case "$cmd" in
         }
       done
     }
-    write_settings "$profile"
+    write_settings "$profile" "$model_override"
     ;;
 
   check)

@@ -12,9 +12,16 @@ CLAUDE_PROJECTS="$HOME/.claude/projects"
 SESSION_DIR="$BRAIN_DIR/memory/sessions"
 LEARNINGS_DIR="$BRAIN_DIR/memory/learnings"
 MODELS_JSON="$BRAIN_DIR/config/models.json"
-ACTIVE_JSON="$BRAIN_DIR/config/active.json"
+ENV_FILE="$BRAIN_DIR/.env"
 
 mkdir -p "$SESSION_DIR" "$LEARNINGS_DIR"
+
+# Load .env if it exists (env vars take precedence over models.json)
+if [[ -f "$ENV_FILE" ]]; then
+  set -a
+  source "$ENV_FILE"
+  set +a
+fi
 
 TS=$(date +%Y-%m-%d-%H%M)
 DATE=$(date +%Y-%m-%d)
@@ -34,14 +41,13 @@ SESSION_CONTENT=""
 if [[ -d "$CLAUDE_PROJECTS" ]]; then
   # Claude Code stores projects as encoded directory names
   # Each project dir contains JSONL conversation files
-  TODAY=$(date +%Y-%m-%d)
 
   while IFS= read -r -d '' jsonl_file; do
     # Check if file was modified today
     file_date=$(date -r "$jsonl_file" +%Y-%m-%d 2>/dev/null || \
                 stat -f %Sm -t %Y-%m-%d "$jsonl_file" 2>/dev/null || echo "unknown")
 
-    if [[ "$file_date" == "$TODAY" ]]; then
+    if [[ "$file_date" == "$DATE" ]]; then
       # Extract text content from JSONL (assistant messages only, skip tool calls)
       content=$(python3 - "$jsonl_file" <<'PYEOF'
 import sys, json
@@ -85,7 +91,8 @@ print('\n'.join(messages[-50:]))  # last 50 exchanges to stay within context
 PYEOF
       )
       if [[ -n "$content" ]]; then
-        # Decode project path from directory name
+        # Decode Claude Code's project directory naming:
+        # "home-environment-pmat-PMATFE-sales-abc123" → "~/pmat/PMATFE/sales"
         proj_dir=$(dirname "$jsonl_file")
         proj_name=$(basename "$proj_dir" | sed 's/-[^-]*$//;s/-/\//g' | sed 's/^home\///;s/environment\//~/') 
         SESSION_CONTENT+="### Session: $proj_name\n$content\n\n"
@@ -99,8 +106,8 @@ if [[ -z "$SESSION_CONTENT" ]]; then
 fi
 
 # ─── 3. Get active model for the API call ───────────────────────────────────
-MINIMAX_KEY=""
-if [[ -f "$MODELS_JSON" ]]; then
+MINIMAX_KEY="${ALPHA_MESH_MINIMAX_TOKEN:-}"
+if [[ -z "$MINIMAX_KEY" && -f "$MODELS_JSON" ]]; then
   MINIMAX_KEY=$(jq -r '.profiles.minimax.env.ANTHROPIC_AUTH_TOKEN' "$MODELS_JSON" 2>/dev/null || echo "")
 fi
 

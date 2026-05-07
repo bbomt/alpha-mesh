@@ -87,7 +87,6 @@ echo ""
 echo "[5/5] Testing dream produces output..."
 # Run dream (will use raw mode since minimax key may not be configured for LLM call)
 # The script should still write a file even if LLM call fails (graceful degradation)
-TS_BEFORE=$(date +%Y-%m-%d-%H%M)
 if dream > /dev/null 2>&1; then
   echo "  PASS: dream script ran"
 else

@@ -1,6 +1,7 @@
 {
   "profiles": {
     "minimax": {
+      "provider": "minimax",
       "description": "Minimax M2.7 direct - primary, cost-efficient",
       "env": {
         "ANTHROPIC_BASE_URL": "https://api.minimax.io/anthropic",
@@ -14,6 +15,7 @@
       }
     },
     "openrouter-default": {
+      "provider": "openrouter",
       "description": "OpenRouter - base profile, override model with: model use openrouter <model>",
       "env": {
         "ANTHROPIC_BASE_URL": "https://openrouter.ai/api",
@@ -27,6 +29,7 @@
       }
     },
     "claude-sonnet": {
+      "provider": "anthropic",
       "description": "Anthropic Claude Sonnet - strategic/complex tasks",
       "env": {
         "ANTHROPIC_BASE_URL": "",
