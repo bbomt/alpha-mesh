@@ -13,8 +13,8 @@
         "ANTHROPIC_DEFAULT_HAIKU_MODEL": "MiniMax-M2.7"
       }
     },
-    "openrouter-glm": {
-      "description": "OpenRouter GLM-5.1 - code review, architecture",
+    "openrouter-default": {
+      "description": "OpenRouter - base profile, override model with: model use openrouter <model>",
       "env": {
         "ANTHROPIC_BASE_URL": "https://openrouter.ai/api",
         "ANTHROPIC_AUTH_TOKEN": "REPLACE_WITH_YOUR_OPENROUTER_KEY",
@@ -41,5 +41,5 @@
     }
   },
   "default": "minimax",
-  "fallback_order": ["minimax", "openrouter-glm", "claude-sonnet"]
+  "fallback_order": ["minimax", "openrouter-default", "claude-sonnet"]
 }

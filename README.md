@@ -76,3 +76,13 @@ The `model` script loads `.env` automatically on each run. You can also set thes
 Edit `config/models.json` to add/change model profiles (non-sensitive config only).
 The `model` script writes the active profile to `~/.claude/settings.json`.
 Never edit `~/.claude/settings.json` directly anymore.
+
+## Using OpenRouter with different models
+
+```bash
+model use openrouter                  # uses openrouter-default profile (glm-5.1)
+model use openrouter tencent/hy3-preview:free
+model use openrouter deepseek/deepseek-v4-flash
+```
+
+The `openrouter-default` profile provides the OpenRouter URL and token; the model argument overrides the default model. Shorthand `openrouter` resolves to `openrouter-default`. Any model available on OpenRouter can be used.

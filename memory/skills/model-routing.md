@@ -8,22 +8,25 @@ Selects the right LLM model/endpoint for each task type, balancing cost and qual
 | Profile | Endpoint | Best for | Cost |
 |---|---|---|---|
 | `minimax` | api.minimax.io direct | Code generation, feature dev, most tasks | Very low (5hr token window) |
-| `openrouter-glm` | openrouter.ai | Code review, architecture discussion | Medium |
+| `openrouter-default` | openrouter.ai | Base profile — override model as needed | Per-model |
 | `claude-sonnet` | api.anthropic.com | Strategic synthesis, complex reasoning | High (use sparingly) |
 
 ## Decision rules
 1. **Default**: always start with `minimax`
-2. **Code review / PR review**: switch to `openrouter-glm`
-3. **Architecture decision with high ambiguity**: `claude-sonnet`
+2. **Code review / PR review**: `model use openrouter <model>` (e.g. `glm-5.1`)
+3. **Architecture decision with high ambiguity**: `model use claude-sonnet`
 4. **Model unavailable**: `model use <next>` → check `fallback_order` in models.json
-5. **End of 5hr Minimax window**: switch to `openrouter-glm` for remainder of session
+5. **End of 5hr Minimax window**: `model use openrouter` for remainder of session
 
 ## Commands
 ```bash
-model status              # what's active
-model use minimax         # switch
-model check openrouter-glm  # health check without switching
-model list                # all profiles
+model status                    # what's active
+model use minimax               # switch to minimax
+model use openrouter            # switch to openrouter-default
+model use openrouter glm-5.1    # switch to openrouter with specific model
+model use openrouter deepseek/deepseek-v4-flash  # any openrouter model
+model check openrouter-default  # health check without switching
+model list                      # all profiles
 ```
 
 ## Adding a new model
