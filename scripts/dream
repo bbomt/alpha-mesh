@@ -1,0 +1,247 @@
+#!/usr/bin/env bash
+# pmat-brain/scripts/dream
+# End-of-session consolidation. Run this when you finish your work window.
+# Reads: Claude Code session logs + task-log entries from today
+# Writes: memory/sessions/YYYY-MM-DD-HHmm.md
+# Optionally: updates memory/learnings/*.md topic files
+
+set -euo pipefail
+
+BRAIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CLAUDE_PROJECTS="$HOME/.claude/projects"
+SESSION_DIR="$BRAIN_DIR/memory/sessions"
+LEARNINGS_DIR="$BRAIN_DIR/memory/learnings"
+MODELS_JSON="$BRAIN_DIR/config/models.json"
+ACTIVE_JSON="$BRAIN_DIR/config/active.json"
+
+mkdir -p "$SESSION_DIR" "$LEARNINGS_DIR"
+
+TS=$(date +%Y-%m-%d-%H%M)
+DATE=$(date +%Y-%m-%d)
+OUTPUT="$SESSION_DIR/$TS.md"
+
+echo "=== PMAT Dream: $TS ==="
+echo ""
+
+# ─── 1. Collect today's task log ────────────────────────────────────────────
+echo "Collecting task log..."
+TASK_DATA=$("$BRAIN_DIR/scripts/task-log" export 1 2>/dev/null || echo "[]")
+
+# ─── 2. Collect Claude Code session content from today ──────────────────────
+echo "Collecting Claude Code session logs..."
+
+SESSION_CONTENT=""
+if [[ -d "$CLAUDE_PROJECTS" ]]; then
+  # Claude Code stores projects as encoded directory names
+  # Each project dir contains JSONL conversation files
+  TODAY=$(date +%Y-%m-%d)
+
+  while IFS= read -r -d '' jsonl_file; do
+    # Check if file was modified today
+    file_date=$(date -r "$jsonl_file" +%Y-%m-%d 2>/dev/null || \
+                stat -f %Sm -t %Y-%m-%d "$jsonl_file" 2>/dev/null || echo "unknown")
+
+    if [[ "$file_date" == "$TODAY" ]]; then
+      # Extract text content from JSONL (assistant messages only, skip tool calls)
+      content=$(python3 - "$jsonl_file" <<'PYEOF'
+import sys, json
+
+filepath = sys.argv[1]
+messages = []
+try:
+    with open(filepath) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+                # Claude Code JSONL format: each line is a message or event
+                # Handle both direct message format and wrapped format
+                msg = obj if 'role' in obj else obj.get('message', {})
+                role = msg.get('role', '')
+                content = msg.get('content', '')
+
+                if role == 'assistant' and isinstance(content, list):
+                    for block in content:
+                        if isinstance(block, dict) and block.get('type') == 'text':
+                            text = block.get('text', '').strip()
+                            if text and len(text) > 50:  # skip trivial responses
+                                messages.append(f"[assistant] {text[:500]}")
+                elif role == 'user' and isinstance(content, str) and len(content) > 10:
+                    messages.append(f"[user] {content[:200]}")
+                elif role == 'user' and isinstance(content, list):
+                    for block in content:
+                        if isinstance(block, dict) and block.get('type') == 'text':
+                            text = block.get('text', '').strip()
+                            if text and len(text) > 10:
+                                messages.append(f"[user] {text[:200]}")
+            except json.JSONDecodeError:
+                continue
+except Exception as e:
+    print(f"[error reading file: {e}]")
+
+print('\n'.join(messages[-50:]))  # last 50 exchanges to stay within context
+PYEOF
+      )
+      if [[ -n "$content" ]]; then
+        # Decode project path from directory name
+        proj_dir=$(dirname "$jsonl_file")
+        proj_name=$(basename "$proj_dir" | sed 's/-[^-]*$//;s/-/\//g' | sed 's/^home\///;s/environment\//~/') 
+        SESSION_CONTENT+="### Session: $proj_name\n$content\n\n"
+      fi
+    fi
+  done < <(find "$CLAUDE_PROJECTS" -name "*.jsonl" -print0 2>/dev/null)
+fi
+
+if [[ -z "$SESSION_CONTENT" ]]; then
+  SESSION_CONTENT="No Claude Code sessions found for today."
+fi
+
+# ─── 3. Get active model for the API call ───────────────────────────────────
+MINIMAX_KEY=""
+if [[ -f "$MODELS_JSON" ]]; then
+  MINIMAX_KEY=$(jq -r '.profiles.minimax.env.ANTHROPIC_AUTH_TOKEN' "$MODELS_JSON" 2>/dev/null || echo "")
+fi
+
+if [[ -z "$MINIMAX_KEY" || "$MINIMAX_KEY" == "REPLACE_WITH_YOUR_MINIMAX_KEY" ]]; then
+  echo "WARNING: Minimax key not configured. Writing raw notes only."
+  {
+    echo "# Dream Session: $TS"
+    echo "## Task Log (raw)"
+    echo "$TASK_DATA"
+    echo "## Session Content (raw)"
+    echo -e "$SESSION_CONTENT"
+  } > "$OUTPUT"
+  echo "Written (raw): $OUTPUT"
+  exit 0
+fi
+
+# ─── 4. Call LLM to consolidate ─────────────────────────────────────────────
+echo "Consolidating with LLM..."
+
+PROMPT="You are a learning extraction system for a software development operation called PMAT.
+
+Below is the raw material from today's work session. Extract structured learnings.
+
+## TASK LOG (JSON)
+$TASK_DATA
+
+## SESSION CONTENT (excerpts from Claude Code conversations)
+$(echo -e "$SESSION_CONTENT")
+
+---
+
+Please produce a markdown document with exactly these sections:
+
+# Dream Session: $DATE
+
+## Summary
+2-3 sentences: what was worked on, what shipped.
+
+## What Worked
+Specific techniques, approaches, or patterns that produced good results today.
+
+## What Failed or Struggled
+Problems hit, models that didn't work, approaches abandoned and why.
+
+## Open Questions
+Unresolved questions or decisions that need to come back to.
+
+## Learnings
+Distilled lessons — things that should influence future sessions.
+Format each as: **[TOPIC]** Learning text.
+Topics should be one of: ARCHITECTURE, DEPLOYMENT, TESTING, MODEL, WORKFLOW, PATTERN
+
+## Skills Observed
+Any repeated procedure or workflow that could be codified as a reusable skill.
+Format: **Skill Name**: What it does and when to use it.
+
+Keep the whole document under 600 words. Be specific and concrete, not generic."
+
+# Call Minimax directly
+RESPONSE=$(curl -sf \
+  -X POST "https://api.minimax.io/anthropic/v1/messages" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $MINIMAX_KEY" \
+  -d "{
+    \"model\": \"MiniMax-M2.7\",
+    \"max_tokens\": 1500,
+    \"messages\": [{\"role\": \"user\", \"content\": $(echo "$PROMPT" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')}]
+  }" 2>/dev/null || echo "")
+
+if [[ -z "$RESPONSE" ]]; then
+  echo "WARNING: LLM call failed. Writing raw notes."
+  {
+    echo "# Dream Session: $TS (raw — LLM unavailable)"
+    echo "## Task Log"
+    echo "$TASK_DATA"
+    echo "## Session Notes"
+    echo -e "$SESSION_CONTENT"
+  } > "$OUTPUT"
+else
+  # Extract text from response
+  DREAM_TEXT=$(echo "$RESPONSE" | python3 -c \
+    'import json,sys; r=json.load(sys.stdin); print(r["content"][0]["text"])' 2>/dev/null || \
+    echo "$RESPONSE")
+  echo "$DREAM_TEXT" > "$OUTPUT"
+fi
+
+echo ""
+echo "✓ Dream written: $OUTPUT"
+echo ""
+
+# ─── 5. Append learnings to topic files ─────────────────────────────────────
+if [[ -f "$OUTPUT" ]]; then
+  echo "Updating learnings files..."
+  python3 - "$OUTPUT" "$LEARNINGS_DIR" "$DATE" <<'PYEOF'
+import sys, re, os
+
+dream_file = sys.argv[1]
+learnings_dir = sys.argv[2]
+date = sys.argv[3]
+
+topic_map = {
+    'ARCHITECTURE': 'architecture.md',
+    'DEPLOYMENT': 'deployment.md',
+    'TESTING': 'testing.md',
+    'MODEL': 'models.md',
+    'WORKFLOW': 'workflow.md',
+    'PATTERN': 'patterns.md',
+}
+
+with open(dream_file) as f:
+    content = f.read()
+
+# Find the Learnings section
+learnings_section = re.search(r'## Learnings\n(.*?)(?=\n##|\Z)', content, re.DOTALL)
+if not learnings_section:
+    print("  No learnings section found.")
+    sys.exit(0)
+
+learning_lines = learnings_section.group(1).strip().split('\n')
+by_topic = {}
+
+for line in learning_lines:
+    m = re.match(r'\*\*(\w+)\*\*\s*(.*)', line)
+    if m:
+        topic = m.group(1).upper()
+        text = m.group(2).strip()
+        if topic in topic_map:
+            by_topic.setdefault(topic, []).append(text)
+
+for topic, items in by_topic.items():
+    filepath = os.path.join(learnings_dir, topic_map[topic])
+    with open(filepath, 'a') as f:
+        f.write(f'\n## {date}\n')
+        for item in items:
+            f.write(f'- {item}\n')
+    print(f"  ✓ {topic} → {topic_map[topic]}")
+PYEOF
+fi
+
+echo ""
+echo "Session complete. Dream stored at:"
+echo "  $OUTPUT"
+echo ""
+echo "Next: review with: cat $OUTPUT"

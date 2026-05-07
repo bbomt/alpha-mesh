@@ -1,0 +1,45 @@
+{
+  "profiles": {
+    "minimax": {
+      "description": "Minimax M2.7 direct - primary, cost-efficient",
+      "env": {
+        "ANTHROPIC_BASE_URL": "https://api.minimax.io/anthropic",
+        "ANTHROPIC_AUTH_TOKEN": "sk-cp-LKwqVLzNY0dDZAooSoreVS9i_Y0iWw9tdY9kma17i_PnAeJ79FVOxAzJGpB-opsIskEuyUqF3334BicTNPoHB1w38ac_QWgtC3ebwsN1UVlIxrA2y-hEzd4",
+        "ANTHROPIC_API_KEY": "",
+        "ANTHROPIC_MODEL": "MiniMax-M2.7",
+        "ANTHROPIC_SMALL_FAST_MODEL": "MiniMax-M2.7",
+        "ANTHROPIC_DEFAULT_SONNET_MODEL": "MiniMax-M2.7",
+        "ANTHROPIC_DEFAULT_OPUS_MODEL": "MiniMax-M2.7",
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL": "MiniMax-M2.7"
+      }
+    },
+    "openrouter-glm": {
+      "description": "OpenRouter GLM-5.1 - code review, architecture",
+      "env": {
+        "ANTHROPIC_BASE_URL": "https://openrouter.ai/api",
+        "ANTHROPIC_AUTH_TOKEN": "REPLACE_WITH_YOUR_OPENROUTER_KEY",
+        "ANTHROPIC_API_KEY": "",
+        "ANTHROPIC_MODEL": "z-ai/glm-5.1",
+        "ANTHROPIC_SMALL_FAST_MODEL": "minimax/minimax-m2.5",
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL": "minimax/minimax-m2.5",
+        "ANTHROPIC_DEFAULT_SONNET_MODEL": "z-ai/glm-5.1",
+        "ANTHROPIC_DEFAULT_OPUS_MODEL": "z-ai/glm-5.1"
+      }
+    },
+    "claude-sonnet": {
+      "description": "Anthropic Claude Sonnet - strategic/complex tasks",
+      "env": {
+        "ANTHROPIC_BASE_URL": "",
+        "ANTHROPIC_AUTH_TOKEN": "",
+        "ANTHROPIC_API_KEY": "REPLACE_WITH_YOUR_ANTHROPIC_KEY",
+        "ANTHROPIC_MODEL": "claude-sonnet-4-20250514",
+        "ANTHROPIC_SMALL_FAST_MODEL": "claude-haiku-4-5-20251001",
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-haiku-4-5-20251001",
+        "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-4-20250514",
+        "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-20250514"
+      }
+    }
+  },
+  "default": "minimax",
+  "fallback_order": ["minimax", "openrouter-glm", "claude-sonnet"]
+}

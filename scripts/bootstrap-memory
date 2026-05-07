@@ -1,0 +1,213 @@
+#!/usr/bin/env bash
+# pmat-brain/scripts/bootstrap-memory
+# ONE-TIME SCRIPT: Extract learnings from weeks of existing Claude Code sessions.
+# Run once to seed your memory system from historical data.
+# Usage: bootstrap-memory [--days 30] [--dry-run]
+
+set -euo pipefail
+
+BRAIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CLAUDE_PROJECTS="$HOME/.claude/projects"
+MODELS_JSON="$BRAIN_DIR/config/models.json"
+BOOTSTRAP_DIR="$BRAIN_DIR/memory/bootstrap"
+LEARNINGS_DIR="$BRAIN_DIR/memory/learnings"
+
+mkdir -p "$BOOTSTRAP_DIR" "$LEARNINGS_DIR"
+
+DAYS=30
+DRY_RUN=false
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --days) DAYS="$2"; shift 2 ;;
+    --dry-run) DRY_RUN=true; shift ;;
+    *) shift ;;
+  esac
+done
+
+echo "=== PMAT Memory Bootstrap ==="
+echo "Scanning last $DAYS days of Claude Code sessions..."
+echo ""
+
+# ─── Collect all JSONL files modified within the window ─────────────────────
+SINCE=$(date -u -d "$DAYS days ago" +%Y-%m-%d 2>/dev/null || \
+        date -u -v-${DAYS}d +%Y-%m-%d)
+
+echo "Scanning: $CLAUDE_PROJECTS"
+echo "Since: $SINCE"
+echo ""
+
+ALL_CONTENT=""
+FILE_COUNT=0
+
+if [[ ! -d "$CLAUDE_PROJECTS" ]]; then
+  echo "ERROR: $CLAUDE_PROJECTS not found. Is Claude Code installed?"
+  exit 1
+fi
+
+while IFS= read -r -d '' jsonl_file; do
+  file_date=$(date -r "$jsonl_file" +%Y-%m-%d 2>/dev/null || \
+              stat -f %Sm -t %Y-%m-%d "$jsonl_file" 2>/dev/null || echo "1970-01-01")
+
+  if [[ "$file_date" > "$SINCE" || "$file_date" == "$SINCE" ]]; then
+    FILE_COUNT=$((FILE_COUNT + 1))
+    proj_dir=$(dirname "$jsonl_file")
+    proj_name=$(basename "$proj_dir")
+
+    content=$(python3 - "$jsonl_file" "$file_date" <<'PYEOF'
+import sys, json
+
+filepath = sys.argv[1]
+file_date = sys.argv[2]
+messages = []
+
+try:
+    with open(filepath) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+                msg = obj if 'role' in obj else obj.get('message', {})
+                role = msg.get('role', '')
+                content = msg.get('content', '')
+
+                if role == 'assistant' and isinstance(content, list):
+                    for block in content:
+                        if isinstance(block, dict) and block.get('type') == 'text':
+                            text = block.get('text', '').strip()
+                            if text and len(text) > 100:
+                                messages.append(text[:800])
+                elif role == 'user':
+                    text = ''
+                    if isinstance(content, str):
+                        text = content.strip()
+                    elif isinstance(content, list):
+                        for block in content:
+                            if isinstance(block, dict) and block.get('type') == 'text':
+                                text = block.get('text', '').strip()
+                                break
+                    if text and len(text) > 20 and not text.startswith('/'):
+                        messages.append(f"USER: {text[:300]}")
+
+            except json.JSONDecodeError:
+                continue
+except Exception as e:
+    print(f"[error: {e}]", file=sys.stderr)
+
+# Sample: take every Nth message to stay within context limits
+step = max(1, len(messages) // 30)
+sampled = messages[::step][:30]
+print('\n---\n'.join(sampled))
+PYEOF
+    )
+
+    if [[ -n "$content" ]]; then
+      ALL_CONTENT+="=== Session: $proj_name ($file_date) ===\n$content\n\n"
+    fi
+  fi
+done < <(find "$CLAUDE_PROJECTS" -name "*.jsonl" -print0 2>/dev/null)
+
+echo "Found $FILE_COUNT session files from last $DAYS days"
+echo ""
+
+if [[ "$FILE_COUNT" -eq 0 ]]; then
+  echo "No sessions found. Check that $CLAUDE_PROJECTS exists and contains .jsonl files."
+  exit 0
+fi
+
+if [[ "$DRY_RUN" == "true" ]]; then
+  echo "DRY RUN: Would extract from $FILE_COUNT files."
+  echo "Content preview (first 500 chars):"
+  echo "${ALL_CONTENT:0:500}"
+  exit 0
+fi
+
+# ─── Call LLM to extract bootstrap learnings ────────────────────────────────
+MINIMAX_KEY=$(jq -r '.profiles.minimax.env.ANTHROPIC_AUTH_TOKEN' "$MODELS_JSON" 2>/dev/null || echo "")
+
+if [[ -z "$MINIMAX_KEY" || "$MINIMAX_KEY" == "REPLACE_WITH_YOUR_MINIMAX_KEY" ]]; then
+  echo "ERROR: Configure your Minimax key in config/models.json first."
+  exit 1
+fi
+
+echo "Extracting learnings from historical sessions (this may take a moment)..."
+
+# Process in chunks to avoid context limits
+# Take a sample of the content
+SAMPLE=$(echo -e "$ALL_CONTENT" | head -c 12000)
+
+PROMPT="You are a learning extraction system. Below are sampled excerpts from weeks of software development sessions on a project called PMAT (a microservice full-stack application).
+
+Extract the most valuable, reusable learnings from these sessions.
+
+## SESSION EXCERPTS
+$SAMPLE
+
+---
+
+Produce a markdown document:
+
+# PMAT Historical Learnings (bootstrapped from $DAYS days of sessions)
+
+## Architecture Patterns Observed
+What architectural decisions and patterns were used repeatedly.
+
+## Deployment Learnings
+Insights about the deployment workflow (dev/staging), what breaks, what works.
+
+## Testing Patterns
+Testing approaches, what kinds of tests are used, common failures.
+
+## Model/AI Learnings
+Which AI models were used for what, what worked well, what failed.
+
+## Workflow Patterns
+Repeated sequences of steps, rituals, how work is organized.
+
+## Recurring Problems
+Issues that came up repeatedly — these are candidates for automation or skill codification.
+
+## Candidate Skills
+Procedures that were done repeatedly that could be codified as reusable agent skills.
+Format: **Skill Name**: description, trigger conditions.
+
+Be specific. Avoid generic statements. If something happened, say what it was.
+Target 800 words."
+
+RESPONSE=$(curl -sf \
+  -X POST "https://api.minimax.io/anthropic/v1/messages" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $MINIMAX_KEY" \
+  -d "{
+    \"model\": \"MiniMax-M2.7\",
+    \"max_tokens\": 2000,
+    \"messages\": [{\"role\": \"user\", \"content\": $(echo "$PROMPT" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')}]
+  }" 2>/dev/null)
+
+if [[ -z "$RESPONSE" ]]; then
+  echo "ERROR: LLM call failed. Check your Minimax key and connectivity."
+  exit 1
+fi
+
+BOOTSTRAP_TEXT=$(echo "$RESPONSE" | python3 -c \
+  'import json,sys; r=json.load(sys.stdin); print(r["content"][0]["text"])' 2>/dev/null || \
+  echo "$RESPONSE")
+
+OUTPUT="$BOOTSTRAP_DIR/bootstrap-$(date +%Y-%m-%d).md"
+echo "$BOOTSTRAP_TEXT" > "$OUTPUT"
+
+echo ""
+echo "✓ Bootstrap learnings written: $OUTPUT"
+echo ""
+echo "Review it:"
+echo "  cat $OUTPUT"
+echo ""
+echo "Then manually curate relevant sections into:"
+echo "  memory/learnings/architecture.md"
+echo "  memory/learnings/deployment.md"
+echo "  memory/learnings/workflow.md"
+echo "  etc."
+echo ""
+echo "This is a one-time seed. The dream script handles ongoing updates."

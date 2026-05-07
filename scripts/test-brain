@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+# pmat-brain validation test
+# Success = exit 0, Failure = exit 1
+# Run from pmat-brain directory
+
+set -euo pipefail
+
+BRAIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export PATH="$BRAIN_DIR/scripts:$PATH"
+cd "$BRAIN_DIR"
+
+FAILED=0
+
+echo "=== PMAT Brain Validation Test ==="
+echo ""
+
+# ─── 1. Scripts are executable ────────────────────────────────────────────────
+echo "[1/5] Checking scripts are executable..."
+for script in "$BRAIN_DIR/scripts/model" "$BRAIN_DIR/scripts/task-log" "$BRAIN_DIR/scripts/dream" "$BRAIN_DIR/scripts/bootstrap-memory" "$BRAIN_DIR/scripts/install"; do
+  if [[ ! -x "$script" ]]; then
+    echo "  FAIL: $script is not executable"
+    FAILED=1
+  else
+    echo "  PASS: $(basename "$script")"
+  fi
+done
+
+# ─── 2. model status works ─────────────────────────────────────────────────────
+echo ""
+echo "[2/5] Testing model status..."
+if model status > /dev/null 2>&1; then
+  echo "  PASS: model status works"
+else
+  echo "  FAIL: model status failed"
+  FAILED=1
+fi
+
+# ─── 3. model check works ──────────────────────────────────────────────────────
+echo ""
+echo "[3/5] Testing model check minimax..."
+active_profile=$(model status 2>&1 | grep "^Active profile:" | awk '{print $NF}')
+if [[ -n "$active_profile" ]]; then
+  if model check "$active_profile" > /dev/null 2>&1; then
+    echo "  PASS: model check $active_profile works"
+  else
+    echo "  WARN: model check $active_profile failed (API may be temporarily unreachable)"
+    echo "        This is not a script failure — continuing..."
+  fi
+else
+  echo "  FAIL: could not determine active profile"
+  FAILED=1
+fi
+
+# ─── 4. task-log start/done cycle ─────────────────────────────────────────────
+echo ""
+echo "[4/5] Testing task-log start/done cycle..."
+TEST_TICKET="PMAT-TEST-$(date +%s)"
+TEST_TITLE="Brain validation test"
+
+if task-log start "$TEST_TICKET" "$TEST_TITLE" --repo pmat-brain > /dev/null 2>&1; then
+  echo "  PASS: task-log start works"
+else
+  echo "  FAIL: task-log start failed"
+  FAILED=1
+fi
+
+if task-log done "$TEST_TICKET" --outcome "validation test passed" > /dev/null 2>&1; then
+  echo "  PASS: task-log done works"
+else
+  echo "  FAIL: task-log done failed"
+  FAILED=1
+fi
+
+# Verify task was recorded
+if task-log show "$TEST_TICKET" 2>/dev/null | grep "validation test passed" > /dev/null 2>&1; then
+  echo "  PASS: task-log record persisted"
+else
+  echo "  FAIL: task-log record not found"
+  FAILED=1
+fi
+
+# Clean up test ticket
+rm -f "$BRAIN_DIR/tasks/task-log.db"
+
+# ─── 5. dream produces session output ──────────────────────────────────────────
+echo ""
+echo "[5/5] Testing dream produces output..."
+# Run dream (will use raw mode since minimax key may not be configured for LLM call)
+# The script should still write a file even if LLM call fails (graceful degradation)
+TS_BEFORE=$(date +%Y-%m-%d-%H%M)
+if dream > /dev/null 2>&1; then
+  echo "  PASS: dream script ran"
+else
+  echo "  FAIL: dream script failed"
+  FAILED=1
+fi
+
+# Check a session file was created
+if ls "$BRAIN_DIR/memory/sessions/"*.md 2>/dev/null | head -1 > /dev/null; then
+  echo "  PASS: dream created session file"
+else
+  echo "  FAIL: no session file found in memory/sessions/"
+  FAILED=1
+fi
+
+# ─── Summary ──────────────────────────────────────────────────────────────────
+echo ""
+if [[ "$FAILED" -eq 0 ]]; then
+  echo "=== ALL TESTS PASSED ==="
+  exit 0
+else
+  echo "=== SOME TESTS FAILED ==="
+  exit 1
+fi

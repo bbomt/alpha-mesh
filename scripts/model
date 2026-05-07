@@ -1,0 +1,155 @@
+#!/usr/bin/env bash
+# pmat-brain/scripts/model
+# Replaces manual settings.json swapping.
+# Usage:
+#   model use minimax
+#   model use openrouter-glm
+#   model status
+#   model check minimax        # health check without switching
+#   model list
+
+set -euo pipefail
+
+BRAIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+MODELS_JSON="$BRAIN_DIR/config/models.json"
+ACTIVE_JSON="$BRAIN_DIR/config/active.json"
+CLAUDE_SETTINGS="$HOME/.claude/settings.json"
+
+# Requires jq
+if ! command -v jq &>/dev/null; then
+  echo "ERROR: jq is required. Install with: sudo apt-get install jq" >&2
+  exit 1
+fi
+
+cmd="${1:-status}"
+
+list_profiles() {
+  echo "Available model profiles:"
+  jq -r '.profiles | to_entries[] | "  \(.key)  —  \(.value.description)"' "$MODELS_JSON"
+  echo ""
+  default=$(jq -r '.default' "$MODELS_JSON")
+  echo "Default: $default"
+}
+
+get_active_profile() {
+  if [[ -f "$ACTIVE_JSON" ]]; then
+    jq -r '.profile' "$ACTIVE_JSON"
+  else
+    jq -r '.default' "$MODELS_JSON"
+  fi
+}
+
+health_check() {
+  local profile="$1"
+  local base_url env_block
+
+  env_block=$(jq -r --arg p "$profile" '.profiles[$p].env' "$MODELS_JSON")
+  base_url=$(echo "$env_block" | jq -r '.ANTHROPIC_BASE_URL')
+
+  if [[ -z "$base_url" || "$base_url" == "null" ]]; then
+    # Native Anthropic — check api.anthropic.com
+    base_url="https://api.anthropic.com"
+  fi
+
+  # Check the actual API endpoint (append /v1/models for health check)
+  # This avoids false negatives from stripped paths
+  health_url="${base_url%/}/v1/models"
+
+  echo -n "  Checking $profile ($health_url) ... "
+  if curl -sf --max-time 5 "$health_url" \
+    -H "Authorization: Bearer $(echo "$env_block" | jq -r '.ANTHROPIC_AUTH_TOKEN')" \
+    -o /dev/null 2>&1; then
+    echo "✓ reachable"
+    return 0
+  else
+    echo "✗ unreachable"
+    return 1
+  fi
+}
+
+write_settings() {
+  local profile="$1"
+
+  # Validate profile exists
+  if ! jq -e --arg p "$profile" '.profiles[$p]' "$MODELS_JSON" > /dev/null 2>&1; then
+    echo "ERROR: Unknown profile '$profile'" >&2
+    echo "Run: model list" >&2
+    exit 1
+  fi
+
+  # Build settings.json for Claude Code
+  local env_block
+  env_block=$(jq --arg p "$profile" '.profiles[$p].env' "$MODELS_JSON")
+
+  # Backup existing settings
+  if [[ -f "$CLAUDE_SETTINGS" ]]; then
+    cp "$CLAUDE_SETTINGS" "$CLAUDE_SETTINGS.bak"
+  fi
+
+  # Write new settings
+  jq -n --argjson env "$env_block" '{"env": $env}' > "$CLAUDE_SETTINGS"
+
+  # Write active profile record
+  jq -n \
+    --arg profile "$profile" \
+    --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    '{"profile": $profile, "activated_at": $ts}' > "$ACTIVE_JSON"
+
+  echo "✓ Active model: $profile"
+  jq -r --arg p "$profile" '.profiles[$p].description' "$MODELS_JSON"
+}
+
+case "$cmd" in
+  list)
+    list_profiles
+    ;;
+
+  status)
+    active=$(get_active_profile)
+    echo "Active profile: $active"
+    if [[ -f "$ACTIVE_JSON" ]]; then
+      activated=$(jq -r '.activated_at' "$ACTIVE_JSON")
+      echo "Since: $activated"
+    fi
+    desc=$(jq -r --arg p "$active" '.profiles[$p].description' "$MODELS_JSON")
+    echo "Description: $desc"
+    echo ""
+    echo "settings.json → $CLAUDE_SETTINGS"
+    ;;
+
+  use)
+    profile="${2:-}"
+    if [[ -z "$profile" ]]; then
+      echo "Usage: model use <profile>" >&2
+      list_profiles
+      exit 1
+    fi
+    echo "Switching to: $profile"
+    health_check "$profile" || {
+      echo ""
+      echo "WARNING: $profile appears unreachable. Checking fallbacks..."
+      fallbacks=$(jq -r '.fallback_order[]' "$MODELS_JSON")
+      for fb in $fallbacks; do
+        [[ "$fb" == "$profile" ]] && continue
+        health_check "$fb" && {
+          echo ""
+          read -rp "Use $fb instead? [y/N] " confirm
+          [[ "$confirm" =~ ^[Yy]$ ]] && profile="$fb" && break
+        }
+      done
+    }
+    write_settings "$profile"
+    ;;
+
+  check)
+    profile="${2:-$(get_active_profile)}"
+    echo "Health checking: $profile"
+    health_check "$profile"
+    ;;
+
+  *)
+    echo "Usage: model <command>"
+    echo "Commands: use <profile> | status | list | check [profile]"
+    exit 1
+    ;;
+esac

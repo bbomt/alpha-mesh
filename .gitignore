@@ -1,0 +1,13 @@
+# secrets — never commit
+config/active.json
+
+# local DB — back up separately, don't commit
+tasks/task-log.db
+tasks/*.db
+
+# raw bootstrap content (too large, keep locally)
+memory/bootstrap/
+
+# editor
+.DS_Store
+*.swp

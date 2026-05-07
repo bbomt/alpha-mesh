@@ -1,0 +1,157 @@
+#!/usr/bin/env bash
+# pmat-brain/scripts/task-log
+# Log tasks keyed on Jira ticket ID.
+# Usage:
+#   task-log start PMAT-161 "Fix auth redirect bug" --repo PMATFE-auth
+#   task-log done PMAT-161 --outcome "deployed to dev, all tests pass"
+#   task-log note PMAT-161 "Had to adjust middleware order - see PATTERNS.md"
+#   task-log show PMAT-161
+#   task-log recent [N]       # show last N tasks (default 10)
+
+set -euo pipefail
+
+BRAIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+DB="$BRAIN_DIR/tasks/task-log.db"
+
+# Ensure DB and table exist
+init_db() {
+  sqlite3 "$DB" <<'SQL'
+CREATE TABLE IF NOT EXISTS tasks (
+  id          TEXT PRIMARY KEY,      -- Jira ticket ID e.g. PMAT-161
+  title       TEXT,
+  repos       TEXT,                  -- comma-separated repos touched
+  model       TEXT,                  -- model profile used
+  status      TEXT DEFAULT 'open',   -- open | done | blocked | abandoned
+  started_at  TEXT,
+  ended_at    TEXT,
+  outcome     TEXT,                  -- what actually happened
+  notes       TEXT,                  -- freeform observations
+  commits     TEXT                   -- comma-separated commit hashes
+);
+CREATE TABLE IF NOT EXISTS task_notes (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id     TEXT,
+  ts          TEXT,
+  note        TEXT,
+  FOREIGN KEY(task_id) REFERENCES tasks(id)
+);
+SQL
+}
+
+get_active_model() {
+  local active_json="$BRAIN_DIR/config/active.json"
+  if [[ -f "$active_json" ]]; then
+    jq -r '.profile' "$active_json" 2>/dev/null || echo "unknown"
+  else
+    echo "unknown"
+  fi
+}
+
+cmd="${1:-}"
+shift || true
+
+case "$cmd" in
+  start)
+    ticket="${1:-}"
+    title="${2:-}"
+    [[ -z "$ticket" ]] && { echo "Usage: task-log start <TICKET-ID> <title> [--repo REPO]"; exit 1; }
+    shift 2 || true
+
+    repo=""
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --repo) repo="$2"; shift 2 ;;
+        *) shift ;;
+      esac
+    done
+
+    model=$(get_active_model)
+    ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+    init_db
+    sqlite3 "$DB" \
+      "INSERT OR REPLACE INTO tasks (id, title, repos, model, status, started_at)
+       VALUES ('$ticket', '$title', '$repo', '$model', 'open', '$ts');"
+
+    echo "✓ Started: $ticket — $title"
+    echo "  Model: $model | Repo: ${repo:-unspecified} | Time: $ts"
+    ;;
+
+  done)
+    ticket="${1:-}"
+    [[ -z "$ticket" ]] && { echo "Usage: task-log done <TICKET-ID> [--outcome TEXT] [--commits HASH,HASH]"; exit 1; }
+    shift
+
+    outcome=""
+    commits=""
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --outcome) outcome="$2"; shift 2 ;;
+        --commits) commits="$2"; shift 2 ;;
+        *) shift ;;
+      esac
+    done
+
+    ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    init_db
+    sqlite3 "$DB" \
+      "UPDATE tasks SET status='done', ended_at='$ts',
+         outcome=COALESCE('$outcome', outcome),
+         commits=COALESCE('$commits', commits)
+       WHERE id='$ticket';"
+
+    echo "✓ Closed: $ticket"
+    [[ -n "$outcome" ]] && echo "  Outcome: $outcome"
+    ;;
+
+  note)
+    ticket="${1:-}"
+    note="${2:-}"
+    [[ -z "$ticket" || -z "$note" ]] && { echo "Usage: task-log note <TICKET-ID> <note text>"; exit 1; }
+    ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    init_db
+    sqlite3 "$DB" \
+      "INSERT INTO task_notes (task_id, ts, note) VALUES ('$ticket', '$ts', '$note');"
+    echo "✓ Note added to $ticket"
+    ;;
+
+  show)
+    ticket="${1:-}"
+    [[ -z "$ticket" ]] && { echo "Usage: task-log show <TICKET-ID>"; exit 1; }
+    init_db
+    echo "=== $ticket ==="
+    sqlite3 -column -header "$DB" "SELECT * FROM tasks WHERE id='$ticket';"
+    echo ""
+    echo "--- Notes ---"
+    sqlite3 -column "$DB" "SELECT ts, note FROM task_notes WHERE task_id='$ticket' ORDER BY ts;"
+    ;;
+
+  recent)
+    n="${1:-10}"
+    init_db
+    echo "=== Last $n tasks ==="
+    sqlite3 -column -header "$DB" \
+      "SELECT id, title, status, model, repos, started_at, ended_at
+       FROM tasks ORDER BY started_at DESC LIMIT $n;"
+    ;;
+
+  export)
+    # Export recent tasks as JSON for the dream script
+    days="${1:-1}"
+    since=$(date -u -d "$days days ago" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || \
+            date -u -v-${days}d +%Y-%m-%dT%H:%M:%SZ)  # macOS fallback
+    init_db
+    sqlite3 -json "$DB" \
+      "SELECT t.*, GROUP_CONCAT(n.note, ' | ') as all_notes
+       FROM tasks t
+       LEFT JOIN task_notes n ON t.id = n.task_id
+       WHERE t.started_at >= '$since'
+       GROUP BY t.id
+       ORDER BY t.started_at;"
+    ;;
+
+  *)
+    echo "Usage: task-log <command>"
+    echo "Commands: start | done | note | show | recent | export"
+    ;;
+esac

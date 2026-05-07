@@ -1,0 +1,147 @@
+#!/usr/bin/env bash
+# pmat-brain/scripts/install
+# Run once after cloning pmat-brain repo.
+
+set -euo pipefail
+
+BRAIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+echo "=== PMAT Brain Install ==="
+echo "Brain dir: $BRAIN_DIR"
+echo ""
+
+# ─── Check dependencies ─────────────────────────────────────────────────────
+echo "Checking dependencies..."
+
+missing=()
+for cmd in jq sqlite3 curl python3; do
+  if command -v "$cmd" &>/dev/null; then
+    echo "  ✓ $cmd"
+  else
+    echo "  ✗ $cmd  ← MISSING"
+    missing+=("$cmd")
+  fi
+done
+
+if [[ ${#missing[@]} -gt 0 ]]; then
+  echo ""
+  echo "Install missing dependencies:"
+  echo "  sudo apt-get install ${missing[*]}"
+  exit 1
+fi
+
+echo ""
+
+# ─── Make scripts executable ────────────────────────────────────────────────
+echo "Setting script permissions..."
+chmod +x "$BRAIN_DIR/scripts/"*
+echo "  ✓ done"
+echo ""
+
+# ─── Create directory structure ─────────────────────────────────────────────
+echo "Creating directories..."
+mkdir -p \
+  "$BRAIN_DIR/config" \
+  "$BRAIN_DIR/tasks" \
+  "$BRAIN_DIR/memory/sessions" \
+  "$BRAIN_DIR/memory/learnings" \
+  "$BRAIN_DIR/memory/skills" \
+  "$BRAIN_DIR/memory/bootstrap"
+echo "  ✓ done"
+echo ""
+
+# ─── Initialise empty learnings files ───────────────────────────────────────
+for topic in architecture deployment testing models workflow patterns; do
+  f="$BRAIN_DIR/memory/learnings/$topic.md"
+  if [[ ! -f "$f" ]]; then
+    echo "# $topic learnings" > "$f"
+    echo "<!-- appended by dream script after each session -->" >> "$f"
+  fi
+done
+echo "  ✓ learnings files initialised"
+echo ""
+
+# ─── Write .gitignore ───────────────────────────────────────────────────────
+cat > "$BRAIN_DIR/.gitignore" <<'EOF'
+# secrets — never commit
+config/active.json
+
+# local DB — back up separately, don't commit
+tasks/task-log.db
+tasks/*.db
+
+# raw bootstrap content (too large, keep locally)
+memory/bootstrap/
+
+# editor
+.DS_Store
+*.swp
+EOF
+echo "  ✓ .gitignore written"
+echo ""
+
+# ─── Add scripts to PATH via shell profile ──────────────────────────────────
+SHELL_PROFILE=""
+if [[ -f "$HOME/.bashrc" ]]; then
+  SHELL_PROFILE="$HOME/.bashrc"
+elif [[ -f "$HOME/.bash_profile" ]]; then
+  SHELL_PROFILE="$HOME/.bash_profile"
+elif [[ -f "$HOME/.zshrc" ]]; then
+  SHELL_PROFILE="$HOME/.zshrc"
+fi
+
+PATH_LINE="export PATH=\"$BRAIN_DIR/scripts:\$PATH\""
+if [[ -n "$SHELL_PROFILE" ]]; then
+  if grep -q "alpha-mesh/scripts" "$SHELL_PROFILE" 2>/dev/null; then
+    echo "  ✓ PATH already set in $SHELL_PROFILE"
+  else
+    echo "" >> "$SHELL_PROFILE"
+    echo "# alpha-mesh" >> "$SHELL_PROFILE"
+    echo "$PATH_LINE" >> "$SHELL_PROFILE"
+    echo "  ✓ PATH added to $SHELL_PROFILE"
+    echo "    (run: source $SHELL_PROFILE)"
+  fi
+else
+  echo "  ⚠ Could not detect shell profile. Add manually:"
+  echo "    $PATH_LINE"
+fi
+echo ""
+
+# ─── Prompt for API keys ────────────────────────────────────────────────────
+echo "=== API Key Setup ==="
+echo "Edit config/models.json and replace the REPLACE_WITH_YOUR_* placeholders."
+echo ""
+echo "Keys needed:"
+echo "  REPLACE_WITH_YOUR_MINIMAX_KEY    → your Minimax sk-cp-... key"
+echo "  REPLACE_WITH_YOUR_OPENROUTER_KEY → your OpenRouter SK/... key"
+echo "  REPLACE_WITH_YOUR_ANTHROPIC_KEY  → your Anthropic key (optional)"
+echo ""
+echo "  \$EDITOR $BRAIN_DIR/config/models.json"
+echo ""
+
+# ─── Backup existing settings.json ──────────────────────────────────────────
+CLAUDE_SETTINGS="$HOME/.claude/settings.json"
+if [[ -f "$CLAUDE_SETTINGS" ]]; then
+  cp "$CLAUDE_SETTINGS" "$CLAUDE_SETTINGS.pre-pmat-brain.bak"
+  echo "  ✓ Backed up existing settings.json → settings.json.pre-pmat-brain.bak"
+  echo "    (pmat-brain/scripts/model will manage this file from now on)"
+  echo ""
+fi
+
+# ─── Done ───────────────────────────────────────────────────────────────────
+echo "=== Install complete ==="
+echo ""
+echo "Next steps:"
+echo "  1. source $SHELL_PROFILE"
+echo "  2. Edit config/models.json — add your API keys"
+echo "  3. model use minimax          # verify model switching works"
+echo "  4. bootstrap-memory --dry-run # preview historical extraction"
+echo "  5. bootstrap-memory           # seed memory from past sessions"
+echo "  6. At end of each work session: dream"
+echo ""
+echo "Daily workflow:"
+echo "  model status                  # check active model"
+echo "  task-log start PMAT-NNN 'description' --repo PMATFE-xxx"
+echo "  ... do work in Claude Code ..."
+echo "  task-log done PMAT-NNN --outcome 'shipped X, tests pass'"
+echo "  dream                         # consolidate session"
