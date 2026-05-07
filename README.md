@@ -1,11 +1,11 @@
-# pmat-brain
+# alpha-mesh
 
 The memory and orchestration layer for the PMAT agent system.
 
 ## Structure
 
 ```
-pmat-brain/
+alpha-mesh/
 ├── config/                  # Model configs (replaces settings.json swapping)
 │   ├── models.json          # All model profiles
 │   └── active.json          # Currently active profile (gitignored)
@@ -13,7 +13,8 @@ pmat-brain/
 │   ├── model                # Switch/check model config
 │   ├── dream                # End-of-session memory consolidation
 │   ├── task-log             # Log a task entry
-│   └── bootstrap-memory     # One-time: extract from existing Claude Code logs
+│   ├── bootstrap-memory     # One-time: extract from existing Claude Code logs
+│   └── test-brain           # Validation test
 ├── tasks/
 │   └── task-log.db          # SQLite task log (gitignored, backed up separately)
 ├── memory/
@@ -22,10 +23,12 @@ pmat-brain/
 │   │   ├── architecture.md
 │   │   ├── deployment.md
 │   │   ├── testing.md
+│   │   ├── models.md
+│   │   ├── workflow.md
 │   │   └── patterns.md
 │   └── skills/              # Extracted workflow skills (reusable prompts/procedures)
 │       ├── feature-dev.md
-│       └── jira-workflow.md
+│       └── model-routing.md
 └── .gitignore
 ```
 
@@ -34,8 +37,8 @@ pmat-brain/
 ```bash
 # Install (run once)
 cd ~/environment/pmat
-git clone <this-repo> pmat-brain
-cd pmat-brain && ./scripts/install
+git clone <this-repo> alpha-mesh
+cd alpha-mesh && ./scripts/install
 
 # Switch model
 ./scripts/model use minimax
@@ -48,7 +51,7 @@ cd ~/environment/pmat/PMATFE-xxx
 claude  # Claude Code picks up the active model config
 
 # End a work session
-cd ~/environment/pmat/pmat-brain
+cd ~/environment/pmat/alpha-mesh
 ./scripts/dream
 ```
 

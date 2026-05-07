@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# pmat-brain validation test
+# alpha-mesh validation test
 # Success = exit 0, Failure = exit 1
-# Run from pmat-brain directory
+# Run from alpha-mesh directory
 
 set -euo pipefail
 
@@ -11,7 +11,7 @@ cd "$BRAIN_DIR"
 
 FAILED=0
 
-echo "=== PMAT Brain Validation Test ==="
+echo "=== alpha-mesh Validation Test ==="
 echo ""
 
 # ─── 1. Scripts are executable ────────────────────────────────────────────────
@@ -57,7 +57,7 @@ echo "[4/5] Testing task-log start/done cycle..."
 TEST_TICKET="PMAT-TEST-$(date +%s)"
 TEST_TITLE="Brain validation test"
 
-if task-log start "$TEST_TICKET" "$TEST_TITLE" --repo pmat-brain > /dev/null 2>&1; then
+if task-log start "$TEST_TICKET" "$TEST_TITLE" --repo alpha-mesh > /dev/null 2>&1; then
   echo "  PASS: task-log start works"
 else
   echo "  FAIL: task-log start failed"
