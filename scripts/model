@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# pmat-brain/scripts/model
+# alpha-mesh/scripts/model
 # Replaces manual settings.json swapping.
+# Tokens: stored in env vars or config/.env (never commit secrets to GitHub)
 # Usage:
 #   model use minimax
 #   model use openrouter-glm
@@ -13,12 +14,20 @@ set -euo pipefail
 BRAIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MODELS_JSON="$BRAIN_DIR/config/models.json"
 ACTIVE_JSON="$BRAIN_DIR/config/active.json"
+ENV_FILE="$BRAIN_DIR/.env"
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
 
 # Requires jq
 if ! command -v jq &>/dev/null; then
   echo "ERROR: jq is required. Install with: sudo apt-get install jq" >&2
   exit 1
+fi
+
+# Load .env if it exists
+if [[ -f "$ENV_FILE" ]]; then
+  set -a
+  source "$ENV_FILE"
+  set +a
 fi
 
 cmd="${1:-status}"
@@ -39,12 +48,32 @@ get_active_profile() {
   fi
 }
 
+# Get token for a profile: env var takes precedence over models.json placeholder
+# Env var names: ALPHA_MESH_MINIMAX_TOKEN, ALPHA_MESH_OPENROUTER_TOKEN, ALPHA_MESH_ANTHROPIC_TOKEN
+get_token() {
+  local profile="$1"
+  local token=""
+
+  # Map profile to env var name
+  case "$profile" in
+    minimax)        token="${ALPHA_MESH_MINIMAX_TOKEN:-}" ;;
+    openrouter-glm) token="${ALPHA_MESH_OPENROUTER_TOKEN:-}" ;;
+    claude-sonnet)  token="${ALPHA_MESH_ANTHROPIC_TOKEN:-}" ;;
+  esac
+
+  # If env var is set, use it; otherwise fall back to models.json
+  if [[ -n "$token" ]]; then
+    echo "$token"
+  else
+    jq -r --arg p "$profile" '.profiles[$p].env.ANTHROPIC_AUTH_TOKEN // .profiles[$p].env.ANTHROPIC_API_KEY // ""' "$MODELS_JSON"
+  fi
+}
+
 health_check() {
   local profile="$1"
-  local base_url env_block
+  local base_url token
 
-  env_block=$(jq -r --arg p "$profile" '.profiles[$p].env' "$MODELS_JSON")
-  base_url=$(echo "$env_block" | jq -r '.ANTHROPIC_BASE_URL')
+  base_url=$(jq -r --arg p "$profile" '.profiles[$p].env.ANTHROPIC_BASE_URL' "$MODELS_JSON")
 
   if [[ -z "$base_url" || "$base_url" == "null" ]]; then
     # Native Anthropic — check api.anthropic.com
@@ -56,8 +85,14 @@ health_check() {
   health_url="${base_url%/}/v1/models"
 
   echo -n "  Checking $profile ($health_url) ... "
+  token=$(get_token "$profile")
+  if [[ -z "$token" || "$token" == "REPLACE_WITH_"* ]]; then
+    echo "⚠ no token configured (set ALPHA_MESH_${profile^^}_TOKEN env var or in config/.env)"
+    return 1
+  fi
+
   if curl -sf --max-time 5 "$health_url" \
-    -H "Authorization: Bearer $(echo "$env_block" | jq -r '.ANTHROPIC_AUTH_TOKEN')" \
+    -H "Authorization: Bearer $token" \
     -o /dev/null 2>&1; then
     echo "✓ reachable"
     return 0
@@ -77,9 +112,15 @@ write_settings() {
     exit 1
   fi
 
-  # Build settings.json for Claude Code
-  local env_block
+  # Build env block from models.json, then overlay token from env var
+  local env_block token
   env_block=$(jq --arg p "$profile" '.profiles[$p].env' "$MODELS_JSON")
+  token=$(get_token "$profile")
+
+  # Replace the token in env_block with the actual value (from env or placeholder)
+  env_block=$(echo "$env_block" | jq \
+    --arg token "$token" \
+    '.ANTHROPIC_AUTH_TOKEN = $token | .ANTHROPIC_API_KEY = $token')
 
   # Backup existing settings
   if [[ -f "$CLAUDE_SETTINGS" ]]; then

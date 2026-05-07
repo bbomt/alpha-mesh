@@ -109,22 +109,22 @@ echo ""
 
 # ─── Prompt for API keys ────────────────────────────────────────────────────
 echo "=== API Key Setup ==="
-echo "Edit config/models.json and replace the REPLACE_WITH_YOUR_* placeholders."
+echo "Copy .env.example to .env and add your tokens:"
+echo "  cp .env.example .env"
+echo "  \$EDITOR .env"
 echo ""
-echo "Keys needed:"
-echo "  REPLACE_WITH_YOUR_MINIMAX_KEY    → your Minimax sk-cp-... key"
-echo "  REPLACE_WITH_YOUR_OPENROUTER_KEY → your OpenRouter SK/... key"
-echo "  REPLACE_WITH_YOUR_ANTHROPIC_KEY  → your Anthropic key (optional)"
-echo ""
-echo "  \$EDITOR $BRAIN_DIR/config/models.json"
+echo "Tokens needed:"
+echo "  ALPHA_MESH_MINIMAX_TOKEN    → your Minimax sk-cp-... key"
+echo "  ALPHA_MESH_OPENROUTER_TOKEN  → your OpenRouter SK/... key"
+echo "  ALPHA_MESH_ANTHROPIC_TOKEN   → your Anthropic key (optional)"
 echo ""
 
 # ─── Backup existing settings.json ──────────────────────────────────────────
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
 if [[ -f "$CLAUDE_SETTINGS" ]]; then
-  cp "$CLAUDE_SETTINGS" "$CLAUDE_SETTINGS.pre-pmat-brain.bak"
-  echo "  ✓ Backed up existing settings.json → settings.json.pre-pmat-brain.bak"
-  echo "    (pmat-brain/scripts/model will manage this file from now on)"
+  cp "$CLAUDE_SETTINGS" "$CLAUDE_SETTINGS.pre-alpha-mesh.bak"
+  echo "  ✓ Backed up existing settings.json → settings.json.pre-alpha-mesh.bak"
+  echo "    (alpha-mesh/scripts/model will manage this file from now on)"
   echo ""
 fi
 

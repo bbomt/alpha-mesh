@@ -55,8 +55,24 @@ cd ~/environment/pmat/alpha-mesh
 ./scripts/dream
 ```
 
+## Token Setup
+
+Tokens are stored in `alpha-mesh/.env` (gitignored). Copy from the example:
+
+```bash
+cp .env.example .env
+nano .env   # fill in your actual keys
+```
+
+Tokens needed:
+- `ALPHA_MESH_MINIMAX_TOKEN` — your Minimax sk-cp-... key
+- `ALPHA_MESH_OPENROUTER_TOKEN` — your OpenRouter SK/... key
+- `ALPHA_MESH_ANTHROPIC_TOKEN` — your Anthropic key (optional)
+
+The `model` script loads `.env` automatically on each run. You can also set these as environment variables in your shell profile.
+
 ## Model Profiles
 
-Edit `config/models.json` to add/change models.
+Edit `config/models.json` to add/change model profiles (non-sensitive config only).
 The `model` script writes the active profile to `~/.claude/settings.json`.
 Never edit `~/.claude/settings.json` directly anymore.

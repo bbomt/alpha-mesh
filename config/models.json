@@ -4,7 +4,7 @@
       "description": "Minimax M2.7 direct - primary, cost-efficient",
       "env": {
         "ANTHROPIC_BASE_URL": "https://api.minimax.io/anthropic",
-        "ANTHROPIC_AUTH_TOKEN": "sk-cp-LKwqVLzNY0dDZAooSoreVS9i_Y0iWw9tdY9kma17i_PnAeJ79FVOxAzJGpB-opsIskEuyUqF3334BicTNPoHB1w38ac_QWgtC3ebwsN1UVlIxrA2y-hEzd4",
+        "ANTHROPIC_AUTH_TOKEN": "REPLACE_WITH_YOUR_MINIMAX_KEY",
         "ANTHROPIC_API_KEY": "",
         "ANTHROPIC_MODEL": "MiniMax-M2.7",
         "ANTHROPIC_SMALL_FAST_MODEL": "MiniMax-M2.7",
