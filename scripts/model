@@ -146,15 +146,17 @@ write_settings() {
   token=$(get_token "$profile")
 
   # Replace the token and optionally override the model
+  # Only set ANTHROPIC_API_KEY when models.json explicitly has a value for it (used by Anthropic direct)
+  # ANTHROPIC_AUTH_TOKEN is always set (used by minimax/openrouter)
   if [[ -n "$model_override" ]]; then
     env_block=$(echo "$env_block" | jq \
       --arg token "$token" \
       --arg model "$model_override" \
-      '.ANTHROPIC_AUTH_TOKEN = $token | .ANTHROPIC_API_KEY = $token | .ANTHROPIC_MODEL = $model | .ANTHROPIC_DEFAULT_SONNET_MODEL = $model | .ANTHROPIC_DEFAULT_OPUS_MODEL = $model')
+      '.ANTHROPIC_AUTH_TOKEN = $token | .ANTHROPIC_MODEL = $model | .ANTHROPIC_DEFAULT_SONNET_MODEL = $model | .ANTHROPIC_DEFAULT_OPUS_MODEL = $model | if (.ANTHROPIC_API_KEY | length > 0) then .ANTHROPIC_API_KEY = $token else . end')
   else
     env_block=$(echo "$env_block" | jq \
       --arg token "$token" \
-      '.ANTHROPIC_AUTH_TOKEN = $token | .ANTHROPIC_API_KEY = $token')
+      '.ANTHROPIC_AUTH_TOKEN = $token | if (.ANTHROPIC_API_KEY | length > 0) then .ANTHROPIC_API_KEY = $token else . end')
   fi
 
   # Backup existing settings
