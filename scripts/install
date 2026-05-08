@@ -90,21 +90,18 @@ elif [[ -f "$HOME/.zshrc" ]]; then
   SHELL_PROFILE="$HOME/.zshrc"
 fi
 
-PATH_LINE="export PATH=\"$BRAIN_DIR/scripts:\$PATH\""
-if [[ -n "$SHELL_PROFILE" ]]; then
-  if grep -q "alpha-mesh/scripts" "$SHELL_PROFILE" 2>/dev/null; then
-    echo "  ✓ PATH already set in $SHELL_PROFILE"
-  else
-    echo "" >> "$SHELL_PROFILE"
-    echo "# alpha-mesh" >> "$SHELL_PROFILE"
-    echo "$PATH_LINE" >> "$SHELL_PROFILE"
-    echo "  ✓ PATH added to $SHELL_PROFILE"
-    echo "    (run: source $SHELL_PROFILE)"
+# Symlink scripts into ~/bin for portable PATH-free access
+echo "Creating symlinks in ~/bin..."
+mkdir -p "$HOME/bin"
+for script in "$BRAIN_DIR/scripts/"*; do
+  name="$(basename "$script")"
+  link="$HOME/bin/$name"
+  if [[ -L "$link" ]]; then
+    rm "$link"
   fi
-else
-  echo "  ⚠ Could not detect shell profile. Add manually:"
-  echo "    $PATH_LINE"
-fi
+  ln -s "$script" "$link"
+  echo "  ✓ $name"
+done
 echo ""
 
 # ─── Prompt for API keys ────────────────────────────────────────────────────
@@ -132,7 +129,6 @@ fi
 echo "=== Install complete ==="
 echo ""
 echo "Next steps:"
-echo "  1. source $SHELL_PROFILE"
 echo "  2. Edit config/models.json — add your API keys"
 echo "  3. model use minimax          # verify model switching works"
 echo "  4. bootstrap-memory --dry-run # preview historical extraction"

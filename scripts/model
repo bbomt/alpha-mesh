@@ -2,13 +2,27 @@
 # alpha-mesh/scripts/model
 # Replaces manual settings.json swapping.
 # Tokens: stored in env vars or .env (never commit secrets to GitHub)
-# Usage:
-#   model use minimax
-#   model use openrouter          # uses openrouter-default
-#   model use openrouter <model>  # override model, e.g. deepseek/deepseek-v4-flash
-#   model status
-#   model check minimax           # health check without switching
-#   model list
+#
+# Syntax:
+#   model use {-g|-l} <profile> [model]   switch profile with explicit scope
+#   model use <profile> [model]             switch profile (prompts for scope)
+#   model status                            show active profile and activation time
+#   model list                              show all profiles with descriptions
+#   model check [profile]                  health check without switching (default: active)
+#
+# Scope flags:
+#   -g, --global   write to ~/.claude/settings.json (affects all windows)
+#   -l, --local    write to .claude/settings.json (repo-level, takes precedence)
+#
+# Profile examples:
+#   model use minimax                minimax, prompts for scope
+#   model use -g minimax             minimax, global scope
+#   model use -l minimax             minimax, local scope
+#   model use openrouter glm-5.1     openrouter with specific model
+#   model use openrouter             openrouter with default model from config
+#
+# Model override (provider/model shorthand):
+#   model use openrouter z-ai/glm-5.1
 
 set -euo pipefail
 
@@ -132,12 +146,29 @@ health_check() {
 write_settings() {
   local profile="$1"
   local model_override="${2:-}"
+  local scope="${3:-}"
 
   # Validate profile exists
   if ! jq -e --arg p "$profile" '.profiles[$p]' "$MODELS_JSON" > /dev/null 2>&1; then
     echo "ERROR: Unknown profile '$profile'" >&2
     echo "Run: model list" >&2
     exit 1
+  fi
+
+  # Resolve target settings file based on scope
+  local target_settings
+  case "$scope" in
+    local)  target_settings="$BRAIN_DIR/.claude/settings.json" ;;
+    global) target_settings="$HOME/.claude/settings.json" ;;
+    *)
+      echo "ERROR: invalid scope '$scope'" >&2
+      exit 1
+      ;;
+  esac
+
+  # Ensure parent directory exists for local scope
+  if [[ "$scope" == "local" ]]; then
+    mkdir -p "$(dirname "$target_settings")"
   fi
 
   # Build env block from models.json, then overlay token and optionally model
@@ -160,20 +191,21 @@ write_settings() {
   fi
 
   # Backup existing settings
-  if [[ -f "$CLAUDE_SETTINGS" ]]; then
-    cp "$CLAUDE_SETTINGS" "$CLAUDE_SETTINGS.bak"
+  if [[ -f "$target_settings" ]]; then
+    cp "$target_settings" "$target_settings.bak"
   fi
 
   # Write new settings
-  jq -n --argjson env "$env_block" '{"env": $env}' > "$CLAUDE_SETTINGS"
+  jq -n --argjson env "$env_block" '{"env": $env}' > "$target_settings"
 
-  # Write active profile record
+  # Write active profile record (always global — tracks which profile is globally active)
   jq -n \
     --arg profile "$profile" \
     --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     '{"profile": $profile, "activated_at": $ts}' > "$ACTIVE_JSON"
 
   echo "✓ Active model: $profile${model_override:+, model: '"$model_override"'}"
+  echo "  Scope: $scope | Settings: $target_settings"
   jq -r --arg p "$profile" '.profiles[$p].description' "$MODELS_JSON"
 }
 
@@ -196,15 +228,42 @@ case "$cmd" in
     ;;
 
   use)
-    profile="${2:-}"
-    model_override="${3:-}"
+    # Format: model use {-g|-l} <profile> [model]
+    #   e.g. model use -g minimax
+    #   e.g. model use -l openrouter glm-5.1
+    #   e.g. model use --local openrouter
+    # Or: model use <profile> [model]  → offers local/global choice
+
+    first="${2:-}"
+
+    if [[ -z "$first" ]]; then
+      echo "Usage: model use {-g|-l} <profile> [model]" >&2
+      echo "  e.g. model use -g minimax" >&2
+      echo "  e.g. model use -l openrouter glm-5.1" >&2
+      list_profiles
+      exit 1
+    fi
+
+    # Detect if first arg is a scope flag
+    case "$first" in
+      -g|--global) scope="global";  profile="${3:-}"; model_override="${4:-}" ;;
+      -l|--local)  scope="local";   profile="${3:-}"; model_override="${4:-}" ;;
+      *)
+        # No flag — offer choice
+        profile="$first"
+        model_override="${3:-}"
+        echo "Choose scope:" >&2
+        echo "  L) LOCAL  — $BRAIN_DIR/.claude/settings.json (repo-level, takes precedence)" >&2
+        echo "  G) GLOBAL — $HOME/.claude/settings.json (affects all windows)" >&2
+        read -rp "Select L-G [L]: " reply >&2
+        scope="local"
+        [[ "$reply" == "G" || "$reply" == "g" ]] && scope="global"
+        ;;
+    esac
 
     if [[ -z "$profile" ]]; then
-      echo "Usage: model use <profile> [model]" >&2
-      echo "  e.g. model use minimax" >&2
-      echo "  e.g. model use openrouter glm-5.1         # use profile's default model" >&2
-      echo "  e.g. model use openrouter deepseek/deepseek-v4-flash  # override model" >&2
-      list_profiles
+      echo "ERROR: profile required" >&2
+      echo "Usage: model use {-g|-l} <profile> [model]" >&2
       exit 1
     fi
 
@@ -230,7 +289,7 @@ case "$cmd" in
         }
       done
     }
-    write_settings "$profile" "$model_override"
+    write_settings "$profile" "$model_override" "$scope"
     ;;
 
   check)

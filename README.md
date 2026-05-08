@@ -40,10 +40,14 @@ cd ~/environment/pmat
 git clone <this-repo> alpha-mesh
 cd alpha-mesh && ./scripts/install
 
-# Switch model
+# Switch model (prompts for scope — L: local .claude/settings.json, G: global ~/.claude/settings.json)
 ./scripts/model use minimax
-./scripts/model use openrouter
-./scripts/model status
+./scripts/model use -g openrouter        # explicit global scope
+./scripts/model use -l openrouter glm-5.1  # local scope with model override
+./scripts/model status                   # show active profile and when it was set
+./scripts/model list                     # show all profiles with descriptions
+./scripts/model check                    # health check active profile
+./scripts/model check minimax            # health check a specific profile
 
 # Start a work session
 ./scripts/model use minimax    # or check status
@@ -80,9 +84,11 @@ Never edit `~/.claude/settings.json` directly anymore.
 ## Using OpenRouter with different models
 
 ```bash
-model use openrouter                  # uses openrouter-default profile (glm-5.1)
-model use openrouter tencent/hy3-preview:free
-model use openrouter deepseek/deepseek-v4-flash
+model use openrouter                  # uses openrouter-default profile (glm-5.1), prompts for scope
+model use -g openrouter               # explicit global scope
+model use -l openrouter glm-5.1       # local scope with model override
+model use openrouter tencent/hy3-preview:free   # model override with openrouter-default
+model use openrouter deepseek/deepseek-v4-flash  # any OpenRouter model
 ```
 
 The `openrouter-default` profile provides the OpenRouter URL and token; the model argument overrides the default model. Shorthand `openrouter` resolves to `openrouter-default`. Any model available on OpenRouter can be used.

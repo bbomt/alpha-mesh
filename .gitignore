@@ -1,6 +1,5 @@
 # secrets — never commit
 config/active.json
-.env
 
 # local DB — back up separately, don't commit
 tasks/task-log.db
@@ -12,3 +11,5 @@ memory/bootstrap/
 # editor
 .DS_Store
 *.swp
+.env
+.claude
