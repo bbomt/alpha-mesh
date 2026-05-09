@@ -6,9 +6,9 @@
 # Syntax:
 #   model use {-g|-l} <profile> [model]   switch profile with explicit scope
 #   model use <profile> [model]             switch profile (prompts for scope)
-#   model status                            show active profile and activation time
+#   model status                            show local and global model settings
 #   model list                              show all profiles with descriptions
-#   model check [profile]                  health check without switching (default: active)
+#   model check [profile]                  health check without switching (default: current)
 #
 # Scope flags:
 #   -g, --global   write to ~/.claude/settings.json (affects all windows)
@@ -30,7 +30,6 @@ set -euo pipefail
 SCRIPT_REALPATH="$(readlink -f "${BASH_SOURCE[0]}")"
 BRAIN_DIR="$(cd "$(dirname "$SCRIPT_REALPATH")/.." && pwd)"
 MODELS_JSON="$BRAIN_DIR/config/models.json"
-ACTIVE_JSON="$BRAIN_DIR/config/active.json"
 ENV_FILE="$BRAIN_DIR/.env"
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
 
@@ -81,14 +80,6 @@ list_profiles() {
   echo ""
   default=$(jq -r '.default' "$MODELS_JSON")
   echo "Default: $default"
-}
-
-get_active_profile() {
-  if [[ -f "$ACTIVE_JSON" ]]; then
-    jq -r '.profile' "$ACTIVE_JSON"
-  else
-    jq -r '.default' "$MODELS_JSON"
-  fi
 }
 
 # Get token for a profile: env var takes precedence over models.json placeholder
@@ -228,12 +219,6 @@ write_settings() {
     jq -n --argjson env "$env_block" '{"env": $env}' > "$target_settings"
   fi
 
-  # Write active profile record (always global — tracks which profile is globally active)
-  jq -n \
-    --arg profile "$profile" \
-    --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    '{"profile": $profile, "activated_at": $ts}' > "$ACTIVE_JSON"
-
   echo "✓ Active model: $profile${model_override:+, model: '"$model_override"'}"
   echo "  Scope: $scope | Settings: $target_settings"
   jq -r --arg p "$profile" '.profiles[$p].description' "$MODELS_JSON"
@@ -245,14 +230,8 @@ case "$cmd" in
     ;;
 
   status)
-    active=$(get_active_profile)
-    echo "Active profile: $active"
-    if [[ -f "$ACTIVE_JSON" ]]; then
-      activated=$(jq -r '.activated_at' "$ACTIVE_JSON")
-      echo "Since: $activated"
-    fi
-    desc=$(jq -r --arg p "$active" '.profiles[$p].description' "$MODELS_JSON")
-    echo "Description: $desc"
+    default=$(jq -r '.default' "$MODELS_JSON")
+    echo "Default profile: $default (set in config/models.json)"
     echo ""
 
     # Show local scope (repo root — same path model use -l would write)
@@ -344,7 +323,7 @@ case "$cmd" in
     ;;
 
   check)
-    profile="${2:-$(get_active_profile)}"
+    profile="${2:-minimax}"
     echo "Health checking: $profile"
     health_check "$profile"
     ;;

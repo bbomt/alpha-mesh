@@ -40,25 +40,25 @@ cd ~/environment/pmat
 git clone <this-repo> alpha-mesh
 cd alpha-mesh && ./scripts/install
 
+# The `mesh` CLI is now available globally — prefix for all commands:
 # Switch model (prompts for scope — L: local .claude/settings.json, G: global ~/.claude/settings.json)
 # Local scope walks up from CWD to find the repo root (.git), writes .claude/settings.json there
-# This means it sets the model for the repo you're in, not for alpha-mesh specifically
-./scripts/model use minimax
-./scripts/model use -g openrouter        # explicit global scope
-./scripts/model use -l openrouter glm-5.1  # local scope with model override
-./scripts/model status                   # show active profile and when it was set
-./scripts/model list                     # show all profiles with descriptions
-./scripts/model check                    # health check active profile
-./scripts/model check minimax            # health check a specific profile
+mesh model use minimax
+mesh model use -g openrouter        # explicit global scope
+mesh model use -l openrouter glm-5.1  # local scope with model override
+mesh model status                   # show active profile and when it was set
+mesh model list                     # show all profiles with descriptions
+mesh model check                    # health check active profile
+mesh model check minimax            # health check a specific profile
 
 # Start a work session
-./scripts/model use minimax    # or check status
+mesh model use minimax    # or check status
 cd ~/environment/pmat/PMATFE-xxx
 claude  # Claude Code picks up the active model config
 
 # End a work session
 cd ~/environment/pmat/alpha-mesh
-./scripts/dream
+mesh dream
 ```
 
 ## Token Setup
@@ -86,11 +86,11 @@ Never edit `~/.claude/settings.json` directly anymore.
 ## Using OpenRouter with different models
 
 ```bash
-model use openrouter                  # uses openrouter-default profile (glm-5.1), prompts for scope
-model use -g openrouter               # explicit global scope
-model use -l openrouter glm-5.1       # local scope with model override
-model use openrouter tencent/hy3-preview:free   # model override with openrouter-default
-model use openrouter deepseek/deepseek-v4-flash  # any OpenRouter model
+mesh model use openrouter                  # uses openrouter-default profile (glm-5.1), prompts for scope
+mesh model use -g openrouter               # explicit global scope
+mesh model use -l openrouter glm-5.1       # local scope with model override
+mesh model use openrouter tencent/hy3-preview:free   # model override with openrouter-default
+mesh model use openrouter deepseek/deepseek-v4-flash  # any OpenRouter model
 ```
 
 The `openrouter-default` profile provides the OpenRouter URL and token; the model argument overrides the default model. Shorthand `openrouter` resolves to `openrouter-default`. Any model available on OpenRouter can be used.

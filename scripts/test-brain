@@ -38,17 +38,12 @@ fi
 # ─── 3. model check works ──────────────────────────────────────────────────────
 echo ""
 echo "[3/5] Testing model check minimax..."
-active_profile=$(model status 2>&1 | grep "^Active profile:" | awk '{print $NF}')
-if [[ -n "$active_profile" ]]; then
-  if model check "$active_profile" > /dev/null 2>&1; then
-    echo "  PASS: model check $active_profile works"
-  else
-    echo "  WARN: model check $active_profile failed (API may be temporarily unreachable)"
-    echo "        This is not a script failure — continuing..."
-  fi
+default_profile=$(jq -r '.default' "$BRAIN_DIR/config/models.json")
+if model check "$default_profile" > /dev/null 2>&1; then
+  echo "  PASS: model check $default_profile works"
 else
-  echo "  FAIL: could not determine active profile"
-  FAILED=1
+  echo "  WARN: model check $default_profile failed (API may be temporarily unreachable)"
+  echo "        This is not a script failure — continuing..."
 fi
 
 # ─── 4. task-log start/done cycle ─────────────────────────────────────────────
