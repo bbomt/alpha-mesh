@@ -41,6 +41,8 @@ git clone <this-repo> alpha-mesh
 cd alpha-mesh && ./scripts/install
 
 # Switch model (prompts for scope — L: local .claude/settings.json, G: global ~/.claude/settings.json)
+# Local scope walks up from CWD to find the repo root (.git), writes .claude/settings.json there
+# This means it sets the model for the repo you're in, not for alpha-mesh specifically
 ./scripts/model use minimax
 ./scripts/model use -g openrouter        # explicit global scope
 ./scripts/model use -l openrouter glm-5.1  # local scope with model override
