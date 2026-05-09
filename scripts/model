@@ -156,9 +156,33 @@ write_settings() {
   fi
 
   # Resolve target settings file based on scope
+  # local = repo root (walks up to find .git or .claude, then .claude/settings.json)
+  # global = $HOME/.claude/settings.json (affects all windows)
   local target_settings
   case "$scope" in
-    local)  target_settings="$BRAIN_DIR/.claude/settings.json" ;;
+    local)
+      # Walk up from CWD to find repo root (contains .git — true git repo marker)
+      repo_root="$PWD"
+      while [[ "$repo_root" != "/" ]]; do
+        if [[ -d "$repo_root/.git" ]]; then
+          break
+        fi
+        repo_root="$(dirname "$repo_root")"
+      done
+
+      # If no git repo found, confirm before writing to CWD
+      if [[ "$repo_root" == "/" ]]; then
+        echo "No git repo found. Write to \$PWD/.claude/settings.json?" >&2
+        read -rp "Confirm [y/N]: " confirm >&2
+        if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+          echo "Aborted." >&2
+          exit 1
+        fi
+        repo_root="$PWD"
+      fi
+
+      target_settings="$repo_root/.claude/settings.json"
+      ;;
     global) target_settings="$HOME/.claude/settings.json" ;;
     *)
       echo "ERROR: invalid scope '$scope'" >&2
@@ -195,8 +219,14 @@ write_settings() {
     cp "$target_settings" "$target_settings.bak"
   fi
 
-  # Write new settings
-  jq -n --argjson env "$env_block" '{"env": $env}' > "$target_settings"
+  # Merge with existing settings to preserve other top-level keys (e.g. hooks)
+  if [[ -f "$target_settings" ]]; then
+    local merged
+    merged=$(jq --argjson newenv "$env_block" '.env = $newenv' "$target_settings")
+    echo "$merged" > "$target_settings"
+  else
+    jq -n --argjson env "$env_block" '{"env": $env}' > "$target_settings"
+  fi
 
   # Write active profile record (always global — tracks which profile is globally active)
   jq -n \
@@ -224,7 +254,28 @@ case "$cmd" in
     desc=$(jq -r --arg p "$active" '.profiles[$p].description' "$MODELS_JSON")
     echo "Description: $desc"
     echo ""
-    echo "settings.json → $CLAUDE_SETTINGS"
+
+    # Show local scope (repo root — same path model use -l would write)
+    repo_root="$PWD"
+    while [[ "$repo_root" != "/" ]]; do
+      if [[ -d "$repo_root/.git" ]]; then
+        break
+      fi
+      repo_root="$(dirname "$repo_root")"
+    done
+    local_settings="$repo_root/.claude/settings.json"
+    if [[ -f "$local_settings" ]]; then
+      local_model=$(jq -r '.env.ANTHROPIC_MODEL // .env.ANTHROPIC_DEFAULT_SONNET_MODEL // "?"' "$local_settings")
+      echo "LOCAL:  $local_settings"
+      echo "        model: $local_model"
+    fi
+
+    # Show global scope
+    echo "GLOBAL: $CLAUDE_SETTINGS"
+    if [[ -f "$CLAUDE_SETTINGS" ]]; then
+      global_model=$(jq -r '.env.ANTHROPIC_MODEL // .env.ANTHROPIC_DEFAULT_SONNET_MODEL // "?"' "$CLAUDE_SETTINGS")
+      echo "        model: $global_model"
+    fi
     ;;
 
   use)
