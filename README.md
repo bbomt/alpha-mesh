@@ -6,15 +6,15 @@ The memory and orchestration layer for the PMAT agent system.
 
 ```
 alpha-mesh/
-├── config/                  # Model configs (replaces settings.json swapping)
-│   ├── models.json          # All model profiles
-│   └── active.json          # Currently active profile (gitignored)
-├── scripts/
+├── bin/                     # Executable scripts (symlinked to ~/bin)
 │   ├── model                # Switch/check model config
 │   ├── dream                # End-of-session memory consolidation
 │   ├── task-log             # Log a task entry
 │   ├── bootstrap-memory     # One-time: extract from existing Claude Code logs
-│   └── test-brain           # Validation test
+│   ├── test-alpha-mesh      # Validation test
+│   └── mesh                 # Unified CLI entry point (wraps all commands)
+├── config/                  # Model configs
+│   └── models.json          # All model profiles
 ├── tasks/
 │   └── task-log.db          # SQLite task log (gitignored, backed up separately)
 ├── memory/

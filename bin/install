@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# pmat-brain/scripts/install
-# Run once after cloning pmat-brain repo.
+# alpha-mesh/scripts/install
+# Run once after cloning alpha-mesh.
 
 set -euo pipefail
 

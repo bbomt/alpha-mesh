@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# alpha-mesh/mesh
+# alpha-mesh/scripts/mesh
 # Unified CLI entry point — dispatches to individual command scripts.
 # Usage: mesh <command> [args]
 #   e.g. mesh model use minimax
@@ -14,7 +14,7 @@ SCRIPTS_DIR="$(cd "$(dirname "$SCRIPT_REALPATH")" && pwd)"
 cmd="${1:-}"
 if [[ -z "$cmd" ]]; then
   echo "Usage: mesh <command> [args]" >&2
-  echo "Commands: model | task-log | dream | bootstrap-memory | test-brain" >&2
+  echo "Commands: model | task-log | dream | bootstrap-memory | test-alpha-mesh" >&2
   exit 1
 fi
 
@@ -23,13 +23,13 @@ case "$cmd" in
   task-log|task_log)     shift; exec "$SCRIPTS_DIR/task-log" "$@" ;;
   dream)                 shift; exec "$SCRIPTS_DIR/dream" "$@" ;;
   bootstrap-memory)      shift; exec "$SCRIPTS_DIR/bootstrap-memory" "$@" ;;
-  test-brain)            shift; exec "$SCRIPTS_DIR/test-brain" "$@" ;;
+  test-alpha-mesh)       shift; exec "$SCRIPTS_DIR/test-alpha-mesh" "$@" ;;
   help|--help|-h)        echo "Usage: mesh <command> [args]" >&2
-                         echo "Commands: model | task-log | dream | bootstrap-memory | test-brain" >&2
+                         echo "Commands: model | task-log | dream | bootstrap-memory | test-alpha-mesh" >&2
                          exit 0 ;;
   *)
     echo "ERROR: unknown command '$cmd'" >&2
-    echo "Commands: model | task-log | dream | bootstrap-memory | test-brain" >&2
+    echo "Commands: model | task-log | dream | bootstrap-memory | test-alpha-mesh" >&2
     exit 1
     ;;
 esac
