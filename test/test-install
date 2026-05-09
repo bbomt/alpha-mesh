@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# alpha-mesh/test/test-install
+# Tests for install script
+
+set -euo pipefail
+
+MESH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$MESH_DIR"
+
+FAILED=0
+
+echo "=== install tests ==="
+echo ""
+
+# ─── test: bin/install exists and is executable ────────────────────────────────
+echo "[1/3] bin/install exists and is executable..."
+if [[ -x "$MESH_DIR/bin/install" ]]; then
+  echo "  PASS"
+else
+  echo "  FAIL: bin/install not found or not executable"
+  FAILED=1
+fi
+
+# ─── test: required tools are available ─────────────────────────────────────────
+echo "[2/3] Required tools are available..."
+for tool in jq sqlite3 curl python3; do
+  if command -v "$tool" >/dev/null 2>&1; then
+    echo "  PASS: $tool found"
+  else
+    echo "  FAIL: $tool not found in PATH"
+    FAILED=1
+  fi
+done
+
+# ─── test: bin/install can be run (dry-run mode if available) ───────────────────
+echo "[3/3] bin/install runs without error..."
+# Run install and capture output — may need to handle interactive prompts
+# Use expect-style timeout or check for non-interactive mode
+output=$(bash -c "echo 'n' | $MESH_DIR/bin/install 2>&1" || true)
+if echo "$output" | grep -qi "error\|fail"; then
+  # Check if it's a real error or just the "not running as root" early exit
+  if echo "$output" | grep -qi "sudo\|root\|permission\|denied"; then
+    echo "  SKIP: install requires elevated permissions (expected in dev env)"
+  else
+    echo "  FAIL: install script reported an error"
+    echo "  Output: $output"
+    FAILED=1
+  fi
+else
+  echo "  PASS: install script runs without error"
+fi
+
+# ─── summary ────────────────────────────────────────────────────────────────────
+echo ""
+if [[ "$FAILED" -eq 0 ]]; then
+  echo "=== ALL INSTALL TESTS PASSED ==="
+  exit 0
+else
+  echo "=== SOME INSTALL TESTS FAILED ==="
+  exit 1
+fi

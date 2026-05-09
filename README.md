@@ -11,7 +11,7 @@ alpha-mesh/
 │   ├── dream                # End-of-session memory consolidation
 │   ├── task-log             # Log a task entry
 │   ├── bootstrap-memory     # One-time: extract from existing Claude Code logs
-│   ├── test-alpha-mesh      # Validation test
+│   ├── test/                 # Test suites (run via test/run-all)
 │   └── mesh                 # Unified CLI entry point (wraps all commands)
 ├── config/                  # Model configs
 │   └── models.json          # All model profiles

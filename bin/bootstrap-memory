@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# pmat-brain/scripts/bootstrap-memory
+# alpha-mesh/bin/bootstrap-memory
 # ONE-TIME SCRIPT: Extract learnings from weeks of existing Claude Code sessions.
 # Run once to seed your memory system from historical data.
 # Usage: bootstrap-memory [--days 30] [--dry-run]
 
 set -euo pipefail
 
-BRAIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+MESH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CLAUDE_PROJECTS="$HOME/.claude/projects"
-MODELS_JSON="$BRAIN_DIR/config/models.json"
-ENV_FILE="$BRAIN_DIR/.env"
-BOOTSTRAP_DIR="$BRAIN_DIR/memory/bootstrap"
-LEARNINGS_DIR="$BRAIN_DIR/memory/learnings"
+MODELS_JSON="$MESH_DIR/config/models.json"
+ENV_FILE="$MESH_DIR/.env"
+BOOTSTRAP_DIR="$MESH_DIR/memory/bootstrap"
+LEARNINGS_DIR="$MESH_DIR/memory/learnings"
 
 mkdir -p "$BOOTSTRAP_DIR" "$LEARNINGS_DIR"
 

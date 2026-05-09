@@ -4,10 +4,10 @@
 
 set -euo pipefail
 
-BRAIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+MESH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-echo "=== PMAT Brain Install ==="
-echo "Brain dir: $BRAIN_DIR"
+echo "=== PMAT alpha-mesh install ==="
+echo "Mesh dir: $MESH_DIR"
 echo ""
 
 # ─── Check dependencies ─────────────────────────────────────────────────────
@@ -34,25 +34,25 @@ echo ""
 
 # ─── Make scripts executable ────────────────────────────────────────────────
 echo "Setting script permissions..."
-chmod +x "$BRAIN_DIR/bin/"*
+chmod +x "$MESH_DIR/bin/"*
 echo "  ✓ done"
 echo ""
 
 # ─── Create directory structure ─────────────────────────────────────────────
 echo "Creating directories..."
 mkdir -p \
-  "$BRAIN_DIR/config" \
-  "$BRAIN_DIR/tasks" \
-  "$BRAIN_DIR/memory/sessions" \
-  "$BRAIN_DIR/memory/learnings" \
-  "$BRAIN_DIR/memory/skills" \
-  "$BRAIN_DIR/memory/bootstrap"
+  "$MESH_DIR/config" \
+  "$MESH_DIR/tasks" \
+  "$MESH_DIR/memory/sessions" \
+  "$MESH_DIR/memory/learnings" \
+  "$MESH_DIR/memory/skills" \
+  "$MESH_DIR/memory/bootstrap"
 echo "  ✓ done"
 echo ""
 
 # ─── Initialise empty learnings files ───────────────────────────────────────
 for topic in architecture deployment testing models workflow patterns; do
-  f="$BRAIN_DIR/memory/learnings/$topic.md"
+  f="$MESH_DIR/memory/learnings/$topic.md"
   if [[ ! -f "$f" ]]; then
     echo "# $topic learnings" > "$f"
     echo "<!-- appended by dream script after each session -->" >> "$f"
@@ -62,7 +62,7 @@ echo "  ✓ learnings files initialised"
 echo ""
 
 # ─── Write .gitignore ───────────────────────────────────────────────────────
-cat > "$BRAIN_DIR/.gitignore" <<'EOF'
+cat > "$MESH_DIR/.gitignore" <<'EOF'
 # secrets — never commit
 config/active.json
 
@@ -93,7 +93,7 @@ fi
 # Symlink scripts into ~/bin for portable PATH-free access
 echo "Creating symlinks in ~/bin..."
 mkdir -p "$HOME/bin"
-for script in "$BRAIN_DIR/bin/"*; do
+for script in "$MESH_DIR/bin/"*; do
   name="$(basename "$script")"
   link="$HOME/bin/$name"
   if [[ -L "$link" ]]; then

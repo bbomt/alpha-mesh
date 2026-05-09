@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# pmat-brain/scripts/dream
+# alpha-mesh/bin/dream
 # End-of-session consolidation. Run this when you finish your work window.
 # Reads: Claude Code session logs + task-log entries from today
 # Writes: memory/sessions/YYYY-MM-DD-HHmm.md
@@ -7,12 +7,12 @@
 
 set -euo pipefail
 
-BRAIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+MESH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CLAUDE_PROJECTS="$HOME/.claude/projects"
-SESSION_DIR="$BRAIN_DIR/memory/sessions"
-LEARNINGS_DIR="$BRAIN_DIR/memory/learnings"
-MODELS_JSON="$BRAIN_DIR/config/models.json"
-ENV_FILE="$BRAIN_DIR/.env"
+SESSION_DIR="$MESH_DIR/memory/sessions"
+LEARNINGS_DIR="$MESH_DIR/memory/learnings"
+MODELS_JSON="$MESH_DIR/config/models.json"
+ENV_FILE="$MESH_DIR/.env"
 
 mkdir -p "$SESSION_DIR" "$LEARNINGS_DIR"
 
@@ -32,7 +32,7 @@ echo ""
 
 # ─── 1. Collect today's task log ────────────────────────────────────────────
 echo "Collecting task log..."
-TASK_DATA=$("$BRAIN_DIR/scripts/task-log" export 1 2>/dev/null || echo "[]")
+TASK_DATA=$("$MESH_DIR/bin/task-log" export 1 2>/dev/null || echo "[]")
 
 # ─── 2. Collect Claude Code session content from today ──────────────────────
 echo "Collecting Claude Code session logs..."

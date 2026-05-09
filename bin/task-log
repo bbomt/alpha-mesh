@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# pmat-brain/scripts/task-log
+# alpha-mesh/bin/task-log
 # Log tasks keyed on Jira ticket ID.
 # Usage:
 #   task-log start PMAT-161 "Fix auth redirect bug" --repo PMATFE-auth
@@ -10,8 +10,8 @@
 
 set -euo pipefail
 
-BRAIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DB="$BRAIN_DIR/tasks/task-log.db"
+MESH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+DB="${TASK_DB:-$MESH_DIR/tasks/task-log.db}"
 
 # Ensure DB and table exist
 init_db() {
@@ -39,12 +39,28 @@ SQL
 }
 
 get_active_model() {
-  local active_json="$BRAIN_DIR/config/active.json"
-  if [[ -f "$active_json" ]]; then
-    jq -r '.profile' "$active_json" 2>/dev/null || echo "unknown"
-  else
-    echo "unknown"
+  # Walk up from CWD to find repo root (.git), check local .claude/settings.json
+  # Fall back to global ~/.claude/settings.json
+  local repo_root="$PWD"
+  while [[ "$repo_root" != "/" ]]; do
+    if [[ -d "$repo_root/.git" ]]; then
+      break
+    fi
+    repo_root="$(dirname "$repo_root")"
+  done
+
+  local local_settings="$repo_root/.claude/settings.json"
+  local global_settings="$HOME/.claude/settings.json"
+
+  local model=""
+  if [[ -f "$local_settings" ]]; then
+    model=$(jq -r '.env.ANTHROPIC_MODEL // .env.ANTHROPIC_DEFAULT_SONNET_MODEL // ""' "$local_settings" 2>/dev/null || echo "")
   fi
+  if [[ -z "$model" || "$model" == "null" ]] && [[ -f "$global_settings" ]]; then
+    model=$(jq -r '.env.ANTHROPIC_MODEL // .env.ANTHROPIC_DEFAULT_SONNET_MODEL // ""' "$global_settings" 2>/dev/null || echo "")
+  fi
+
+  echo "${model:-unknown}"
 }
 
 cmd="${1:-}"

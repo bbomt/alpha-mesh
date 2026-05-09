@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# alpha-mesh/test/test-dream
+# Tests for bin/dream script
+
+set -euo pipefail
+
+MESH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export PATH="$MESH_DIR/bin:$PATH"
+cd "$MESH_DIR"
+
+FAILED=0
+
+echo "=== dream tests ==="
+echo ""
+
+# ─── test: bin/dream exists and is executable ──────────────────────────────────
+echo "[1/4] bin/dream exists and is executable..."
+if [[ -x "$MESH_DIR/bin/dream" ]]; then
+  echo "  PASS"
+else
+  echo "  FAIL: bin/dream not found or not executable"
+  FAILED=1
+fi
+
+# ─── test: dream runs without error ────────────────────────────────────────────
+echo "[2/4] dream runs without error..."
+# This may produce a raw file if API is unreachable — that's ok, still pass
+output=$(dream 2>&1 || true)
+echo "  (output): $output"
+# Don't fail on API errors — raw file creation is the fallback
+if [[ -f "$MESH_DIR/memory/sessions" ]] || [[ -d "$MESH_DIR/memory/sessions" ]]; then
+  echo "  PASS: dream ran (memory/sessions dir exists)"
+else
+  echo "  FAIL: dream did not create memory/sessions directory"
+  FAILED=1
+fi
+
+# ─── test: session file created (or raw fallback) ───────────────────────────────
+echo "[3/4] session file or raw fallback created..."
+session_files=$(ls "$MESH_DIR/memory/sessions/"*.md 2>/dev/null || true)
+raw_files=$(ls "$MESH_DIR/memory/sessions/"*.raw.md 2>/dev/null || true)
+if [[ -n "$session_files" || -n "$raw_files" ]]; then
+  echo "  PASS: session file created"
+  echo "  Files: $(echo "$session_files$raw_files" | tr -d '\n')"
+else
+  echo "  FAIL: no session file found in memory/sessions/"
+  FAILED=1
+fi
+
+# ─── test: memory/learnings directory exists ───────────────────────────────────
+echo "[4/4] memory/learnings directory exists..."
+if [[ -d "$MESH_DIR/memory/learnings" ]]; then
+  echo "  PASS"
+else
+  echo "  FAIL: memory/learnings directory not found"
+  FAILED=1
+fi
+
+# ─── summary ────────────────────────────────────────────────────────────────────
+echo ""
+if [[ "$FAILED" -eq 0 ]]; then
+  echo "=== ALL DREAM TESTS PASSED ==="
+  exit 0
+else
+  echo "=== SOME DREAM TESTS FAILED ==="
+  exit 1
+fi

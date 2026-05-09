@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+# alpha-mesh/test/test-model
+# Tests for bin/model script
+
+set -euo pipefail
+
+MESH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export PATH="$MESH_DIR/bin:$PATH"
+cd "$MESH_DIR"
+
+FAILED=0
+
+echo "=== model tests ==="
+echo ""
+
+# ─── helpers ───────────────────────────────────────────────────────────────────
+jq_ok() { jq '.' "$1" >/dev/null 2>&1; }
+
+# ─── test: bin/model exists and is executable ──────────────────────────────────
+echo "[1/7] bin/model exists and is executable..."
+if [[ -x "$MESH_DIR/bin/model" ]]; then
+  echo "  PASS"
+else
+  echo "  FAIL: bin/model not found or not executable"
+  FAILED=1
+fi
+
+# ─── test: config/models.json is valid JSON ─────────────────────────────────────
+echo "[2/7] config/models.json is valid JSON..."
+if jq_ok "$MESH_DIR/config/models.json"; then
+  echo "  PASS"
+else
+  echo "  FAIL: config/models.json is not valid JSON"
+  FAILED=1
+fi
+
+# ─── test: required profiles exist ──────────────────────────────────────────────
+echo "[3/7] Required profiles exist..."
+for profile in minimax openrouter-default claude-sonnet; do
+  if jq -e --arg p "$profile" '.profiles[$p]' "$MESH_DIR/config/models.json" >/dev/null 2>&1; then
+    echo "  PASS: $profile exists"
+  else
+    echo "  FAIL: $profile not found in config/models.json"
+    FAILED=1
+  fi
+done
+
+# ─── test: model list outputs table ─────────────────────────────────────────────
+echo "[4/7] model list outputs profiles..."
+output=$(model list 2>&1)
+if echo "$output" | grep -q "minimax"; then
+  echo "  PASS: model list shows minimax"
+else
+  echo "  FAIL: model list did not show minimax"
+  FAILED=1
+fi
+if echo "$output" | grep -q "openrouter"; then
+  echo "  PASS: model list shows openrouter"
+else
+  echo "  FAIL: model list did not show openrouter"
+  FAILED=1
+fi
+
+# ─── test: model status works ───────────────────────────────────────────────────
+echo "[5/7] model status works..."
+if model status >/dev/null 2>&1; then
+  echo "  PASS"
+else
+  echo "  FAIL: model status returned error"
+  FAILED=1
+fi
+
+# ─── test: model use -g writes to global settings and backs up ─────────────────
+echo "[6/7] model use -g writes to global settings and backs up..."
+global_settings="$HOME/.claude/settings.json"
+backup_file="$global_settings.pre-alpha-mesh.bak"
+
+# Clean up any previous test artifacts
+rm -f "$global_settings" "$backup_file"
+
+# Create a pre-existing settings file so there's something to back up
+mkdir -p "$(dirname "$global_settings")"
+echo '{"env": {"ANTHROPIC_MODEL": "old-model"}}' > "$global_settings"
+
+model use -g minimax >/dev/null 2>&1
+if [[ -f "$global_settings" ]]; then
+  echo "  PASS: global settings file created"
+else
+  echo "  FAIL: global settings file not created"
+  FAILED=1
+fi
+
+if [[ -f "$backup_file" ]]; then
+  echo "  PASS: backup file created with correct suffix"
+else
+  echo "  FAIL: backup file not created with correct suffix"
+  FAILED=1
+fi
+
+# Verify content has ANTHROPIC_MODEL
+if jq -e '.env.ANTHROPIC_MODEL' "$global_settings" >/dev/null 2>&1; then
+  echo "  PASS: settings contains ANTHROPIC_MODEL"
+else
+  echo "  FAIL: settings missing ANTHROPIC_MODEL"
+  FAILED=1
+fi
+
+# Verify backed up content was the old model
+if [[ -f "$backup_file" ]] && jq -r '.env.ANTHROPIC_MODEL' "$backup_file" | grep -q "old-model"; then
+  echo "  PASS: backup contains previous model"
+else
+  echo "  FAIL: backup does not contain previous model"
+  FAILED=1
+fi
+
+# Restore previous state if it existed, else clean up
+if [[ -f "$backup_file" ]]; then
+  cp "$backup_file" "$global_settings"
+  rm -f "$backup_file"
+else
+  rm -f "$global_settings"
+fi
+
+# ─── test: model use -l writes to local settings ────────────────────────────────
+echo "[7/7] model use -l writes to local settings..."
+# Use a temp directory for local test — create a fake .git so no confirmation prompt
+tmp_dir=$(mktemp -d)
+mkdir "$tmp_dir/.git"
+cd "$tmp_dir"
+local_settings="$tmp_dir/.claude/settings.json"
+
+echo "y" | model use -l minimax >/dev/null 2>&1
+if [[ -f "$local_settings" ]]; then
+  echo "  PASS: local settings file created at $local_settings"
+else
+  echo "  FAIL: local settings file not created"
+  FAILED=1
+fi
+
+# Clean up
+rm -rf "$tmp_dir"
+cd "$MESH_DIR"
+
+# ─── summary ────────────────────────────────────────────────────────────────────
+echo ""
+if [[ "$FAILED" -eq 0 ]]; then
+  echo "=== ALL MODEL TESTS PASSED ==="
+  exit 0
+else
+  echo "=== SOME MODEL TESTS FAILED ==="
+  exit 1
+fi

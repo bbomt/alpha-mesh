@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# alpha-mesh/scripts/model
+# alpha-mesh/bin/model
 # Replaces manual settings.json swapping.
 # Tokens: stored in env vars or .env (never commit secrets to GitHub)
 #
@@ -28,9 +28,9 @@ set -euo pipefail
 
 # Resolve script's real directory regardless of cwd
 SCRIPT_REALPATH="$(readlink -f "${BASH_SOURCE[0]}")"
-BRAIN_DIR="$(cd "$(dirname "$SCRIPT_REALPATH")/.." && pwd)"
-MODELS_JSON="$BRAIN_DIR/config/models.json"
-ENV_FILE="$BRAIN_DIR/.env"
+MESH_DIR="$(cd "$(dirname "$SCRIPT_REALPATH")/.." && pwd)"
+MODELS_JSON="$MESH_DIR/config/models.json"
+ENV_FILE="$MESH_DIR/.env"
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
 
 # Requires jq
@@ -207,7 +207,7 @@ write_settings() {
 
   # Backup existing settings
   if [[ -f "$target_settings" ]]; then
-    cp "$target_settings" "$target_settings.bak"
+    cp "$target_settings" "$target_settings.pre-alpha-mesh.bak"
   fi
 
   # Merge with existing settings to preserve other top-level keys (e.g. hooks)
@@ -283,7 +283,7 @@ case "$cmd" in
         profile="$first"
         model_override="${3:-}"
         echo "Choose scope:" >&2
-        echo "  L) LOCAL  — $BRAIN_DIR/.claude/settings.json (repo-level, takes precedence)" >&2
+        echo "  L) LOCAL  — $MESH_DIR/.claude/settings.json (repo-level, takes precedence)" >&2
         echo "  G) GLOBAL — $HOME/.claude/settings.json (affects all windows)" >&2
         read -rp "Select L-G [L]: " reply >&2
         scope="local"
