@@ -17,9 +17,13 @@ alpha-mesh/
 │   ├── model                # Model switching (local/global scope)
 │   ├── dream                # End-of-session memory consolidation
 │   ├── task-log             # SQLite-backed task log
-│   ├── bootstrap-memory    # Extract memory from existing Claude Code logs
-│   ├── test/                 # Test suites (run via test/run-all)
+│   ├── bootstrap-memory     # Extract memory from existing Claude Code logs
+│   ├── lib/                  # Shared library
+│   │   └── repo              # find_repo_root, get_active_model_from_settings
 │   └── install              # One-time setup (run after clone)
+├── test/
+│   ├── run-all              # Runs all test suites
+│   └── test-*               # Individual test suites
 ├── config/
 │   └── models.json          # Model profiles (provider, URL, default model)
 └── memory/
