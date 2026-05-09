@@ -11,7 +11,12 @@
 set -euo pipefail
 
 MESH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+LIB_DIR="$MESH_DIR/bin/lib"
 DB="${TASK_DB:-$MESH_DIR/tasks/task-log.db}"
+
+# Load shared library
+# shellcheck source=bin/lib/repo
+source "$LIB_DIR/repo"
 
 # Ensure DB and table exist
 init_db() {
@@ -39,28 +44,7 @@ SQL
 }
 
 get_active_model() {
-  # Walk up from CWD to find repo root (.git), check local .claude/settings.json
-  # Fall back to global ~/.claude/settings.json
-  local repo_root="$PWD"
-  while [[ "$repo_root" != "/" ]]; do
-    if [[ -d "$repo_root/.git" ]]; then
-      break
-    fi
-    repo_root="$(dirname "$repo_root")"
-  done
-
-  local local_settings="$repo_root/.claude/settings.json"
-  local global_settings="$HOME/.claude/settings.json"
-
-  local model=""
-  if [[ -f "$local_settings" ]]; then
-    model=$(jq -r '.env.ANTHROPIC_MODEL // .env.ANTHROPIC_DEFAULT_SONNET_MODEL // ""' "$local_settings" 2>/dev/null || echo "")
-  fi
-  if [[ -z "$model" || "$model" == "null" ]] && [[ -f "$global_settings" ]]; then
-    model=$(jq -r '.env.ANTHROPIC_MODEL // .env.ANTHROPIC_DEFAULT_SONNET_MODEL // ""' "$global_settings" 2>/dev/null || echo "")
-  fi
-
-  echo "${model:-unknown}"
+  get_active_model_from_settings
 }
 
 cmd="${1:-}"

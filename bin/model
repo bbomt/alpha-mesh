@@ -29,9 +29,14 @@ set -euo pipefail
 # Resolve script's real directory regardless of cwd
 SCRIPT_REALPATH="$(readlink -f "${BASH_SOURCE[0]}")"
 MESH_DIR="$(cd "$(dirname "$SCRIPT_REALPATH")/.." && pwd)"
+LIB_DIR="$MESH_DIR/bin/lib"
 MODELS_JSON="$MESH_DIR/config/models.json"
 ENV_FILE="$MESH_DIR/.env"
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
+
+# Load shared library
+# shellcheck source=bin/lib/repo
+source "$LIB_DIR/repo"
 
 # Requires jq
 if ! command -v jq &>/dev/null; then
@@ -152,14 +157,7 @@ write_settings() {
   local target_settings
   case "$scope" in
     local)
-      # Walk up from CWD to find repo root (contains .git — true git repo marker)
-      repo_root="$PWD"
-      while [[ "$repo_root" != "/" ]]; do
-        if [[ -d "$repo_root/.git" ]]; then
-          break
-        fi
-        repo_root="$(dirname "$repo_root")"
-      done
+      repo_root=$(find_repo_root)
 
       # If no git repo found, confirm before writing to CWD
       if [[ "$repo_root" == "/" ]]; then
@@ -235,13 +233,7 @@ case "$cmd" in
     echo ""
 
     # Show local scope (repo root — same path model use -l would write)
-    repo_root="$PWD"
-    while [[ "$repo_root" != "/" ]]; do
-      if [[ -d "$repo_root/.git" ]]; then
-        break
-      fi
-      repo_root="$(dirname "$repo_root")"
-    done
+    repo_root=$(find_repo_root)
     local_settings="$repo_root/.claude/settings.json"
     if [[ -f "$local_settings" ]]; then
       local_model=$(jq -r '.env.ANTHROPIC_MODEL // .env.ANTHROPIC_DEFAULT_SONNET_MODEL // "?"' "$local_settings")
