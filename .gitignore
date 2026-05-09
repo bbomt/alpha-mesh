@@ -1,9 +1,16 @@
+# local model settings — per-repo, never commit
+.claude/
+
 # secrets — never commit
+.env
 config/active.json
 
 # local DB — back up separately, don't commit
 tasks/task-log.db
 tasks/*.db
+
+# session output — generated, not code
+memory/sessions/
 
 # raw bootstrap content (too large, keep locally)
 memory/bootstrap/
