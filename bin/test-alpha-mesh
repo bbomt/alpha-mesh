@@ -5,7 +5,7 @@
 set -euo pipefail
 
 BRAIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-export PATH="$BRAIN_DIR/scripts:$PATH"
+export PATH="$BRAIN_DIR/bin:$PATH"
 cd "$BRAIN_DIR"
 
 FAILED=0
@@ -38,7 +38,7 @@ echo ""
 
 # ─── 1. Scripts are executable ────────────────────────────────────────────────
 echo "[1/5] Checking scripts are executable..."
-for script in "$BRAIN_DIR/scripts/model" "$BRAIN_DIR/scripts/task-log" "$BRAIN_DIR/scripts/dream" "$BRAIN_DIR/scripts/bootstrap-memory" "$BRAIN_DIR/scripts/install" "$BRAIN_DIR/scripts/test-alpha-mesh"; do
+for script in "$BRAIN_DIR/bin/model" "$BRAIN_DIR/bin/task-log" "$BRAIN_DIR/bin/dream" "$BRAIN_DIR/bin/bootstrap-memory" "$BRAIN_DIR/bin/install" "$BRAIN_DIR/bin/test-alpha-mesh"; do
   if [[ ! -x "$script" ]]; then
     echo "  FAIL: $script is not executable"
     FAILED=1

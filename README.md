@@ -38,7 +38,7 @@ alpha-mesh/
 # Install (run once)
 cd ~/environment/pmat
 git clone <this-repo> alpha-mesh
-cd alpha-mesh && ./scripts/install
+cd alpha-mesh && ./bin/install
 
 # The `mesh` CLI is now available globally — prefix for all commands:
 # Switch model (prompts for scope — L: local .claude/settings.json, G: global ~/.claude/settings.json)

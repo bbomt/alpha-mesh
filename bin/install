@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# alpha-mesh/scripts/install
+# alpha-mesh/bin/install
 # Run once after cloning alpha-mesh.
 
 set -euo pipefail
@@ -34,7 +34,7 @@ echo ""
 
 # ─── Make scripts executable ────────────────────────────────────────────────
 echo "Setting script permissions..."
-chmod +x "$BRAIN_DIR/scripts/"*
+chmod +x "$BRAIN_DIR/bin/"*
 echo "  ✓ done"
 echo ""
 
@@ -93,7 +93,7 @@ fi
 # Symlink scripts into ~/bin for portable PATH-free access
 echo "Creating symlinks in ~/bin..."
 mkdir -p "$HOME/bin"
-for script in "$BRAIN_DIR/scripts/"*; do
+for script in "$BRAIN_DIR/bin/"*; do
   name="$(basename "$script")"
   link="$HOME/bin/$name"
   if [[ -L "$link" ]]; then
@@ -121,7 +121,7 @@ CLAUDE_SETTINGS="$HOME/.claude/settings.json"
 if [[ -f "$CLAUDE_SETTINGS" ]]; then
   cp "$CLAUDE_SETTINGS" "$CLAUDE_SETTINGS.pre-alpha-mesh.bak"
   echo "  ✓ Backed up existing settings.json → settings.json.pre-alpha-mesh.bak"
-  echo "    (alpha-mesh/scripts/model will manage this file from now on)"
+  echo "    (alpha-mesh/bin/model will manage this file from now on)"
   echo ""
 fi
 

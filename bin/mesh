@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# alpha-mesh/scripts/mesh
+# alpha-mesh/bin/mesh
 # Unified CLI entry point — dispatches to individual command scripts.
 # Usage: mesh <command> [args]
 #   e.g. mesh model use minimax
