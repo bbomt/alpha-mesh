@@ -1,254 +1,544 @@
 #!/usr/bin/env bash
 # alpha-mesh/bin/dream
-# End-of-session consolidation. Run this when you finish your work window.
-# Reads: Claude Code session logs + task-log entries from today
-# Writes: memory/sessions/YYYY-MM-DD-HHmm.md
-# Optionally: updates memory/learnings/*.md topic files
+# End-of-session memory consolidation.
+# Reads: Claude Code session logs (~/.claude/projects/*.jsonl)
+# Writes: .mesh/MEMORY.md in each repo worked in (synthesis rewrite)
+#         ~/.mesh/MEMORY.md for cross-repo learnings
+#
+# Usage:
+#   dream              # process today's sessions (default)
+#   dream --dry-run    # print extracted content, write nothing
+#   dream --5-days     # process sessions from last 5 days
+#   dream --days 3     # process sessions from last 3 days
 
 set -euo pipefail
 
 MESH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+LIB_DIR="$MESH_DIR/bin/lib"
 CLAUDE_PROJECTS="$HOME/.claude/projects"
-SESSION_DIR="$MESH_DIR/memory/sessions"
-LEARNINGS_DIR="$MESH_DIR/memory/learnings"
-MODELS_JSON="$MESH_DIR/config/models.json"
 ENV_FILE="$MESH_DIR/.env"
+LOCAL_SETTINGS="$MESH_DIR/.claude/settings.json"
 
-mkdir -p "$SESSION_DIR" "$LEARNINGS_DIR"
+# Load shared library
+# shellcheck source=bin/lib/repo
+source "$LIB_DIR/repo"
 
-# Load .env if it exists (env vars take precedence over models.json)
+# Load .env if it exists
 if [[ -f "$ENV_FILE" ]]; then
   set -a
   source "$ENV_FILE"
   set +a
 fi
 
-TS=$(date +%Y-%m-%d-%H%M)
-DATE=$(date +%Y-%m-%d)
-OUTPUT="$SESSION_DIR/$TS.md"
+# ─── Parse args ──────────────────────────────────────────────────────────────
+DRY_RUN=false
+DAYS_BACK=0  # 0 = today only
 
-echo "=== PMAT Dream: $TS ==="
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dry-run) DRY_RUN=true; shift ;;
+    --5-days) DAYS_BACK=5; shift ;;
+    --days) DAYS_BACK="$2"; shift 2 ;;
+    *) echo "Unknown option: $1" >&2; exit 1 ;;
+  esac
+done
+
+DATE=$(date +%Y-%m-%d)
+TIMESTAMP=$(date +%Y-%m-%d-%H%M)
+
+# Determine cutoff date for session file selection
+if [[ "$DAYS_BACK" -gt 0 ]]; then
+  if date -u -d "$DAYS_BACK days ago" +%Y-%m-%d &>/dev/null; then
+    CUTOFF=$(date -u -d "$DAYS_BACK days ago" +%Y-%m-%d)
+  else
+    CUTOFF=$(date -u -v-${DAYS_BACK}d +%Y-%m-%d)
+  fi
+  WINDOW_LABEL="last $DAYS_BACK days"
+else
+  CUTOFF="$DATE"
+  WINDOW_LABEL="today"
+fi
+
+echo "=== PMAT Dream: $DATE ==="
+echo "Window: $WINDOW_LABEL (since $CUTOFF)"
 echo ""
 
-# ─── 1. Collect today's task log ────────────────────────────────────────────
-echo "Collecting task log..."
-TASK_DATA=$("$MESH_DIR/bin/task-log" export 1 2>/dev/null || echo "[]")
-
-# ─── 2. Collect Claude Code session content from today ──────────────────────
-echo "Collecting Claude Code session logs..."
-
-SESSION_CONTENT=""
-if [[ -d "$CLAUDE_PROJECTS" ]]; then
-  # Claude Code stores projects as encoded directory names
-  # Each project dir contains JSONL conversation files
-
-  while IFS= read -r -d '' jsonl_file; do
-    # Check if file was modified today
-    file_date=$(date -r "$jsonl_file" +%Y-%m-%d 2>/dev/null || \
-                stat -f %Sm -t %Y-%m-%d "$jsonl_file" 2>/dev/null || echo "unknown")
-
-    if [[ "$file_date" == "$DATE" ]]; then
-      # Extract text content from JSONL (assistant messages only, skip tool calls)
-      content=$(python3 - "$jsonl_file" <<'PYEOF'
-import sys, json
-
-filepath = sys.argv[1]
-messages = []
-try:
-    with open(filepath) as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                obj = json.loads(line)
-                # Claude Code JSONL format: each line is a message or event
-                # Handle both direct message format and wrapped format
-                msg = obj if 'role' in obj else obj.get('message', {})
-                role = msg.get('role', '')
-                content = msg.get('content', '')
-
-                if role == 'assistant' and isinstance(content, list):
-                    for block in content:
-                        if isinstance(block, dict) and block.get('type') == 'text':
-                            text = block.get('text', '').strip()
-                            if text and len(text) > 50:  # skip trivial responses
-                                messages.append(f"[assistant] {text[:500]}")
-                elif role == 'user' and isinstance(content, str) and len(content) > 10:
-                    messages.append(f"[user] {content[:200]}")
-                elif role == 'user' and isinstance(content, list):
-                    for block in content:
-                        if isinstance(block, dict) and block.get('type') == 'text':
-                            text = block.get('text', '').strip()
-                            if text and len(text) > 10:
-                                messages.append(f"[user] {text[:200]}")
-            except json.JSONDecodeError:
-                continue
-except Exception as e:
-    print(f"[error reading file: {e}]")
-
-print('\n'.join(messages[-50:]))  # last 50 exchanges to stay within context
-PYEOF
-      )
-      if [[ -n "$content" ]]; then
-        # Decode Claude Code's project directory naming:
-        # "home-environment-pmat-PMATFE-sales-abc123" → "~/pmat/PMATFE/sales"
-        proj_dir=$(dirname "$jsonl_file")
-        proj_name=$(basename "$proj_dir" | sed 's/-[^-]*$//;s/-/\//g' | sed 's/^home\///;s/environment\//~/') 
-        SESSION_CONTENT+="### Session: $proj_name\n$content\n\n"
-      fi
-    fi
-  done < <(find "$CLAUDE_PROJECTS" -name "*.jsonl" -print0 2>/dev/null)
-fi
-
-if [[ -z "$SESSION_CONTENT" ]]; then
-  SESSION_CONTENT="No Claude Code sessions found for today."
-fi
-
-# ─── 3. Get active model for the API call ───────────────────────────────────
-MINIMAX_KEY="${ALPHA_MESH_MINIMAX_TOKEN:-}"
-if [[ -z "$MINIMAX_KEY" && -f "$MODELS_JSON" ]]; then
-  MINIMAX_KEY=$(jq -r '.profiles.minimax.env.ANTHROPIC_AUTH_TOKEN' "$MODELS_JSON" 2>/dev/null || echo "")
-fi
-
-if [[ -z "$MINIMAX_KEY" || "$MINIMAX_KEY" == "REPLACE_WITH_YOUR_MINIMAX_KEY" ]]; then
-  echo "WARNING: Minimax key not configured. Writing raw notes only."
-  {
-    echo "# Dream Session: $TS"
-    echo "## Task Log (raw)"
-    echo "$TASK_DATA"
-    echo "## Session Content (raw)"
-    echo -e "$SESSION_CONTENT"
-  } > "$OUTPUT"
-  echo "Written (raw): $OUTPUT"
+# ─── 1. Find and extract JSONL session files ─────────────────────────────────
+if [[ ! -d "$CLAUDE_PROJECTS" ]]; then
+  echo "No Claude Code projects directory found at $CLAUDE_PROJECTS"
+  echo "Has Claude Code been used in this environment?"
   exit 0
 fi
 
-# ─── 4. Call LLM to consolidate ─────────────────────────────────────────────
-echo "Consolidating with LLM..."
+echo "Scanning $CLAUDE_PROJECTS ..."
 
-PROMPT="You are a learning extraction system for a software development operation called PMAT.
+EXTRACTED_DATA=$(python3 - "$CLAUDE_PROJECTS" "$CUTOFF" 2>/dev/null || true <<'PYEOF'
+import sys, json, os, re
+from collections import defaultdict, Counter
 
-Below is the raw material from today's work session. Extract structured learnings.
+projects_dir = sys.argv[1]
+cutoff = sys.argv[2]
 
-## TASK LOG (JSON)
-$TASK_DATA
+repo_data = defaultdict(lambda: {"content_lines": [], "dates": set()})
+file_count = 0
 
-## SESSION CONTENT (excerpts from Claude Code conversations)
-$(echo -e "$SESSION_CONTENT")
+for root, dirs, files in os.walk(projects_dir):
+    for fname in files:
+        if not fname.endswith('.jsonl'):
+            continue
+        fpath = os.path.join(root, fname)
 
----
+        try:
+            mtime = os.path.getmtime(fpath)
+            import time
+            fdate = time.strftime('%Y-%m-%d', time.gmtime(mtime))
+        except OSError:
+            continue
 
-Please produce a markdown document with exactly these sections:
+        if fdate < cutoff:
+            continue
 
-# Dream Session: $DATE
+        file_count += 1
+        cwds = set()
+        messages = []
+        error_lines = []
 
-## Summary
-2-3 sentences: what was worked on, what shipped.
+        try:
+            with open(fpath) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        obj = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
 
-## What Worked
-Specific techniques, approaches, or patterns that produced good results today.
+                    cwd = obj.get('cwd')
+                    if cwd:
+                        cwds.add(cwd)
 
-## What Failed or Struggled
-Problems hit, models that didn't work, approaches abandoned and why.
+                    msg = obj.get('message', {})
+                    if 'role' not in msg:
+                        msg = obj
+                    role = msg.get('role', '')
+                    content = msg.get('content', '')
 
-## Open Questions
-Unresolved questions or decisions that need to come back to.
+                    if role == 'assistant' and isinstance(content, list):
+                        for block in content:
+                            if isinstance(block, dict) and block.get('type') == 'text':
+                                text = block.get('text', '').strip()
+                                if text and len(text) > 100:
+                                    messages.append(f"[assistant] {text[:800]}")
 
-## Learnings
-Distilled lessons — things that should influence future sessions.
-Format each as: **[TOPIC]** Learning text.
-Topics should be one of: ARCHITECTURE, DEPLOYMENT, TESTING, MODEL, WORKFLOW, PATTERN
+                    elif role == 'user':
+                        text = ''
+                        if isinstance(content, str):
+                            text = content.strip()
+                        elif isinstance(content, list):
+                            for block in content:
+                                if isinstance(block, dict) and block.get('type') == 'text':
+                                    text = block.get('text', '').strip()
+                                    break
+                        if text and len(text) > 20 and not text.startswith('/'):
+                            messages.append(f"[user] {text[:300]}")
 
-## Skills Observed
-Any repeated procedure or workflow that could be codified as a reusable skill.
-Format: **Skill Name**: What it does and when to use it.
+                    if re.search(r'error|fail|exception', line, re.IGNORECASE):
+                        error_lines.append(f"[error] {line[:200]}")
 
-Keep the whole document under 600 words. Be specific and concrete, not generic."
+            combined = messages + error_lines
+            extracted = combined[-50:]
+            if not extracted:
+                continue
 
-# Call Minimax directly
-RESPONSE=$(curl -sf \
-  -X POST "https://api.minimax.io/anthropic/v1/messages" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $MINIMAX_KEY" \
-  -d "{
-    \"model\": \"MiniMax-M2.7\",
-    \"max_tokens\": 1500,
-    \"messages\": [{\"role\": \"user\", \"content\": $(echo "$PROMPT" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')}]
-  }" 2>/dev/null || echo "")
+            # Determine repo path from most common cwd
+            if cwds:
+                repo_path = Counter(cwds).most_common(1)[0][0]
+            else:
+                proj_dir_name = os.path.basename(root)
+                decoded = proj_dir_name.lstrip('-')
+                home = os.path.expanduser('~')
+                candidate = os.path.join(home, decoded.replace('-', '/'))
+                repo_path = candidate if os.path.isdir(candidate) else proj_dir_name
 
-if [[ -z "$RESPONSE" ]]; then
-  echo "WARNING: LLM call failed. Writing raw notes."
-  {
-    echo "# Dream Session: $TS (raw — LLM unavailable)"
-    echo "## Task Log"
-    echo "$TASK_DATA"
-    echo "## Session Notes"
-    echo -e "$SESSION_CONTENT"
-  } > "$OUTPUT"
-else
-  # Extract text from response
-  DREAM_TEXT=$(echo "$RESPONSE" | python3 -c \
-    'import json,sys; r=json.load(sys.stdin); print(r["content"][0]["text"])' 2>/dev/null || \
-    echo "$RESPONSE")
-  echo "$DREAM_TEXT" > "$OUTPUT"
+            content_str = '\n'.join(extracted)
+            repo_data[repo_path]["content_lines"].append(
+                f"--- Session: {os.path.basename(root)} ({fdate}) ---\n{content_str}"
+            )
+            repo_data[repo_path]["dates"].add(fdate)
+
+        except OSError:
+            continue
+
+result = {"repos": {}, "file_count": file_count}
+for repo_path, data in repo_data.items():
+    result["repos"][repo_path] = {
+        "content": '\n\n'.join(data["content_lines"]),
+        "dates": sorted(data["dates"])
+    }
+
+print(json.dumps(result))
+PYEOF
+)
+
+FILE_COUNT=$(echo "$EXTRACTED_DATA" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('file_count',0))" 2>/dev/null || echo "0")
+
+if [[ "$FILE_COUNT" -eq 0 ]]; then
+  echo "No session files found modified since $CUTOFF."
+  echo "dream complete — nothing to process."
+  exit 0
 fi
 
+echo "Found $FILE_COUNT session file(s)"
 echo ""
-echo "✓ Dream written: $OUTPUT"
+
+if [[ "$DRY_RUN" == "true" ]]; then
+  echo "=== DRY RUN — printing extracted learnings, writing nothing ==="
+  echo ""
+  echo "$EXTRACTED_DATA" | python3 -c "
+import json, sys
+data = json.load(sys.stdin).get('repos', {})
+if not data:
+    print('  No repo content extracted.')
+else:
+    for i, (repo, info) in enumerate(sorted(data.items()), 1):
+        print(f'[Repo {i}] {repo}')
+        print(f'  Sessions: dates: {\", \".join(info[\"dates\"])}')
+        print(f'  Content ({len(info[\"content\"])} chars):')
+        print(f'  {info[\"content\"][:800]}')
+        print()
+  "
+  echo "=== DRY RUN COMPLETE — no files written ==="
+  exit 0
+fi
+
+# ─── 2. Read active model configuration ──────────────────────────────────────
+echo "Reading active model configuration..."
+
+if [[ ! -f "$LOCAL_SETTINGS" ]]; then
+  echo "ERROR: No local settings found at $LOCAL_SETTINGS."
+  echo "Run 'mesh model use <profile>' to configure a model first."
+  exit 1
+fi
+
+MODEL=$(jq -r '.env.ANTHROPIC_MODEL // ""' "$LOCAL_SETTINGS")
+BASE_URL=$(jq -r '.env.ANTHROPIC_BASE_URL // ""' "$LOCAL_SETTINGS")
+TOKEN=$(jq -r '.env.ANTHROPIC_AUTH_TOKEN // .env.ANTHROPIC_API_KEY // ""' "$LOCAL_SETTINGS")
+
+if [[ -z "$MODEL" ]] || [[ "$MODEL" == "null" ]]; then
+  echo "ERROR: No ANTHROPIC_MODEL set in $LOCAL_SETTINGS."
+  echo "Run 'mesh model use <profile>' to configure a model."
+  exit 1
+fi
+
+if [[ -z "$TOKEN" ]] || [[ "$TOKEN" == "REPLACE_WITH_"* ]]; then
+  echo "ERROR: Auth token not configured in $LOCAL_SETTINGS."
+  echo "Check your .env file or run 'mesh model use <profile>' to configure credentials."
+  exit 1
+fi
+
+if [[ -z "$BASE_URL" ]] || [[ "$BASE_URL" == "null" ]]; then
+  BASE_URL="https://api.anthropic.com"
+fi
+
+echo "  Model: $MODEL (${BASE_URL})"
 echo ""
 
-# ─── 5. Append learnings to topic files ─────────────────────────────────────
-if [[ -f "$OUTPUT" ]]; then
-  echo "Updating learnings files..."
-  python3 - "$OUTPUT" "$LEARNINGS_DIR" "$DATE" <<'PYEOF'
-import sys, re, os
+API_URL="${BASE_URL%/}/v1/messages"
 
-dream_file = sys.argv[1]
-learnings_dir = sys.argv[2]
-date = sys.argv[3]
+# ─── Helper: call LLM with the active model ──────────────────────────────────
+call_llm() {
+  local prompt_text="$1"
+  local max_tokens="${2:-2000}"
 
-topic_map = {
-    'ARCHITECTURE': 'architecture.md',
-    'DEPLOYMENT': 'deployment.md',
-    'TESTING': 'testing.md',
-    'MODEL': 'models.md',
-    'WORKFLOW': 'workflow.md',
-    'PATTERN': 'patterns.md',
+  local payload
+  payload=$(python3 -c "
+import json, sys
+prompt = sys.stdin.read()
+print(json.dumps({
+    'model': '${MODEL}',
+    'max_tokens': ${max_tokens},
+    'messages': [{'role': 'user', 'content': prompt}]
+}))
+" <<< "$prompt_text")
+
+  curl -s -X POST "$API_URL" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $TOKEN" \
+    -d "$payload" 2>/dev/null || echo ""
 }
 
-with open(dream_file) as f:
-    content = f.read()
+# ─── Helper: extract text from LLM response (Anthropic or OpenAI format) ─────
+extract_response_text() {
+  python3 -c '
+import json, sys
+try:
+    r = json.load(sys.stdin)
+    if "content" in r and isinstance(r["content"], list):
+        for block in r["content"]:
+            if isinstance(block, dict) and block.get("type") == "text":
+                print(block["text"])
+                sys.exit(0)
+    elif "choices" in r:
+        print(r["choices"][0]["message"]["content"])
+        sys.exit(0)
+    else:
+        print(json.dumps(r))
+except Exception:
+    pass
+' 2>/dev/null || echo ""
+}
 
-# Find the Learnings section
-learnings_section = re.search(r'## Learnings\n(.*?)(?=\n##|\Z)', content, re.DOTALL)
-if not learnings_section:
-    print("  No learnings section found.")
-    sys.exit(0)
+# ─── Write repo summary data to tmp file to avoid subshell issues ────────────
+SUMMARY_FILE=$(mktemp /tmp/dream-summary-XXXXXX)
+CROSS_FILE=$(mktemp /tmp/dream-cross-XXXXXX)
+echo -n > "$SUMMARY_FILE"
+echo -n > "$CROSS_FILE"
 
-learning_lines = learnings_section.group(1).strip().split('\n')
-by_topic = {}
+# Export functions and vars for subshells
+export -f call_llm extract_response_text
+export MODEL BASE_URL TOKEN API_URL MESH_DIR DATE
 
-for line in learning_lines:
-    m = re.match(r'\*\*(\w+)\*\*\s*(.*)', line)
-    if m:
-        topic = m.group(1).upper()
-        text = m.group(2).strip()
-        if topic in topic_map:
-            by_topic.setdefault(topic, []).append(text)
+# ─── 3. Process each repo ────────────────────────────────────────────────────
+echo "Processing repos..."
+echo ""
 
-for topic, items in by_topic.items():
-    filepath = os.path.join(learnings_dir, topic_map[topic])
-    with open(filepath, 'a') as f:
-        f.write(f'\n## {date}\n')
-        for item in items:
-            f.write(f'- {item}\n')
-    print(f"  ✓ {topic} → {topic_map[topic]}")
-PYEOF
+# Extract repo list into a tmp file for iteration without pipes
+REPO_LIST_FILE=$(mktemp /tmp/dream-repos-XXXXXX)
+echo "$EXTRACTED_DATA" | python3 -c '
+import json, sys
+data = json.load(sys.stdin).get("repos", {})
+for repo, info in sorted(data.items()):
+    dates = ",".join(info["dates"])
+    # write: repo_path|dates|content (content base64-encoded to avoid pipe issues)
+    import base64
+    content_b64 = base64.b64encode(info["content"].encode()).decode()
+    print(f"{repo}|{dates}|{content_b64}")
+' > "$REPO_LIST_FILE" 2>/dev/null
+
+TOTAL_REPOS=$(wc -l < "$REPO_LIST_FILE")
+CURRENT_REPO=0
+ALL_OK=true
+
+while IFS='|' read -r repo_path dates content_b64; do
+  CURRENT_REPO=$((CURRENT_REPO + 1))
+  echo "[$CURRENT_REPO/$TOTAL_REPOS] --- Processing: $(basename "$repo_path") ($dates) ---"
+
+  # Decode base64 content
+  session_content=$(echo "$content_b64" | python3 -c "import sys,base64; print(base64.b64decode(sys.stdin.read()).decode())")
+
+  # ── Step A: Extract learnings from raw session content ──
+  echo -n "  Extracting learnings... "
+  SYSTEM_MODEL_NAME="${MODEL##*/}"
+  SYSTEM_MODEL_NAME="${SYSTEM_MODEL_NAME%%-*}"
+
+  extract_prompt="You are extracting learnings from a software development session.
+Be specific and concrete. Do not invent anything not in the source.
+
+## Session content from $(basename "$repo_path")
+${session_content}
+
+Return only a markdown snippet (no preamble) with these sections:
+
+## ${DATE} — $(basename "$repo_path")
+### What worked
+### What failed
+### Patterns noticed
+### Preferences observed
+### Gotchas"
+
+  extraction_result=$(call_llm "$extract_prompt" 2000)
+
+  if [[ -z "$extraction_result" ]]; then
+    echo "⚠ LLM unavailable"
+    new_learnings="$session_content"
+    llm_success=false
+  else
+    echo "✓"
+    new_learnings=$(echo "$extraction_result" | extract_response_text)
+    if [[ -z "$new_learnings" ]]; then
+      new_learnings="$session_content"
+    fi
+    llm_success=true
+  fi
+
+  # ── Step B: Read existing .mesh/MEMORY.md ──
+  mesh_dir="$repo_path/.mesh"
+  memory_file="$mesh_dir/MEMORY.md"
+  existing_memory=""
+  mkdir -p "$mesh_dir"
+  if [[ -f "$memory_file" ]]; then
+    existing_memory=$(cat "$memory_file")
+  fi
+
+  # ── Step C: Synthesis rewrite (merge existing + new) ──
+  if $llm_success && [[ -n "$existing_memory" ]]; then
+    echo -n "  Synthesizing with existing memory... "
+
+    sys_prompt="You are maintaining a memory file for an AI coding agent.
+Below is the existing memory and new learnings from recent sessions.
+Produce an updated memory file that:
+- Incorporates the new learnings
+- Removes duplicates (keep the best single statement of each point)
+- Removes anything superseded by newer learnings
+- Keeps the file concise — every line must earn its place
+- Hard limit: 200 lines
+
+## Existing memory
+${existing_memory}
+
+## New learnings
+${new_learnings}
+
+Return only the updated memory file content, no preamble.
+Keep the same section headings as the existing memory where present.
+
+If any learning applies across multiple repos or to the project as a whole,
+prefix it with **[CROSS-REPO]** so it can be collected for the cross-repo memory file."
+
+    synthesis_result=$(call_llm "$sys_prompt" 3000)
+
+    if [[ -n "$synthesis_result" ]]; then
+      updated_memory=$(echo "$synthesis_result" | extract_response_text)
+      if [[ -n "$updated_memory" ]]; then
+        echo "✓"
+        # Extract cross-repo items (avoid pipefail with process substitution)
+        while IFS= read -r cross_line; do
+          echo "## $DATE — $(basename "$repo_path")" >> "$CROSS_FILE"
+          echo "$cross_line" >> "$CROSS_FILE"
+          echo "" >> "$CROSS_FILE"
+        done < <(echo "$updated_memory" | grep '\[CROSS-REPO\]' || true)
+
+        line_count=$(echo "$updated_memory" | wc -l)
+        if [[ "$line_count" -gt 200 ]]; then
+          echo "  ⚠ Warning: Memory file has $line_count lines (suggested max: 200)"
+        fi
+
+        echo "$updated_memory" > "$memory_file"
+        echo "$(basename "$repo_path")|written" >> "$SUMMARY_FILE"
+        continue
+      fi
+    fi
+
+    # Fallback: append to existing
+    echo "⚠ Synthesis failed — appending raw learnings"
+    {
+      echo ""
+      echo "## $DATE"
+      echo "$new_learnings"
+    } >> "$memory_file"
+    echo "$(basename "$repo_path")|append-fallback" >> "$SUMMARY_FILE"
+
+  elif $llm_success; then
+    # First run — no existing memory
+    echo "  Creating new memory file... ✓"
+    echo "$new_learnings" > "$memory_file"
+    echo "$(basename "$repo_path")|new" >> "$SUMMARY_FILE"
+
+  else
+    # LLM down — raw content fallback
+    echo -n "  Writing raw session content (LLM unavailable)... "
+    if [[ -f "$memory_file" ]]; then
+      {
+        echo ""
+        echo "## $DATE — Raw session content (LLM unavailable)"
+        echo "$new_learnings"
+      } >> "$memory_file"
+    else
+      {
+        echo "# Memory: $(basename "$repo_path")"
+        echo ""
+        echo "## $DATE — Raw session content (LLM unavailable)"
+        echo "$new_learnings"
+      } > "$memory_file"
+    fi
+    echo "✓"
+    echo "$(basename "$repo_path")|raw-fallback" >> "$SUMMARY_FILE"
+  fi
+
+done < "$REPO_LIST_FILE"
+
+rm -f "$REPO_LIST_FILE"
+
+# ─── 4. Cross-repo synthesis to ~/.mesh/MEMORY.md ────────────────────────────
+CROSS_CONTENT=$(cat "$CROSS_FILE" 2>/dev/null || echo "")
+rm -f "$CROSS_FILE"
+
+if [[ -n "$CROSS_CONTENT" ]]; then
+  echo ""
+  echo "--- Cross-repo learnings ---"
+  echo "  Processing cross-repo items..."
+
+  mkdir -p "$HOME/.mesh"
+  LOCAL_CROSS_FILE="$HOME/.mesh/MEMORY.md"
+  LOCAL_CROSS_EXISTING=""
+  [[ -f "$LOCAL_CROSS_FILE" ]] && LOCAL_CROSS_EXISTING=$(cat "$LOCAL_CROSS_FILE")
+
+  echo -n "  Running cross-repo synthesis... "
+
+  cross_sys_prompt="You are maintaining a cross-repo memory file for an AI coding agent.
+This file contains learnings that apply across multiple repositories.
+
+## Existing memory
+${LOCAL_CROSS_EXISTING:-}
+
+## New cross-repo learnings
+${CROSS_CONTENT}
+
+Return only the updated memory file content, no preamble.
+Keep the same section headings. Max 200 lines. Deduplicate."
+
+  cross_result=$(call_llm "$cross_sys_prompt" 3000)
+
+  if [[ -n "$cross_result" ]]; then
+    cross_updated=$(echo "$cross_result" | extract_response_text)
+    if [[ -n "$cross_updated" ]]; then
+      echo "$cross_updated" > "$LOCAL_CROSS_FILE"
+      echo "✓"
+    else
+      echo "⚠ Fallback — appending raw"
+      {
+        echo ""
+        echo "## $DATE"
+        echo "$CROSS_CONTENT"
+      } >> "$LOCAL_CROSS_FILE"
+    fi
+  else
+    echo "⚠ LLM unavailable — writing raw"
+    if [[ -f "$LOCAL_CROSS_FILE" ]]; then
+      {
+        echo ""
+        echo "## $DATE"
+        echo "$CROSS_CONTENT"
+      } >> "$LOCAL_CROSS_FILE"
+    else
+      {
+        echo "# Cross-Repo Memory"
+        echo ""
+        echo "## $DATE"
+        echo "$CROSS_CONTENT"
+      } > "$LOCAL_CROSS_FILE"
+    fi
+  fi
 fi
 
+# ─── 5. Print summary ────────────────────────────────────────────────────────
 echo ""
-echo "Session complete. Dream stored at:"
-echo "  $OUTPUT"
+echo "dream complete — $DATE $TIMESTAMP"
+
+if [[ -s "$SUMMARY_FILE" ]]; then
+  while IFS='|' read -r repo_name status; do
+    echo "  $repo_name: .mesh/MEMORY.md ($status)"
+  done < "$SUMMARY_FILE"
+
+  if [[ -f "$HOME/.mesh/MEMORY.md" ]]; then
+    echo "  cross-repo: ~/.mesh/MEMORY.md (✓ written)"
+  fi
+else
+  echo "  No repos processed."
+fi
+
+rm -f "$SUMMARY_FILE"
+
 echo ""
-echo "Next: review with: cat $OUTPUT"
+echo "Next: run 'mesh test-alpha-mesh' to run tests"

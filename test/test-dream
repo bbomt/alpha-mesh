@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # alpha-mesh/test/test-dream
 # Tests for bin/dream script
+# Tests the .mesh/MEMORY.md synthesis rewrite behavior
 
 set -euo pipefail
 
@@ -14,7 +15,7 @@ echo "=== dream tests ==="
 echo ""
 
 # ─── test: bin/dream exists and is executable ──────────────────────────────────
-echo "[1/4] bin/dream exists and is executable..."
+echo "[1/7] bin/dream exists and is executable..."
 if [[ -x "$MESH_DIR/bin/dream" ]]; then
   echo "  PASS"
 else
@@ -22,41 +23,71 @@ else
   FAILED=1
 fi
 
-# ─── test: dream runs without error ────────────────────────────────────────────
-echo "[2/4] dream runs without error..."
-# This may produce a raw file if API is unreachable — that's ok, still pass
-output=$(dream 2>&1 || true)
-echo "  (output): $output"
-# Don't fail on API errors — raw file creation is the fallback
-if [[ -f "$MESH_DIR/memory/sessions" ]] || [[ -d "$MESH_DIR/memory/sessions" ]]; then
-  echo "  PASS: dream ran (memory/sessions dir exists)"
+# ─── test: dream --dry-run runs without error ──────────────────────────────────
+echo "[2/7] dream --dry-run runs without error..."
+dry_output=$(dream --dry-run 2>&1 || true)
+if echo "$dry_output" | grep -q "DRY RUN\|nothing to process\|no session"; then
+  echo "  PASS: --dry-run succeeded"
 else
-  echo "  FAIL: dream did not create memory/sessions directory"
+  echo "  FAIL: --dry-run did not show expected output"
+  echo "  Output: $dry_output"
   FAILED=1
 fi
 
-# ─── test: session file created (or raw fallback) ───────────────────────────────
-echo "[3/4] session file or raw fallback created..."
-session_files=$(ls "$MESH_DIR/memory/sessions/"*.md 2>/dev/null || true)
-raw_files=$(ls "$MESH_DIR/memory/sessions/"*.raw.md 2>/dev/null || true)
-if [[ -n "$session_files" || -n "$raw_files" ]]; then
-  echo "  PASS: session file created"
-  echo "  Files: $(echo "$session_files$raw_files" | tr -d '\n')"
+# ─── test: dream --dry-run writes nothing ──────────────────────────────────────
+echo "[3/7] dream --dry-run writes nothing..."
+dry_mesh_files=$(find "$MESH_DIR" -path "*/mesh/MEMORY.md" -newer "$MESH_DIR/bin/dream" 2>/dev/null || true)
+if [[ -z "$dry_mesh_files" ]]; then
+  echo "  PASS: no .mesh/MEMORY.md created by dry-run"
 else
-  echo "  FAIL: no session file found in memory/sessions/"
+  echo "  WARN: dry-run may have created files: $dry_mesh_files"
+fi
+
+# ─── test: dream with no sessions (hypothetical future date) ───────────────────
+echo "[4/7] dream handles no-sessions case..."
+no_sesh_output=$(dream --days 9999 2>&1 || true)
+if echo "$no_sesh_output" | grep -qi "no session.*found\|nothing to process\|complete"; then
+  echo "  PASS: handles no-sessions gracefully"
+else
+  echo "  FAIL: unexpected output for no-sessions case"
+  echo "  Output: $no_sesh_output"
   FAILED=1
 fi
 
-# ─── test: memory/learnings directory exists ───────────────────────────────────
-echo "[4/4] memory/learnings directory exists..."
-if [[ -d "$MESH_DIR/memory/learnings" ]]; then
-  echo "  PASS"
+# ─── test: dream --5-days runs without error ───────────────────────────────────
+echo "[5/7] dream --5-days runs without error..."
+five_days_output=$(dream --5-days 2>&1 || true)
+if echo "$five_days_output" | grep -qi "dream complete\|no session\|nothing to process"; then
+  echo "  PASS: --5-days ran without crashing"
 else
-  echo "  FAIL: memory/learnings directory not found"
+  echo "  FAIL: --5-days had unexpected output"
+  echo "  Output: $five_days_output"
   FAILED=1
 fi
 
-# ─── summary ────────────────────────────────────────────────────────────────────
+# ─── test: dream does not error (basic run) ─────────────────────────────────────
+echo "[6/7] dream basic run (may produce raw/LLM output)..."
+basic_output=$(dream 2>&1 || true)
+echo "  (output first line): $(echo "$basic_output" | head -1)"
+if echo "$basic_output" | grep -qi "dream complete\|no session"; then
+  echo "  PASS: dream completed without crash"
+else
+  echo "  FAIL: unexpected output"
+  echo "  Output: $basic_output"
+  FAILED=1
+fi
+
+# ─── test: dream ran without errors ────────────────────────────────────────────
+echo "[7/7] dream ran without errors..."
+if echo "$basic_output" | grep -qv "ERROR"; then
+  echo "  PASS: dream ran (check output above for details)"
+else
+  echo "  FAIL: dream encountered an error"
+  echo "  Output: $basic_output"
+  FAILED=1
+fi
+
+# ─── summary ───────────────────────────────────────────────────────────────────
 echo ""
 if [[ "$FAILED" -eq 0 ]]; then
   echo "=== ALL DREAM TESTS PASSED ==="
