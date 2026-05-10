@@ -42,23 +42,8 @@ echo ""
 echo "Creating directories..."
 mkdir -p \
   "$MESH_DIR/config" \
-  "$MESH_DIR/tasks" \
-  "$MESH_DIR/memory/sessions" \
-  "$MESH_DIR/memory/learnings" \
-  "$MESH_DIR/memory/skills" \
-  "$MESH_DIR/memory/bootstrap"
+  "$MESH_DIR/tasks"
 echo "  ✓ done"
-echo ""
-
-# ─── Initialise empty learnings files ───────────────────────────────────────
-for topic in architecture deployment testing models workflow patterns; do
-  f="$MESH_DIR/memory/learnings/$topic.md"
-  if [[ ! -f "$f" ]]; then
-    echo "# $topic learnings" > "$f"
-    echo "<!-- appended by dream script after each session -->" >> "$f"
-  fi
-done
-echo "  ✓ learnings files initialised"
 echo ""
 
 # ─── Write .gitignore ───────────────────────────────────────────────────────
@@ -69,9 +54,6 @@ config/active.json
 # local DB — back up separately, don't commit
 tasks/task-log.db
 tasks/*.db
-
-# raw bootstrap content (too large, keep locally)
-memory/bootstrap/
 
 # editor
 .DS_Store
@@ -129,15 +111,12 @@ fi
 echo "=== Install complete ==="
 echo ""
 echo "Next steps:"
-echo "  2. Edit config/models.json — add your API keys"
-echo "  3. mesh model use minimax          # verify model switching works"
-echo "  4. mesh bootstrap-memory --dry-run # preview historical extraction"
-echo "  5. mesh bootstrap-memory           # seed memory from past sessions"
-echo "  6. At end of each work session: mesh dream"
+echo "  1. Edit .env — add your API tokens"
+echo "  2. mesh model use minimax          # verify model switching works"
+echo "  3. mesh dream --dry-run            # test extraction without writing"
+echo "  4. At end of each work session: mesh dream"
 echo ""
 echo "Daily workflow:"
 echo "  mesh model status                  # check active model"
-echo "  mesh task-log start PMAT-NNN 'description' --repo PMATFE-xxx"
 echo "  ... do work in Claude Code ..."
-echo "  mesh task-log done PMAT-NNN --outcome 'shipped X, tests pass'"
-echo "  mesh dream                         # consolidate session"
+echo "  mesh dream                         # consolidate sessions into .mesh/MEMORY.md"

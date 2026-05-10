@@ -8,26 +8,29 @@ The memory and orchestration layer for the PMAT agent system.
 alpha-mesh/
 ├── bin/                     # Executable scripts (symlinked to ~/bin)
 │   ├── model                # Switch/check model config
-│   ├── dream                # End-of-session memory consolidation
+│   ├── dream                # End-of-session memory consolidation (dream)
 │   ├── bootstrap-memory     # One-time: extract from existing Claude Code logs
-│   ├── test/                 # Test suites (run via test/run-all)
+│   ├── lib/
+│   │   └── repo             # Shared functions: find_repo_root, get_active_model
+│   ├── test/                # Test suites (run via test/run-all)
+│   ├── install              # One-time setup
 │   └── mesh                 # Unified CLI entry point (wraps all commands)
-├── config/                  # Model configs
+├── config/
 │   └── models.json          # All model profiles
 ├── memory/
-│   ├── sessions/            # Raw dream output per session (YYYY-MM-DD-HHmm.md)
-│   ├── learnings/           # Distilled cross-session learnings by topic
-│   │   ├── architecture.md
-│   │   ├── deployment.md
-│   │   ├── testing.md
-│   │   ├── models.md
-│   │   ├── workflow.md
-│   │   └── patterns.md
+│   ├── sessions/            # Historical dream output (legacy — no longer written)
+│   ├── learnings/           # Historical learnings (legacy — no longer written)
 │   └── skills/              # Extracted workflow skills (reusable prompts/procedures)
-│       ├── feature-dev.md
-│       └── model-routing.md
+├── test/
+│   ├── run-all              # Runs all test suites
+│   ├── test-dream           # Tests for bin/dream
+│   ├── test-model           # Tests for bin/model
+│   └── test-install         # Tests for bin/install
 └── .gitignore
 ```
+
+Dream output goes to `{REPO}/.mesh/MEMORY.md` in each repo worked in.
+Cross-repo learnings go to `~/.mesh/MEMORY.md`.
 
 ## Quick Start
 
@@ -53,9 +56,10 @@ mesh model use minimax    # or check status
 cd ~/environment/pmat/PMATFE-xxx
 claude  # Claude Code picks up the active model config
 
-# End a work session
-cd ~/environment/pmat/alpha-mesh
+# End a work session — consolidates learnings from ALL repos worked in
 mesh dream
+mesh dream --dry-run    # preview extracted content without writing
+mesh dream --5-days     # process sessions from last 5 days
 ```
 
 ## Token Setup
@@ -91,3 +95,47 @@ mesh model use openrouter deepseek/deepseek-v4-flash  # any OpenRouter model
 ```
 
 The `openrouter-default` profile provides the OpenRouter URL and token; the model argument overrides the default model. Shorthand `openrouter` resolves to `openrouter-default`. Any model available on OpenRouter can be used.
+
+## Dream (End-of-Session Consolidation)
+
+`mesh dream` scans Claude Code session logs from all repos, extracts learnings, and writes a synthesized `.mesh/MEMORY.md` to each repo.
+
+### How it works
+
+1. **Scan**: Finds `.jsonl` session logs in `~/.claude/projects/*/` modified today
+2. **Extract**: Pulls assistant text (>100 chars), user messages (>20 chars, non-slash-commands), and error/fail lines
+3. **Group**: Decodes repo paths from the `cwd` field in each session entry
+4. **Call LLM**: Uses the active model from alpha-mesh's `.claude/settings.json` once per repo:
+   - Extracts structured learnings (what worked, what failed, patterns, gotchas)
+   - Synthesizes with existing `.mesh/MEMORY.md` (deduplicates, merges, caps at 200 lines)
+5. **Write**: Output to `{REPO}/.mesh/MEMORY.md` (rewritten each run)
+
+### One-time setup (per repo)
+
+Add this to each repo's `CLAUDE.md` so Claude Code reads the memory file:
+
+```
+@.mesh/MEMORY.md
+```
+
+Add this to `~/.claude/CLAUDE.md` for cross-repo learnings:
+
+```
+@~/.mesh/MEMORY.md
+```
+
+Dream does not touch CLAUDE.md — this is a manual step.
+
+### Flags
+
+| Flag | Description |
+|------|-------------|
+| `--dry-run` | Print extracted content, write nothing |
+| `--5-days` | Process sessions from last 5 days |
+| `--days N` | Process sessions from last N days |
+
+### Error handling
+
+- No sessions today: prints message, exits 0
+- LLM unreachable: writes raw extracted content as fallback, exits 0
+- Model not configured: exits with error (run `mesh model use` first)
