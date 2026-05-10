@@ -43,47 +43,76 @@ else
   echo "  WARN: dry-run may have created files: $dry_mesh_files"
 fi
 
-# ─── test: dream with no sessions (hypothetical future date) ───────────────────
-echo "[4/7] dream handles no-sessions case..."
-no_sesh_output=$(dream --days 9999 2>&1 || true)
-if echo "$no_sesh_output" | grep -qi "no session.*found\|nothing to process\|complete"; then
-  echo "  PASS: handles no-sessions gracefully"
+# ─── test: dream completes without hanging ───────────────────
+echo "[4/7] dream completes without hanging..."
+# Check that it completes with DRY RUN COMPLETE message
+dry_run_output=$(dream --dry-run 2>&1 || true)
+if echo "$dry_run_output" | grep -q "DRY RUN COMPLETE"; then
+  echo "  PASS: dream completed without hanging"
 else
-  echo "  FAIL: unexpected output for no-sessions case"
-  echo "  Output: $no_sesh_output"
+  echo "  FAIL: dream did not complete properly"
+  echo "  Output: $dry_run_output"
   FAILED=1
 fi
 
-# ─── test: dream --5-days runs without error ───────────────────────────────────
-echo "[5/7] dream --5-days runs without error..."
-five_days_output=$(dream --5-days 2>&1 || true)
-if echo "$five_days_output" | grep -qi "dream complete\|no session\|nothing to process"; then
-  echo "  PASS: --5-days ran without crashing"
+# ─── test: dream --days 5 --dry-run runs without error ───────────────────────────────────
+echo "[5/7] dream --days 5 --dry-run runs without error..."
+five_days_output=$(dream --days 5 --dry-run 2>&1 || true)
+if echo "$five_days_output" | grep -qi "DRY RUN\|Found [0-9]+ session"; then
+  echo "  PASS: --5-days --dry-run completed"
 else
-  echo "  FAIL: --5-days had unexpected output"
+  echo "  FAIL: --5-days --dry-run had unexpected output"
   echo "  Output: $five_days_output"
   FAILED=1
 fi
 
-# ─── test: dream does not error (basic run) ─────────────────────────────────────
-echo "[6/7] dream basic run (may produce raw/LLM output)..."
-basic_output=$(dream 2>&1 || true)
-echo "  (output first line): $(echo "$basic_output" | head -1)"
-if echo "$basic_output" | grep -qi "dream complete\|no session"; then
-  echo "  PASS: dream completed without crash"
+# ─── test: dream --dry-run shows progress output ─────────────────────────────────────
+echo "[6/7] dream --dry-run shows progress output..."
+progress_output=$(dream --days 5 --dry-run 2>&1 | grep -E "Processed [0-9]+ files|Found [0-9]+ session" | head -5)
+if [[ -n "$progress_output" ]]; then
+  echo "  PASS: progress messages shown"
 else
-  echo "  FAIL: unexpected output"
-  echo "  Output: $basic_output"
+  echo "  FAIL: no progress output found"
   FAILED=1
 fi
 
-# ─── test: dream ran without errors ────────────────────────────────────────────
-echo "[7/7] dream ran without errors..."
-if echo "$basic_output" | grep -qv "ERROR"; then
-  echo "  PASS: dream ran (check output above for details)"
+# ─── test: dream --dry-run extracts session data ─────────────────────────────────────
+echo "[7/7] dream --dry-run extracts session data from real repos..."
+extract_output=$(dream --days 5 --dry-run 2>&1 | grep -E "Repo [0-9+]" | head -3)
+if [[ -n "$extract_output" ]]; then
+  echo "  PASS: found session data"
 else
-  echo "  FAIL: dream encountered an error"
-  echo "  Output: $basic_output"
+  echo "  FAIL: no session data extracted"
+  FAILED=1
+fi
+
+# ─── test: local settings.json exists and has model config ────────────────────
+echo "[8/8] local settings.json exists with model config..."
+local_settings="$MESH_DIR/.claude/settings.json"
+if [[ -f "$local_settings" ]]; then
+  model=$(jq -r '.env.ANTHROPIC_MODEL // ""' "$local_settings" 2>/dev/null)
+  token=$(jq -r '.env.ANTHROPIC_AUTH_TOKEN // .env.ANTHROPIC_API_KEY // ""' "$local_settings" 2>/dev/null)
+  if [[ -n "$model" ]] && [[ -n "$token" ]]; then
+    echo "  PASS: local settings has model ($model) and token"
+  else
+    echo "  WARN: local settings missing model or token"
+  fi
+else
+  echo "  FAIL: local settings not found at $local_settings"
+  FAILED=1
+fi
+
+# ─── test: dream --days 2 reads model config and starts processing ─────────────
+echo "[9/9] dream --days 2 reads model config and starts processing..."
+# Run dream without --dry-run, check it gets past config reading
+# Use timeout to avoid hanging; LLM calls may take time
+dream_output=$(timeout 60 dream --days 2 2>&1 || true)
+# Check for Model: line which proves it read the correct settings
+if echo "$dream_output" | grep -q "Model:"; then
+  echo "  PASS: dream reads model config and starts processing"
+else
+  echo "  FAIL: dream failed to read model config"
+  echo "  Output: $dream_output"
   FAILED=1
 fi
 

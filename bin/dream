@@ -8,12 +8,14 @@
 # Usage:
 #   dream              # process today's sessions (default)
 #   dream --dry-run    # print extracted content, write nothing
-#   dream --5-days     # process sessions from last 5 days
 #   dream --days 3     # process sessions from last 3 days
+#   dream --days 5     # process sessions from last 5 days
 
 set -euo pipefail
 
-MESH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Resolve actual script path (handles symlinks in ~/bin/)
+SCRIPT_REALPATH="$(readlink -f "${BASH_SOURCE[0]}")"
+MESH_DIR="$(cd "$(dirname "$SCRIPT_REALPATH")/.." && pwd)"
 LIB_DIR="$MESH_DIR/bin/lib"
 CLAUDE_PROJECTS="$HOME/.claude/projects"
 ENV_FILE="$MESH_DIR/.env"
@@ -37,7 +39,6 @@ DAYS_BACK=0  # 0 = today only
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dry-run) DRY_RUN=true; shift ;;
-    --5-days) DAYS_BACK=5; shift ;;
     --days) DAYS_BACK="$2"; shift 2 ;;
     *) echo "Unknown option: $1" >&2; exit 1 ;;
   esac
@@ -55,7 +56,8 @@ if [[ "$DAYS_BACK" -gt 0 ]]; then
   fi
   WINDOW_LABEL="last $DAYS_BACK days"
 else
-  CUTOFF="$DATE"
+  # Use local date for cutoff to match file modification times
+  CUTOFF=$(date +%Y-%m-%d)
   WINDOW_LABEL="today"
 fi
 
@@ -72,7 +74,14 @@ fi
 
 echo "Scanning $CLAUDE_PROJECTS ..."
 
-EXTRACTED_DATA=$(python3 - "$CLAUDE_PROJECTS" "$CUTOFF" 2>/dev/null || true <<'PYEOF'
+# Count files first for progress indication
+TOTAL_FILES=$(find "$CLAUDE_PROJECTS" -name "*.jsonl" 2>/dev/null | wc -l)
+echo "  Found $TOTAL_FILES jsonl file(s) to scan"
+echo ""
+
+# Write Python script to temp file and execute it
+EXTRACT_SCRIPT=$(mktemp /tmp/dream-extract-XXXXXX.py)
+cat > "$EXTRACT_SCRIPT" <<'PYTHON_SCRIPT'
 import sys, json, os, re
 from collections import defaultdict, Counter
 
@@ -81,17 +90,22 @@ cutoff = sys.argv[2]
 
 repo_data = defaultdict(lambda: {"content_lines": [], "dates": set()})
 file_count = 0
+processed = 0
 
 for root, dirs, files in os.walk(projects_dir):
     for fname in files:
         if not fname.endswith('.jsonl'):
             continue
         fpath = os.path.join(root, fname)
+        processed += 1
+        if processed % 10 == 0:
+            print(f"  Processed {processed} files...", flush=True, file=sys.stderr)
 
         try:
             mtime = os.path.getmtime(fpath)
             import time
-            fdate = time.strftime('%Y-%m-%d', time.gmtime(mtime))
+            # Use localtime to match how files were written
+            fdate = time.strftime('%Y-%m-%d', time.localtime(mtime))
         except OSError:
             continue
 
@@ -170,16 +184,32 @@ for root, dirs, files in os.walk(projects_dir):
         except OSError:
             continue
 
+print(f"  Done scanning {processed} files, found {file_count} in date range", flush=True, file=sys.stderr)
+
 result = {"repos": {}, "file_count": file_count}
 for repo_path, data in repo_data.items():
+    repo_name = os.path.basename(repo_path)
+    print(f"  -> Found {len(data['content_lines'])} sessions from {repo_name}", flush=True, file=sys.stderr)
     result["repos"][repo_path] = {
         "content": '\n\n'.join(data["content_lines"]),
         "dates": sorted(data["dates"])
     }
 
+# Output JSON only to stdout
 print(json.dumps(result))
-PYEOF
-)
+PYTHON_SCRIPT
+
+# Run the extraction script
+PYTHON_OUT=$(timeout 60 python3 "$EXTRACT_SCRIPT" "$CLAUDE_PROJECTS" "$CUTOFF" 2>&1)
+rm -f "$EXTRACT_SCRIPT"
+
+# Extract stdout (JSON) - it's the last non-progress line
+EXTRACTED_DATA=$(echo "$PYTHON_OUT" | grep -vE "^  " | tail -1)
+
+# Check for errors (but ignore extraction warnings)
+if [[ -z "$EXTRACTED_DATA" ]] || echo "$EXTRACTED_DATA" | grep -qi "traceback\|timeout"; then
+  echo "  Warning: Extraction issue, output may be incomplete"
+fi
 
 FILE_COUNT=$(echo "$EXTRACTED_DATA" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('file_count',0))" 2>/dev/null || echo "0")
 
@@ -202,12 +232,14 @@ if not data:
     print('  No repo content extracted.')
 else:
     for i, (repo, info) in enumerate(sorted(data.items()), 1):
+        dates_str = ', '.join(info['dates'])
+        content_preview = info['content'][:800]
         print(f'[Repo {i}] {repo}')
-        print(f'  Sessions: dates: {\", \".join(info[\"dates\"])}')
+        print(f'  Sessions dates: {dates_str}')
         print(f'  Content ({len(info[\"content\"])} chars):')
-        print(f'  {info[\"content\"][:800]}')
+        print(f'  {content_preview}')
         print()
-  "
+"
   echo "=== DRY RUN COMPLETE — no files written ==="
   exit 0
 fi

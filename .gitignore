@@ -5,12 +5,6 @@ config/active.json
 tasks/task-log.db
 tasks/*.db
 
-# raw bootstrap content (too large, keep locally)
-memory/bootstrap/
-
 # editor
 .DS_Store
 *.swp
-memory/sessions/
-.env
-.claude
