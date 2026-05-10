@@ -9,14 +9,11 @@ alpha-mesh/
 ├── bin/                     # Executable scripts (symlinked to ~/bin)
 │   ├── model                # Switch/check model config
 │   ├── dream                # End-of-session memory consolidation
-│   ├── task-log             # Log a task entry
 │   ├── bootstrap-memory     # One-time: extract from existing Claude Code logs
 │   ├── test/                 # Test suites (run via test/run-all)
 │   └── mesh                 # Unified CLI entry point (wraps all commands)
 ├── config/                  # Model configs
 │   └── models.json          # All model profiles
-├── tasks/
-│   └── task-log.db          # SQLite task log (gitignored, backed up separately)
 ├── memory/
 │   ├── sessions/            # Raw dream output per session (YYYY-MM-DD-HHmm.md)
 │   ├── learnings/           # Distilled cross-session learnings by topic

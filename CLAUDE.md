@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Purpose
 
-alpha-mesh is the memory and orchestration layer for the PMAT agent system. It provides a `mesh` CLI for model routing, session memory consolidation, and task logging.
+alpha-mesh is the memory and orchestration layer for the PMAT agent system. It provides a `mesh` CLI for model routing and session memory consolidation.
 
 ## Architecture
 
@@ -16,7 +16,6 @@ alpha-mesh/
 │   ├── mesh                 # Entry point: mesh <command>
 │   ├── model                # Model switching (local/global scope)
 │   ├── dream                # End-of-session memory consolidation
-│   ├── task-log             # SQLite-backed task log
 │   ├── bootstrap-memory     # Extract memory from existing Claude Code logs
 │   ├── lib/                  # Shared library
 │   │   └── repo              # find_repo_root, get_active_model_from_settings
@@ -46,11 +45,6 @@ mesh model status               # show active model config
 mesh model list                 # list all profiles
 mesh model check [profile]      # health check without switching
 
-# Task logging
-mesh task-log start PMAT-NNN "title" --repo PMATFE-xxx
-mesh task-log done PMAT-NNN --outcome "what shipped"
-mesh task-log show PMAT-NNN
-
 # Memory
 mesh dream                      # consolidate session into memory/
 mesh bootstrap-memory          # seed memory from existing Claude Code logs
@@ -76,5 +70,4 @@ mesh test-alpha-mesh  # broken into test/test/run-all
 
 - Scripts are pure bash — no build step, no package manager
 - `bin/mesh` dispatches to sub-scripts; call individual scripts directly or via `mesh`
-- `task-log` uses SQLite at `tasks/task-log.db` (gitignored)
 - `dream` output goes to `memory/sessions/`; learnings are appended to `memory/learnings/<topic>.md`

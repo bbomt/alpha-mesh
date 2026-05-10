@@ -21,11 +21,9 @@ in a single Claude Code session within one repo (or with cross-repo visibility).
 ## Pre-conditions
 - AWS SSO login active (`aws sso login`)
 - Correct model active (`model status`)
-- Task logged (`task-log start <TICKET-ID> '<title>' --repo <REPO>`)
 - Claude Code opened in the correct repo (or root if cross-repo)
 
 ## Post-conditions
-- `task-log done <TICKET-ID> --outcome '<what shipped>'`
 - Run `dream` at end of session
 
 ## Known failure modes

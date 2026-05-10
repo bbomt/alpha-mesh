@@ -35,5 +35,3 @@ model list                      # all profiles
 3. Document here under Model profiles table
 
 ## Cost tracking (manual for now)
-Log model used per task: `task-log start` captures the active model automatically.
-Review with: `task-log recent 20` to see model distribution over time.
