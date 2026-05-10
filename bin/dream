@@ -394,11 +394,11 @@ ${session_content}
 Return only a markdown snippet (no preamble) with these sections:
 
 ## ${DATE} — $(basename "$repo_path")
-### What worked
-### What failed
-### Patterns noticed
-### Preferences observed
-### Gotchas"
+### Architecture
+### Deployment
+### Testing
+### Workflow
+### Patterns"
 
   extraction_result=$(call_llm "$extract_prompt" 2000)
 
