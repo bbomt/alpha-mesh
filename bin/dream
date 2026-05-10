@@ -115,7 +115,6 @@ for root, dirs, files in os.walk(projects_dir):
         file_count += 1
         cwds = set()
         messages = []
-        error_lines = []
 
         try:
             with open(fpath) as f:
@@ -157,11 +156,8 @@ for root, dirs, files in os.walk(projects_dir):
                         if text and len(text) > 20 and not text.startswith('/'):
                             messages.append(f"[user] {text[:300]}")
 
-                    if re.search(r'error|fail|exception', line, re.IGNORECASE):
-                        error_lines.append(f"[error] {line[:200]}")
-
-            combined = messages + error_lines
-            extracted = combined[-50:]
+            combined = messages
+            extracted = combined[-30:]  # Keep last 30 messages only
             if not extracted:
                 continue
 
