@@ -149,6 +149,7 @@ for root, dirs, files in os.walk(projects_dir):
                     role = msg.get('role', '')
                     content = msg.get('content', '')
 
+                    # Only process valid assistant and user messages
                     if role == 'assistant' and isinstance(content, list):
                         for block in content:
                             if isinstance(block, dict) and block.get('type') == 'text':
