@@ -22,6 +22,12 @@ CLAUDE_PROJECTS="$HOME/.claude/projects"
 ENV_FILE="$MESH_DIR/.env"
 LOCAL_SETTINGS="$MESH_DIR/.claude/settings.json"
 
+# Constants
+MESH_SUBDIR=".mesh"
+MEMORY_FILENAME="MEMORY.md"
+CROSS_REPO_TAG="[CROSS-REPO]"
+MAX_MEMORY_LINES=200
+
 # Load shared library
 # shellcheck source=bin/lib/repo
 source "$LIB_DIR/repo"
@@ -368,7 +374,6 @@ for repo, info in sorted(data.items()):
 
 TOTAL_REPOS=$(wc -l < "$REPO_LIST_FILE")
 CURRENT_REPO=0
-ALL_OK=true
 
 while IFS='|' read -r repo_path dates content_b64; do
   CURRENT_REPO=$((CURRENT_REPO + 1))
@@ -379,8 +384,6 @@ while IFS='|' read -r repo_path dates content_b64; do
 
   # ── Step A: Extract learnings from raw session content ──
   echo -n "  Extracting learnings... "
-  SYSTEM_MODEL_NAME="${MODEL##*/}"
-  SYSTEM_MODEL_NAME="${SYSTEM_MODEL_NAME%%-*}"
 
   extract_prompt="You are extracting learnings from a software development session.
 Be specific and concrete. Do not invent anything not in the source.

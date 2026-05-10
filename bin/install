@@ -80,15 +80,9 @@ mkdir -p "$HOME/bin"
 for script in dream mesh model install bootstrap-memory task-log test-alpha-mesh; do
   sh_link="$HOME/bin/${script}.sh"
   if [[ -L "$sh_link" ]]; then
-    if [[ ! -e "$sh_link" ]]; then
-      echo "  Removing dangling: $sh_link"
+    if [[ ! -e "$sh_link" ]] || [[ "$(readlink "$sh_link")" == *.sh ]]; then
+      echo "  Removing legacy: $sh_link"
       rm -f "$sh_link"
-    elif [[ -L "$sh_link" ]]; then
-      target=$(readlink "$sh_link")
-      if [[ "$target" == *.sh ]]; then
-        echo "  Removing legacy .sh symlink: $sh_link"
-        rm -f "$sh_link"
-      fi
     fi
   fi
 done
