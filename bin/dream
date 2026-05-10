@@ -10,6 +10,7 @@
 #   dream --dry-run    # print extracted content, write nothing
 #   dream --days 3     # process sessions from last 3 days
 #   dream --days 5     # process sessions from last 5 days
+#   dream --repo ~/environment/pmat  # process only specific repo
 
 set -euo pipefail
 
@@ -35,11 +36,13 @@ fi
 # ─── Parse args ──────────────────────────────────────────────────────────────
 DRY_RUN=false
 DAYS_BACK=0  # 0 = today only
+TARGET_REPO=""  # Optional: filter to specific repo path
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dry-run) DRY_RUN=true; shift ;;
     --days) DAYS_BACK="$2"; shift 2 ;;
+    --repo) TARGET_REPO="$2"; shift 2 ;;
     *) echo "Unknown option: $1" >&2; exit 1 ;;
   esac
 done
@@ -87,12 +90,22 @@ from collections import defaultdict, Counter
 
 projects_dir = sys.argv[1]
 cutoff = sys.argv[2]
+target_repo = sys.argv[3] if len(sys.argv) > 3 else ""  # Optional: filter by repo path
+
+print(f"  Scanning {projects_dir}..." + (f" (repo filter: {target_repo})" if target_repo else ""), flush=True, file=sys.stderr)
 
 repo_data = defaultdict(lambda: {"content_lines": [], "dates": set()})
 file_count = 0
 processed = 0
 
 for root, dirs, files in os.walk(projects_dir):
+    # If target_repo specified, skip dirs that don't match
+    if target_repo:
+        # Check if this directory could contain our target repo
+        root_basename = os.path.basename(root)
+        if not any(candidate for candidate in [target_repo, os.path.basename(target_repo)] if candidate in root or root.endswith(candidate)):
+            continue
+
     for fname in files:
         if not fname.endswith('.jsonl'):
             continue
@@ -112,7 +125,6 @@ for root, dirs, files in os.walk(projects_dir):
         if fdate < cutoff:
             continue
 
-        file_count += 1
         cwds = set()
         messages = []
 
@@ -156,9 +168,7 @@ for root, dirs, files in os.walk(projects_dir):
                         if text and len(text) > 20 and not text.startswith('/'):
                             messages.append(f"[user] {text[:300]}")
 
-            combined = messages
-            extracted = combined[-30:]  # Keep last 30 messages only
-            if not extracted:
+            if not messages:
                 continue
 
             # Determine repo path from most common cwd
@@ -171,11 +181,22 @@ for root, dirs, files in os.walk(projects_dir):
                 candidate = os.path.join(home, decoded.replace('-', '/'))
                 repo_path = candidate if os.path.isdir(candidate) else proj_dir_name
 
-            content_str = '\n'.join(extracted)
-            repo_data[repo_path]["content_lines"].append(
-                f"--- Session: {os.path.basename(root)} ({fdate}) ---\n{content_str}"
-            )
-            repo_data[repo_path]["dates"].add(fdate)
+            # Filter to target repo if specified
+            if target_repo and not (target_repo in repo_path or repo_path in target_repo):
+                continue
+
+            file_count += 1
+            # Format: markdown-friendly with role markers and content
+            session_lines = []
+            for msg in messages:
+                session_lines.append(msg)
+
+            if session_lines:
+                content_str = '\n'.join(session_lines)
+                repo_data[repo_path]["content_lines"].append(
+                    f"--- Session: {os.path.basename(root)} ({fdate}) ---\n{content_str}"
+                )
+                repo_data[repo_path]["dates"].add(fdate)
 
         except OSError:
             continue
@@ -196,7 +217,7 @@ print(json.dumps(result))
 PYTHON_SCRIPT
 
 # Run the extraction script
-PYTHON_OUT=$(timeout 60 python3 "$EXTRACT_SCRIPT" "$CLAUDE_PROJECTS" "$CUTOFF" 2>&1)
+PYTHON_OUT=$(timeout 60 python3 "$EXTRACT_SCRIPT" "$CLAUDE_PROJECTS" "$CUTOFF" "$TARGET_REPO" 2>&1)
 rm -f "$EXTRACT_SCRIPT"
 
 # Extract stdout (JSON) - it's the last non-progress line

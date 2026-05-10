@@ -59,7 +59,8 @@ claude  # Claude Code picks up the active model config
 # End a work session — consolidates learnings from ALL repos worked in
 mesh dream
 mesh dream --dry-run    # preview extracted content without writing
-mesh dream --5-days     # process sessions from last 5 days
+mesh dream --days 5     # process sessions from last 5 days
+mesh dream --repo ~/environment/pmat/PMATFE-mfe-profile  # process only specific repo
 ```
 
 ## Token Setup
