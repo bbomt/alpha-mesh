@@ -20,7 +20,6 @@ MESH_DIR="$(cd "$(dirname "$SCRIPT_REALPATH")/.." && pwd)"
 LIB_DIR="$MESH_DIR/bin/lib"
 CLAUDE_PROJECTS="$HOME/.claude/projects"
 ENV_FILE="$MESH_DIR/.env"
-LOCAL_SETTINGS="$MESH_DIR/.claude/settings.json"
 
 # Constants
 MESH_SUBDIR=".mesh"

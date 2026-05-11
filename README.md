@@ -72,12 +72,17 @@ cp .env.example .env
 nano .env   # fill in your actual keys
 ```
 
-Tokens needed:
+Tokens needed for `mesh model` (model switching):
 - `ALPHA_MESH_MINIMAX_TOKEN` — your Minimax sk-cp-... key
 - `ALPHA_MESH_OPENROUTER_TOKEN` — your OpenRouter SK/... key
 - `ALPHA_MESH_ANTHROPIC_TOKEN` — your Anthropic key (optional)
 
-The `model` script loads `.env` automatically on each run. You can also set these as environment variables in your shell profile.
+Tokens needed for `mesh dream` (memory consolidation):
+- `DREAM_MODEL` — model name (e.g., `MiniMax-M2.7`)
+- `DREAM_URL` — API endpoint URL
+- `DREAM_TOKEN` — your API token
+
+The `model` and `dream` scripts load `.env` automatically on each run.
 
 ## Model Profiles
 
@@ -106,7 +111,7 @@ The `openrouter-default` profile provides the OpenRouter URL and token; the mode
 1. **Scan**: Finds `.jsonl` session logs in `~/.claude/projects/*/` modified today
 2. **Extract**: Pulls assistant text (>100 chars), user messages (>20 chars, non-slash-commands), and error/fail lines
 3. **Group**: Decodes repo paths from the `cwd` field in each session entry
-4. **Call LLM**: Uses the active model from alpha-mesh's `.claude/settings.json` once per repo:
+4. **Call LLM**: Uses `DREAM_MODEL`, `DREAM_URL`, `DREAM_TOKEN` from `.env`:
    - Extracts structured learnings (what worked, what failed, patterns, gotchas)
    - Synthesizes with existing `.mesh/MEMORY.md` (deduplicates, merges, caps at 200 lines)
 5. **Write**: Output to `{REPO}/.mesh/MEMORY.md` (rewritten each run)
