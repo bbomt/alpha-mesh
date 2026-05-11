@@ -23,6 +23,9 @@ from dream_core import (
     create_new_memory,
     MAX_MEMORY_LINES,
     CROSS_REPO_TAG,
+    split_routing,
+    enforce_recent_signals_cap,
+    check_conflicts,
 )
 
 
@@ -353,3 +356,158 @@ class TestCrossRepoTag:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+class TestSplitRouting:
+    """Tests for split_routing function."""
+
+    def test_splits_repo_local_and_global(self):
+        """Test basic splitting of REPO-LOCAL and GLOBAL insights."""
+        extracted = """## Extracted Insights
+
+### Layer1 — Durable Identity
+- [REPO-LOCAL] Use trunk-based branching.
+- [GLOBAL] Team uses JIRA for all tickets.
+
+### Layer2 — Current State
+- [REPO-LOCAL] Refactoring auth module (Expires: auth done).
+- [GLOBAL] Team is migrating to Python 3.10 (Expires: migration done).
+
+### Rejected Decisions
+- Feature X — Reason: too complex."""
+
+        repo_local, global_md = split_routing(extracted)
+
+        assert "[REPO-LOCAL]" in repo_local
+        assert "[GLOBAL]" not in repo_local
+        assert "[GLOBAL]" in global_md
+        assert "[REPO-LOCAL]" not in global_md
+
+    def test_preserves_rejected_decisions_in_both(self):
+        """Test that Rejected Decisions appear in both outputs."""
+        extracted = """## Extracted Insights
+
+### Rejected Decisions
+- Feature X — Reason: too complex.
+- Feature Y — Reason: not prioritized."""
+
+        repo_local, global_md = split_routing(extracted)
+
+        assert "Rejected Decisions" in repo_local
+        assert "Rejected Decisions" in global_md
+        assert "Feature X" in repo_local
+        assert "Feature X" in global_md
+
+    def test_empty_sections_filtered(self):
+        """Test that empty sections are filtered out."""
+        extracted = """## Extracted Insights
+
+### Layer3 — Session Signals
+<!-- Max 3 bullets. One sentence each. -->
+
+### Rejected Decisions
+- Decision — Reason."""
+
+        repo_local, global_md = split_routing(extracted)
+
+        # Layer3 has no content, so should be filtered
+        assert "Session Signals" not in repo_local
+        assert "Rejected Decisions" in repo_local
+
+
+class TestEnforceRecentSignalsCap:
+    """Tests for enforce_recent_signals_cap function."""
+
+    def test_caps_entries_at_5(self):
+        """Test that only last 5 entries are kept."""
+        content = """# MEMORY.md — test-repo
+_Last updated: 2026-05-11_
+
+## Recent Signals
+- Signal 1
+- Signal 2
+- Signal 3
+- Signal 4
+- Signal 5
+- Signal 6
+- Signal 7"""
+
+        result = enforce_recent_signals_cap(content, max_entries=5)
+
+        # Should have only last 5
+        assert "Signal 1" not in result
+        assert "Signal 2" not in result
+        assert "Signal 6" in result
+        assert "Signal 7" in result
+
+    def test_no_cap_if_under_limit(self):
+        """Test that no entries are removed if under cap."""
+        content = """# MEMORY.md — test-repo
+_Last updated: 2026-05-11_
+
+## Recent Signals
+- Signal 1
+- Signal 2"""
+
+        result = enforce_recent_signals_cap(content, max_entries=5)
+
+        assert "Signal 1" in result
+        assert "Signal 2" in result
+
+    def test_cap_when_section_at_end(self):
+        """Test cap works when Recent Signals is last section."""
+        content = """# MEMORY.md — test-repo
+_Last updated: 2026-05-11_
+
+## Recent Signals
+- Signal 1
+- Signal 2
+- Signal 3
+- Signal 4
+- Signal 5
+- Signal 6"""
+
+        result = enforce_recent_signals_cap(content, max_entries=5)
+
+        assert "Signal 1" not in result
+        assert "Signal 6" in result
+
+
+class TestCheckConflicts:
+    """Tests for check_conflicts function."""
+
+    def test_detects_non_empty_conflicts(self):
+        """Test that conflicts are detected when section has content."""
+        content = """# MEMORY.md — test-repo
+_Last updated: 2026-05-11_
+
+## ⚠️ Conflicts
+- [Date] repo: NEW vs EXISTING — awaiting resolution"""
+
+        has_conflicts, conflicts = check_conflicts(content)
+
+        assert has_conflicts is True
+        assert len(conflicts) > 0
+
+    def test_no_conflicts_when_section_empty(self):
+        """Test that no conflicts when section exists but empty."""
+        content = """# MEMORY.md — test-repo
+_Last updated: 2026-05-11_
+
+## ⚠️ Conflicts
+<!-- Unresolved contradictions. Human review required. -->"""
+
+        has_conflicts, conflicts = check_conflicts(content)
+
+        assert has_conflicts is False
+        assert len(conflicts) == 0
+
+    def test_no_conflicts_when_section_missing(self):
+        """Test that no conflicts when section doesn't exist."""
+        content = """# MEMORY.md — test-repo
+_Last updated: 2026-05-11_
+
+## Identity
+Some identity content."""
+
+        has_conflicts, conflicts = check_conflicts(content)
+
+        assert has_conflicts is False

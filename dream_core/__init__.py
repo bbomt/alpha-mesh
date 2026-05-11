@@ -26,6 +26,150 @@ CLAUDE_PROJECTS = os.path.expanduser("~/.claude/projects")
 SECTION_FIELDS = ["architecture", "patterns", "jira_workflow",
                   "deploy_commands", "testing", "workflow"]
 
+def split_routing(extracted: str) -> Tuple[str, str]:
+    """
+    Split extracted insights into REPO-LOCAL and GLOBAL markdown strings.
+
+    Args:
+        extracted: Raw extracted insights from LLM
+
+    Returns:
+        Tuple of (repo_local_md, global_md)
+    """
+    repo_local = []
+    global_md = []
+
+    current_section = None
+    in_rejected = False
+
+    for line in extracted.split("\n"):
+        # Track section headers
+        if line.startswith("### "):
+            current_section = line
+            in_rejected = "Rejected Decisions" in line
+            # Add section header to both if they end up having content
+            repo_local.append(line)
+            global_md.append(line)
+            continue
+
+        # Keep comments and blank lines in both
+        if line.strip().startswith("<!--") or line.strip() == "":
+            repo_local.append(line)
+            global_md.append(line)
+            continue
+
+        # Rejected Decisions go to both (permanent record)
+        if in_rejected:
+            repo_local.append(line)
+            global_md.append(line)
+            continue
+
+        # Route based on tag
+        if "[REPO-LOCAL]" in line:
+            repo_local.append(line)
+        elif "[GLOBAL]" in line:
+            global_md.append(line)
+        else:
+            # Lines without tags go to both (section headers, etc.)
+            repo_local.append(line)
+            global_md.append(line)
+
+    # Filter out empty sections
+    def filter_empty(sections):
+        result = []
+        i = 0
+        while i < len(sections):
+            line = sections[i]
+            if line.startswith("### "):
+                # Check if next non-blank lines are bullets
+                j = i + 1
+                has_content = False
+                while j < len(sections) and (sections[j].strip() == "" or sections[j].strip().startswith("<!--")):
+                    j += 1
+                if j < len(sections) and sections[j].strip().startswith("-"):
+                    has_content = True
+                if has_content:
+                    result.extend(sections[i:j])
+                i = j
+            else:
+                result.append(line)
+                i += 1
+        return result
+
+    repo_local = filter_empty(repo_local)
+    global_md = filter_empty(global_md)
+
+    return "\n".join(repo_local).strip(), "\n".join(global_md).strip()
+
+
+def enforce_recent_signals_cap(memory_content: str, max_entries: int = 5) -> str:
+    """
+    Enforce a max number of entries in ## Recent Signals section.
+
+    Args:
+        memory_content: Full MEMORY.md content
+        max_entries: Maximum number of entries to keep (default 5)
+
+    Returns:
+        Updated memory content with cap enforced
+    """
+    lines = memory_content.split("\n")
+    result = []
+    in_recent_signals = False
+    signals = []
+    other_lines = []
+
+    for line in lines:
+        if line.startswith("## Recent Signals"):
+            in_recent_signals = True
+            result.append(line)
+            continue
+        if in_recent_signals and line.startswith("## "):
+            # New section starts, process collected signals
+            in_recent_signals = False
+            # Keep only last max_entries
+            for sig in signals[-max_entries:]:
+                result.append(sig)
+            signals = []
+            result.append(line)
+            continue
+        if in_recent_signals:
+            if line.strip().startswith("-"):
+                signals.append(line)
+            else:
+                result.append(line)
+        else:
+            result.append(line)
+
+    # Handle if file ends with Recent Signals section
+    if in_recent_signals:
+        for sig in signals[-max_entries:]:
+            result.append(sig)
+
+    return "\n".join(result)
+
+
+def check_conflicts(memory_content: str) -> Tuple[bool, List[str]]:
+    """
+    Check if ## ⚠️ Conflicts section is non-empty.
+
+    Returns:
+        Tuple of (has_conflicts, list of conflict entries)
+    """
+    conflicts = []
+    in_conflicts = False
+    for line in memory_content.split("\n"):
+        if line.startswith("## ⚠️ Conflicts"):
+            in_conflicts = True
+            continue
+        if in_conflicts and line.startswith("## "):
+            in_conflicts = False
+            continue
+        if in_conflicts and line.strip() and not line.strip().startswith("<!--"):
+            conflicts.append(line)
+    return len(conflicts) > 0, conflicts
+
+
 
 def extract_sessions_from_jsonl(
     projects_dir: str,
@@ -366,6 +510,9 @@ def process_repos(
             model_config=model_config
         )
 
+        # Split into REPO-LOCAL and GLOBAL insights
+        repo_local_learnings, global_learnings = split_routing(new_learnings)
+
         # Step B: Read existing memory
         mesh_dir = os.path.join(repo_path, MESH_SUBDIR)
         memory_file = os.path.join(mesh_dir, MEMORY_FILENAME)
@@ -382,18 +529,26 @@ def process_repos(
             print(f"  Synthesizing with existing memory...", flush=True, file=sys.stderr)
             updated_memory, cross_items = synthesize_memory(
                 existing_memory=existing_memory,
-                new_learnings=new_learnings,
+                new_learnings=repo_local_learnings,
                 date=date,
                 repo_name=repo_name,
                 model_config=model_config
             )
 
             if updated_memory:
+                # Enforce 5-entry cap on Recent Signals
+                updated_memory = enforce_recent_signals_cap(updated_memory, max_entries=5)
+                # Check for conflicts
+                has_conflicts, _ = check_conflicts(updated_memory)
+                if has_conflicts:
+                    print(f"  ⚠️  WARNING: Conflicts section non-empty in {memory_file}", file=sys.stderr)
                 if not dry_run:
                     with open(memory_file, "w") as f:
                         f.write(updated_memory)
                 summary.append((repo_path, repo_name, "written"))
-                cross_repo_lines.extend(cross_items)
+                # Collect GLOBAL insights for cross-repo memory
+                if global_learnings:
+                    cross_repo_lines.append(global_learnings)
             else:
                 print(f"  Synthesis failed - appending raw learnings", flush=True, file=sys.stderr)
                 # Fallback: append
@@ -403,19 +558,44 @@ def process_repos(
                         f.write(fallback_content)
                 summary.append((repo_path, repo_name, "append-fallback"))
                 cross_repo_lines.append(f"## {date} — {repo_name}\n{new_learnings}")
+                # Also collect GLOBAL insights
+                if global_learnings:
+                    cross_repo_lines.append(global_learnings)
 
         elif model_config["model"] and model_config["token"]:
-            # First run - no existing memory
+            # First run - no existing memory, use synthesize_memory to create structure
             print(f"  Creating new memory file...", flush=True, file=sys.stderr)
-            new_memory = create_new_memory(new_learnings, date, repo_name)
-            if not dry_run:
-                with open(memory_file, "w") as f:
-                    f.write(new_memory)
-            summary.append((repo_path, repo_name, "new"))
-            # Extract cross-repo items from new learnings
-            for line in new_learnings.split('\n'):
-                if CROSS_REPO_TAG in line:
-                    cross_repo_lines.append(line)
+            updated_memory, cross_items = synthesize_memory(
+                existing_memory="",
+                new_learnings=repo_local_learnings,
+                date=date,
+                repo_name=repo_name,
+                model_config=model_config
+            )
+            if updated_memory:
+                # Enforce 5-entry cap on Recent Signals
+                updated_memory = enforce_recent_signals_cap(updated_memory, max_entries=5)
+                # Check for conflicts
+                has_conflicts, _ = check_conflicts(updated_memory)
+                if has_conflicts:
+                    print(f"  ⚠️ WARNING: Conflicts section non-empty in new memory", file=sys.stderr)
+                if not dry_run:
+                    with open(memory_file, "w") as f:
+                        f.write(updated_memory)
+                summary.append((repo_path, repo_name, "new"))
+            else:
+                # Fallback: write raw learnings
+                if not dry_run:
+                    with open(memory_file, "w") as f:
+                        header = f"# MEMORY.md — {repo_name}\n_Last updated: {date}_\n"
+                        structure = "\n## Identity\n\n## Current State\n\n## Recent Signals\n\n## ⚠️ Conflicts\n"
+                        f.write(header + structure)
+                    with open(memory_file, "a") as f:
+                        f.write(f"\n\n## Raw Learnings\n{repo_local_learnings}")
+                summary.append((repo_path, repo_name, "new-fallback"))
+            # Collect GLOBAL insights for cross-repo memory
+            if global_learnings:
+                cross_repo_lines.append(global_learnings)
 
         else:
             # LLM unavailable - raw content fallback
@@ -447,31 +627,68 @@ def extract_learnings(
     Returns:
         Extracted learnings text
     """
-    extract_prompt = f"""Extract learnings from this AI coding session. Output ONLY valid markdown — no JSON, no code fences, no explanatory text.
+    extract_prompt = f"""# Role
+You are a Knowledge Distillation Engine for a multi-repo software development team.
+Your job is NOT to summarise what happened in this session. Your job is to extract
+durable, actionable knowledge and classify it correctly so a memory system stays
+useful as it accumulates — rather than becoming noisier over time.
 
-Required format:
-### Architecture
-- [one-line architectural decision]
+# What to Capture
+Focus on the "How" and "Why". Look for:
+- Repeatable patterns: how the team structures work, names things, or organises code
+- Rejected decisions and the reason they were rejected (prevents re-litigating)
+- JIRA/ticket workflow specifics: what triggers a branch, what a PR requires, deploy conditions
+- Friction signals: moments where Claude Code was corrected, asked to redo something,
+  or redirected — these reveal implicit rules that haven't been written down yet
+- Testing boundaries: what counts as a unit test vs integration test in this project,
+  what gets mocked and what does not
+- Phrases like "we always...", "in this project...", "don't do X, do Y instead"
 
-### Patterns
-- [one-line code pattern or technique]
+# What to Ignore
+Do not extract:
+- Specific bug fixes or their code
+- One-off data migrations or scripts
+- Any fact that would be wrong or irrelevant within 48 hours
+- General programming advice that applies everywhere (not specific to this team/repo)
 
-### Jira Workflow
-- [one-line Jira or process learning]
+# Layer Classification
+For every insight you extract, assign it to exactly one layer:
 
-### Deploy Commands
-- [one-line deployment command or script]
+LAYER 1 — DURABLE IDENTITY
+  Changes rarely. Architectural principles, conventions, workflow rules, philosophy.
 
-### Testing
-- [one-line testing approach or command]
+LAYER 2 — CURRENT STATE
+  Changes weekly. Active work, known workarounds, in-progress decisions.
+  Must include an expiry condition (e.g. "until X is resolved").
 
-### Workflow
-- [one-line development workflow learning]
+LAYER 3 — SESSION SIGNAL
+  Expires within ~7 days. One sentence. Max 3 per session.
 
-If no real learning exists for a section, omit the section entirely. Mark cross-repo learnings with **[CROSS-REPO]**.
+# Routing Classification
+For every insight, also decide:
+- REPO-LOCAL: specific to this codebase's tech stack, folder structure, or domain logic
+- GLOBAL: applies across all repos (team process, JIRA workflow, communication norms)
 
-## Session content
-{session_content}"""
+# Session Source: {repo_name} | Date: {date}
+
+{session_content}
+
+# Output Format (Markdown only — no preamble)
+
+## Extracted Insights
+
+### Layer 1 — Durable Identity
+<!-- One bullet per insight. Format: `[REPO-LOCAL|GLOBAL] Insight text.` -->
+
+### Layer 2 — Current State
+<!-- One bullet per insight. Format: `[REPO-LOCAL|GLOBAL] Insight text. (Expires: condition)` -->
+
+### Layer 3 — Session Signals
+<!-- Max 3 bullets. One sentence each. -->
+
+### Rejected Decisions
+<!-- Decisions that were explicitly ruled out this session. Format: Decision — Reason. -->
+<!-- This section is high value. Do not skip it if any rejections occurred. -->"""
 
     base_url = model_config.get("base_url", "") or "https://api.anthropic.com"
 
@@ -511,29 +728,92 @@ def synthesize_memory(
     Returns:
         Tuple of (updated_memory, cross_repo_items)
     """
-    sys_prompt = f"""You are maintaining a memory file for an AI coding agent.
-Below is the existing memory and new learnings from recent sessions.
+    sys_prompt = f"""# Role
+You are a Memory Curator for a software development team's AI coding assistant.
+You will be given two inputs:
+1. EXISTING MEMORY — the current contents of MEMORY.md
+2. NEW INSIGHTS — structured extraction from today's session(s)
 
-Return a JSON object with this structure:
-{{
-  "content": "updated memory file content as markdown..."
-}}
+Your task is to produce an updated MEMORY.md that is more useful than the current one.
+More useful means: more accurate, less redundant, no stale facts, conflicts surfaced.
 
-The content must:
-- Incorporate the new learnings
-- Remove duplicates (keep the best single statement of each point)
-- Remove anything superseded by newer learnings
-- Keep the file concise — every line must earn its place
-- Hard limit: 200 lines
+# Merge Rules
 
-## Existing memory
+## For Layer1 — Durable Identity
+- If a new insight CONFIRMS an existing fact: skip it (no duplicate)
+- If a new insight REFINES an existing fact: update it in place, append `(updated {date})`
+- If a new insight CONTRADICTS an existing fact: do NOT silently overwrite.
+  Flag it in the Conflicts section and keep BOTH versions until a human resolves it.
+
+## For Layer2 — Current State
+- Replace outdated current-state facts with new ones where the expiry condition has
+  clearly been met (e.g. a workaround that was resolved)
+- If unclear whether the old fact expired, keep both and flag in Conflicts
+
+## For Layer3 — Session Signals
+- Prepend new signals
+- Drop oldest entries beyond the 5-entry cap
+
+## For Rejected Decisions
+- Accumulate these permanently in Layer1 under a `### Rejected Decisions` subsection
+- They never expire — do not drop them during a merge
+
+# Conflict Protocol
+Never silently overwrite a memory. If new content contradicts existing content:
+- Add an entry to the `## ⚠️ Conflicts` section
+- Format: `[Date] {repo_name}: NEW fact vs EXISTING fact — awaiting resolution`
+- Leave both facts in place under their respective layers
+- A human or a future session will resolve it
+
+# Routing
+- Insights marked REPO-LOCAL go only into the repo's `.mesh/MEMORY.md`
+- Insights marked GLOBAL go only into the global memory file
+- Do not mix them
+
+# Inputs
+
+## EXISTING MEMORY
 {existing_memory}
 
-## New learnings
+## NEW INSIGHTS
 {new_learnings}
 
-If any learning applies across multiple repos or to the project as a whole,
-prefix it with **[CROSS-REPO]** in the content field."""
+# Output
+
+Produce the complete updated MEMORY.md file using the structure below.
+Do not include any commentary outside the file content itself.
+
+---
+
+# MEMORY.md — {repo_name}
+_Last updated: {date}_
+
+## Identity
+<!-- Layer1: Durable facts about how this team/repo works. -->
+
+### Workflow & Tooling
+<!-- Branching, JIRA, deploy triggers, PR conventions -->
+
+### Testing Philosophy
+<!-- Unit vs integration boundary, mocking preferences, coverage expectations -->
+
+### Architecture & Patterns
+<!-- Folder structure, naming conventions, state management, the "golden path" -->
+
+### Tribal Knowledge
+<!-- Non-standard practices vital to this repo. Things that would surprise a new developer. -->
+
+### Rejected Decisions
+<!-- Decisions ruled out and why. Permanent record. -->
+
+## Current State
+<!-- Layer2: Active work, workarounds, in-progress decisions. Each has an expiry condition. -->
+
+## Recent Signals
+<!-- Layer3: Rolling window of 5. Session-level discoveries. -->
+
+## ⚠️ Conflicts
+<!-- Unresolved contradictions between existing and new memory. Human review required. -->"""
 
     base_url = model_config.get("base_url", "") or "https://api.anthropic.com"
 
@@ -608,27 +888,89 @@ def write_cross_repo_memory(
         with open(local_cross_file) as f:
             local_cross_existing = f.read()
 
-    # Strip [CROSS-REPO] markers — global memory is already cross-repo by nature
-    clean_content = re.sub(r'\*\*\[CROSS-REPO\]\*\*', '', cross_content)
+    # Use GLOBAL insights directly (routing done in process_repos)
+    clean_content = cross_content
 
-    sys_prompt = f"""You are maintaining a cross-repo memory file for an AI coding agent.
-This file contains learnings that apply across multiple repositories.
+    sys_prompt = f"""# Role
+You are a Memory Curator for a software development team's AI coding assistant.
+You will be given two inputs:
+1. EXISTING MEMORY — the current contents of the global MEMORY.md
+2. NEW INSIGHTS — structured extraction marked as GLOBAL
 
-Return a JSON object with this structure:
-{{
-  "content": "updated memory file content as markdown..."
-}}
+Your task is to produce an updated global MEMORY.md that is more useful than the current one.
 
-The content must:
-- Deduplicate with existing memory
-- Keep concise (max 200 lines)
-- Use same section headings as existing
+# Merge Rules
 
-## Existing memory
-{local_cross_existing or "No existing memory."}
+## For Layer1 — Durable Identity
+- If a new insight CONFIRMS an existing fact: skip it (no duplicate)
+- If a new insight REFINES an existing fact: update it in place, append `(updated {date})`
+- If a new insight CONTRADICTS an existing fact: do NOT silently overwrite.
+  Flag it in the Conflicts section and keep BOTH versions until a human resolves it.
 
-## New cross-repo learnings
-{clean_content}"""
+## For Layer2 — Current State
+- Replace outdated current-state facts with new ones where the expiry condition has
+  clearly been met
+- If unclear whether the old fact expired, keep both and flag in Conflicts
+
+## For Layer3 — Session Signals
+- Prepend new signals
+- Drop oldest entries beyond the 5-entry cap
+
+## For Rejected Decisions
+- Accumulate these permanently in Layer1 under a `### Rejected Decisions` subsection
+- They never expire — do not drop them during a merge
+
+# Conflict Protocol
+Never silently overwrite a memory. If new content contradicts existing content:
+- Add an entry to the `## ⚠️ Conflicts` section
+- Format: `[Date] GLOBAL: NEW fact vs EXISTING fact — awaiting resolution`
+- Leave both facts in place under their respective layers
+
+# Inputs
+
+## EXISTING MEMORY
+{local_cross_existing if local_cross_existing else "No existing memory."}
+
+## NEW INSIGHTS
+{clean_content}
+
+# Output
+
+Produce the complete updated global MEMORY.md file using the structure below.
+Do not include any commentary outside the file content itself.
+
+---
+
+# MEMORY.md — GLOBAL
+_Last updated: {date}_
+
+## Identity
+<!-- Layer1: Durable facts about team process, JIRA workflow, communication norms. -->
+
+### Workflow & Tooling
+<!-- Team-wide branching, JIRA, deploy triggers, PR conventions -->
+
+### Testing Philosophy
+<!-- Team-wide testing standards, mocking preferences -->
+
+### Architecture & Patterns
+<!-- Cross-repo architectural principles, shared patterns -->
+
+### Tribal Knowledge
+<!-- Team norms that would surprise a new developer. -->
+
+### Rejected Decisions
+<!-- Team-wide decisions ruled out and why. Permanent record. -->
+
+## Current State
+<!-- Layer2: Team-wide active work, workarounds, in-progress decisions. -->
+
+## Recent Signals
+<!-- Layer3: Rolling window of 5. Team-level session discoveries. -->
+
+## ⚠️ Conflicts
+<!-- Unresolved contradictions. Human review required. -->
+"""
 
     base_url = model_config.get("base_url", "") or "https://api.anthropic.com"
 
@@ -646,6 +988,12 @@ The content must:
         if result:
             updated = extract_response_text(result)
             if updated:
+                # Enforce 5-entry cap on Recent Signals
+                updated = enforce_recent_signals_cap(updated, max_entries=5)
+                # Check for conflicts
+                has_conflicts, _ = check_conflicts(updated)
+                if has_conflicts:
+                    print(f"  ⚠️  WARNING: Conflicts section non-empty in {local_cross_file}", file=sys.stderr)
                 with open(local_cross_file, "w") as f:
                     f.write(updated)
                 return True
