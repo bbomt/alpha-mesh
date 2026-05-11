@@ -162,36 +162,20 @@ else:
   exit 0
 fi
 
-# ─── 2. Read active model configuration ──────────────────────────────────────
-echo "Reading active model configuration..."
+# ─── 2. Read model configuration from .env ───────────────────────────────────
+echo "Reading model configuration..."
 
-if [[ ! -f "$LOCAL_SETTINGS" ]]; then
-  echo "ERROR: No local settings found at $LOCAL_SETTINGS."
-  echo "Run 'mesh model use <profile>' to configure a model first."
+if [[ -z "${DREAM_MODEL:-}" ]] || [[ -z "${DREAM_TOKEN:-}" ]]; then
+  echo "ERROR: DREAM_MODEL and DREAM_TOKEN must be set in .env"
+  echo "Add DREAM_MODEL, DREAM_URL, and DREAM_TOKEN to your .env file."
   exit 1
 fi
 
-MODEL=$(jq -r '.env.ANTHROPIC_MODEL // ""' "$LOCAL_SETTINGS")
-BASE_URL=$(jq -r '.env.ANTHROPIC_BASE_URL // ""' "$LOCAL_SETTINGS")
-TOKEN=$(jq -r '.env.ANTHROPIC_AUTH_TOKEN // .env.ANTHROPIC_API_KEY // ""' "$LOCAL_SETTINGS")
+MODEL="$DREAM_MODEL"
+BASE_URL="${DREAM_URL:-https://api.minimax.io/v1}"
+TOKEN="$DREAM_TOKEN"
 
-if [[ -z "$MODEL" ]] || [[ "$MODEL" == "null" ]]; then
-  echo "ERROR: No ANTHROPIC_MODEL set in $LOCAL_SETTINGS."
-  echo "Run 'mesh model use <profile>' to configure a model."
-  exit 1
-fi
-
-if [[ -z "$TOKEN" ]] || [[ "$TOKEN" == "REPLACE_WITH_"* ]]; then
-  echo "ERROR: Auth token not configured in $LOCAL_SETTINGS."
-  echo "Check your .env file or run 'mesh model use <profile>' to configure credentials."
-  exit 1
-fi
-
-if [[ -z "$BASE_URL" ]] || [[ "$BASE_URL" == "null" ]]; then
-  BASE_URL="https://api.anthropic.com"
-fi
-
-echo "  Model: $MODEL (${BASE_URL})"
+echo "  Model: $MODEL ($BASE_URL)"
 echo ""
 
 # ─── 3. Process each repo using Python ────────────────────────────────────────
