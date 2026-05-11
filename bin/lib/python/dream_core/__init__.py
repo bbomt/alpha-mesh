@@ -336,7 +336,7 @@ def process_repos(
                 if not dry_run:
                     with open(memory_file, "w") as f:
                         f.write(updated_memory)
-                summary.append((repo_name, "written"))
+                summary.append((repo_path, repo_name, "written"))
                 cross_repo_lines.extend(cross_items)
             else:
                 print(f"  Synthesis failed - appending raw learnings", flush=True, file=sys.stderr)
@@ -345,7 +345,7 @@ def process_repos(
                 if not dry_run:
                     with open(memory_file, "a") as f:
                         f.write(fallback_content)
-                summary.append((repo_name, "append-fallback"))
+                summary.append((repo_path, repo_name, "append-fallback"))
                 cross_repo_lines.append(f"## {date} — {repo_name}\n{new_learnings}")
 
         elif model_config["model"] and model_config["token"]:
@@ -355,7 +355,7 @@ def process_repos(
             if not dry_run:
                 with open(memory_file, "w") as f:
                     f.write(new_memory)
-            summary.append((repo_name, "new"))
+            summary.append((repo_path, repo_name, "new"))
 
         else:
             # LLM unavailable - raw content fallback
@@ -364,7 +364,7 @@ def process_repos(
             if not dry_run:
                 with open(memory_file, "a") as f:
                     f.write(raw_content)
-            summary.append((repo_name, "raw-fallback"))
+            summary.append((repo_path, repo_name, "raw-fallback"))
 
     return summary, "\n".join(cross_repo_lines) if cross_repo_lines else None
 
@@ -578,17 +578,20 @@ Keep the same section headings. Max 200 lines. Deduplicate."""
 
 
 def main():
-    """Main entry point for dream_core module."""
+    """Main entry point for dream_core module - unified CLI."""
     import argparse
 
-    parser = argparse.ArgumentParser(description="Dream core logic")
-    parser.add_argument("--dry-run", action="store_true", help="Don't write files")
+    parser = argparse.ArgumentParser(
+        description="Dream core logic - end-of-session memory consolidation.",
+        epilog="Model config can be set via env vars or CLI args."
+    )
+    parser.add_argument("--dry-run", action="store_true", help="Print without writing")
     parser.add_argument("--days", type=int, default=0, help="Days back to process")
     parser.add_argument("--repo", type=str, default="", help="Filter to specific repo")
     parser.add_argument("--projects-dir", type=str, default=CLAUDE_PROJECTS)
-    parser.add_argument("--mesh-dir", type=str, required=True)
-    parser.add_argument("--date", type=str, default="")
-    parser.add_argument("--local-settings", type=str, required=True)
+    parser.add_argument("--model", type=str, default=os.environ.get("DREAM_MODEL", ""))
+    parser.add_argument("--token", type=str, default=os.environ.get("DREAM_TOKEN", ""))
+    parser.add_argument("--base-url", type=str, default=os.environ.get("DREAM_URL", ""))
 
     args = parser.parse_args()
 
@@ -598,37 +601,82 @@ def main():
     else:
         cutoff = time.strftime("%Y-%m-%d")
 
-    date = args.date or time.strftime("%Y-%m-%d")
+    date = time.strftime("%Y-%m-%d")
 
-    # Extract sessions
+    # ─── 1. Extract sessions ───────────────────────────────────────────────────
+    print(f"Scanning {args.projects_dir} ...", file=sys.stderr)
+
     repos_data = extract_sessions_from_jsonl(
         projects_dir=args.projects_dir,
         cutoff=cutoff,
         target_repo=args.repo if args.repo else None
     )
 
-    if not repos_data:
-        print("No session files found in date range.", file=sys.stderr)
+    file_count = sum(info.get('file_count', 0) for info in repos_data.values())
+    if file_count == 0:
+        print(f"No session files found modified since {cutoff}.", file=sys.stderr)
+        print("dream complete — nothing to process.", file=sys.stderr)
         return 0
 
-    # Read model config
-    model_config = read_model_config(args.local_settings)
+    print(f"Found {file_count} session file(s)", file=sys.stderr)
 
-    # Process repos
+    if not repos_data:
+        return 0
+
+    # ─── 2. Dry run ────────────────────────────────────────────────────────────
+    if args.dry_run:
+        print("")
+        print("=== DRY RUN — printing extracted learnings, writing nothing ===")
+        print("")
+        for i, (repo, info) in enumerate(sorted(repos_data.items()), 1):
+            dates_str = ', '.join(info['dates'])
+            content_preview = info['content'][:800]
+            print(f"[Repo {i}] {repo}")
+            print(f"  Sessions dates: {dates_str}")
+            print(f"  Content ({len(info['content'])} chars):")
+            print(f"  {content_preview}")
+            print("")
+        print("=== DRY RUN COMPLETE — no files written ===")
+        return 0
+
+    # ─── 3. Validate model config ──────────────────────────────────────────────
+    if not args.model or not args.token:
+        print("ERROR: DREAM_MODEL and DREAM_TOKEN must be set (via env or --model/--token)", file=sys.stderr)
+        return 1
+
+    base_url = args.base_url or "https://api.minimax.io/v1"
+
+    model_config = {
+        "model": args.model,
+        "token": args.token,
+        "base_url": base_url
+    }
+
+    # ─── 4. Process repos ──────────────────────────────────────────────────────
+    print("Processing repos...", file=sys.stderr)
+
     summary, cross_content = process_repos(
         repos_data=repos_data,
         model_config=model_config,
         date=date,
-        dry_run=args.dry_run
+        dry_run=False
     )
 
-    # Write cross-repo memory
-    if cross_content and not args.dry_run:
+    # ─── 5. Cross-repo memory ──────────────────────────────────────────────────
+    if cross_content:
         write_cross_repo_memory(cross_content, date, model_config)
 
-    # Print summary
-    for repo_name, status in summary:
-        print(f"  {repo_name}: .mesh/MEMORY.md ({status})")
+    # ─── 6. Summary output ─────────────────────────────────────────────────────
+    print("", file=sys.stderr)
+    for repo_path, repo_name, status in summary:
+        print(f"  {repo_path}/.mesh/MEMORY.md ({status})")
+
+    if cross_content:
+        cross_file = os.path.expanduser("~/.mesh/MEMORY.md")
+        print(f"  {cross_file} (written)")
+
+    print("", file=sys.stderr)
+    print(f"dream complete — {date}", file=sys.stderr)
 
     return 0
 

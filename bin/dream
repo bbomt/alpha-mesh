@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
 # alpha-mesh/bin/dream
-# End-of-session memory consolidation.
-# Reads: Claude Code session logs (~/.claude/projects/*.jsonl)
-# Writes: .mesh/MEMORY.md in each repo worked in (synthesis rewrite)
-#         ~/.mesh/MEMORY.md for cross-repo learnings
+# Thin shell wrapper around dream_core Python module.
+# Handles .env loading, arg parsing, and calls the Python CLI.
 #
 # Usage:
 #   dream              # process today's sessions (default)
@@ -17,46 +15,42 @@ set -euo pipefail
 # Resolve actual script path (handles symlinks in ~/bin/)
 SCRIPT_REALPATH="$(readlink -f "${BASH_SOURCE[0]}")"
 MESH_DIR="$(cd "$(dirname "$SCRIPT_REALPATH")/.." && pwd)"
-LIB_DIR="$MESH_DIR/bin/lib"
-CLAUDE_PROJECTS="$HOME/.claude/projects"
+PYTHON_PATH="$MESH_DIR/bin/lib/python"
 ENV_FILE="$MESH_DIR/.env"
+CLAUDE_PROJECTS="$HOME/.claude/projects"
 
-# Constants
-MESH_SUBDIR=".mesh"
-MEMORY_FILENAME="MEMORY.md"
-CROSS_REPO_TAG="[CROSS-REPO]"
-MAX_MEMORY_LINES=200
-
-# Load shared library
-# shellcheck source=bin/lib/repo
-source "$LIB_DIR/repo"
-
-# Load .env if it exists
+# Load .env if it exists (sets DREAM_MODEL, DREAM_TOKEN, DREAM_URL)
 if [[ -f "$ENV_FILE" ]]; then
   set -a
   source "$ENV_FILE"
   set +a
 fi
 
-# ─── Parse args ──────────────────────────────────────────────────────────────
-DRY_RUN=false
-DAYS_BACK=0  # 0 = today only
-TARGET_REPO=""  # Optional: filter to specific repo path
+# Validate required env vars are present
+if [[ -z "${DREAM_MODEL:-}" ]]; then
+  echo "ERROR: DREAM_MODEL is not set in .env"
+  echo "Add DREAM_MODEL to $ENV_FILE (e.g., DREAM_MODEL=MiniMax-M2.7)"
+  exit 1
+fi
 
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --dry-run) DRY_RUN=true; shift ;;
-    --days) DAYS_BACK="$2"; shift 2 ;;
-    --repo) TARGET_REPO="$2"; shift 2 ;;
-    *) echo "Unknown option: $1" >&2; exit 1 ;;
-  esac
-done
+if [[ -z "${DREAM_TOKEN:-}" ]]; then
+  echo "ERROR: DREAM_TOKEN is not set in .env"
+  echo "Add DREAM_TOKEN to $ENV_FILE"
+  exit 1
+fi
 
+if [[ -z "${DREAM_URL:-}" ]]; then
+  echo "ERROR: DREAM_URL is not set in .env"
+  echo "Add DREAM_URL to $ENV_FILE (e.g., DREAM_URL=https://api.minimax.io/v1)"
+  exit 1
+fi
+
+# ─── Header ──────────────────────────────────────────────────────────────────
 DATE=$(date +%Y-%m-%d)
-TIMESTAMP=$(date +%Y-%m-%d-%H%M)
 
-# Determine cutoff date for session file selection
-if [[ "$DAYS_BACK" -gt 0 ]]; then
+# Determine window label for header
+if [[ "${1:-}" == "--days" ]] && [[ "${2:-}" =~ ^[0-9]+$ ]]; then
+  DAYS_BACK="${2}"
   if date -u -d "$DAYS_BACK days ago" +%Y-%m-%d &>/dev/null; then
     CUTOFF=$(date -u -d "$DAYS_BACK days ago" +%Y-%m-%d)
   else
@@ -64,7 +58,6 @@ if [[ "$DAYS_BACK" -gt 0 ]]; then
   fi
   WINDOW_LABEL="last $DAYS_BACK days"
 else
-  # Use local date for cutoff to match file modification times
   CUTOFF=$(date +%Y-%m-%d)
   WINDOW_LABEL="today"
 fi
@@ -73,166 +66,12 @@ echo "=== PMAT Dream: $DATE ==="
 echo "Window: $WINDOW_LABEL (since $CUTOFF)"
 echo ""
 
-# ─── 1. Find and extract JSONL session files ─────────────────────────────────
-if [[ ! -d "$CLAUDE_PROJECTS" ]]; then
-  echo "No Claude Code projects directory found at $CLAUDE_PROJECTS"
-  echo "Has Claude Code been used in this environment?"
-  exit 0
-fi
-
-echo "Scanning $CLAUDE_PROJECTS ..."
-
-# Count files first for progress indication
-TOTAL_FILES=$(find "$CLAUDE_PROJECTS" -name "*.jsonl" 2>/dev/null | wc -l)
-echo "  Found $TOTAL_FILES jsonl file(s) to scan"
-echo ""
-
-# ─── Use Python module for extraction ────────────────────────────────────────
-# Set up Python path to find the dream_core module
-PYTHON_PATH="$MESH_DIR/bin/lib/python"
-PYTHONPATH="${PYTHONPATH:-}"
-export PYTHONPATH="${PYTHON_PATH}${PYTHONPATH:+:$PYTHONPATH}"
-
-# Run the Python extraction
-EXTRACT_SCRIPT=$(mktemp /tmp/dream-extract-XXXXXX.py)
-cat > "$EXTRACT_SCRIPT" <<'PYEOF'
-import sys
-import json
-sys.path.insert(0, sys.argv[1])
-from dream_core import extract_sessions_from_jsonl
-
-projects_dir = sys.argv[2]
-cutoff = sys.argv[3]
-target_repo = sys.argv[4] if len(sys.argv) > 4 and sys.argv[4] else None
-
-repos_data = extract_sessions_from_jsonl(
-    projects_dir=projects_dir,
-    cutoff=cutoff,
-    target_repo=target_repo
-)
-
-file_count = sum(info.get('file_count', 0) for info in repos_data.values())
-result = {
-    'repos': {k: {'content': v['content'], 'dates': v['dates']} for k, v in repos_data.items()},
-    'file_count': file_count
-}
-print(json.dumps(result))
-PYEOF
-
-EXTRACTED_DATA=$(uv run --project "$PYTHON_PATH" python3 "$EXTRACT_SCRIPT" "$PYTHON_PATH" "$CLAUDE_PROJECTS" "$CUTOFF" "$TARGET_REPO" 2>&1)
-rm -f "$EXTRACT_SCRIPT"
-
-# Extract stdout (JSON) - it should be valid JSON
-if echo "$EXTRACTED_DATA" | grep -qi "traceback\|error"; then
-  echo "  Warning: Extraction issue, output may be incomplete"
-  echo "$EXTRACTED_DATA" | head -5 >&2
-fi
-
-FILE_COUNT=$(echo "$EXTRACTED_DATA" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('file_count',0))" 2>/dev/null || echo "0")
-
-if [[ "$FILE_COUNT" -eq 0 ]]; then
-  echo "No session files found modified since $CUTOFF."
-  echo "dream complete — nothing to process."
-  exit 0
-fi
-
-echo "Found $FILE_COUNT session file(s)"
-echo ""
-
-if [[ "$DRY_RUN" == "true" ]]; then
-  echo "=== DRY RUN — printing extracted learnings, writing nothing ==="
-  echo ""
-  echo "$EXTRACTED_DATA" | python3 -c "
-import json, sys
-data = json.load(sys.stdin).get('repos', {})
-if not data:
-    print('  No repo content extracted.')
-else:
-    for i, (repo, info) in enumerate(sorted(data.items()), 1):
-        dates_str = ', '.join(info['dates'])
-        content_preview = info['content'][:800]
-        print(f'[Repo {i}] {repo}')
-        print(f'  Sessions dates: {dates_str}')
-        print(f'  Content ({len(info[\"content\"])} chars):')
-        print(f'  {content_preview}')
-        print()
-"
-  echo "=== DRY RUN COMPLETE — no files written ==="
-  exit 0
-fi
-
-# ─── 2. Read model configuration from .env ───────────────────────────────────
-echo "Reading model configuration..."
-
-if [[ -z "${DREAM_MODEL:-}" ]] || [[ -z "${DREAM_TOKEN:-}" ]]; then
-  echo "ERROR: DREAM_MODEL and DREAM_TOKEN must be set in .env"
-  echo "Add DREAM_MODEL, DREAM_URL, and DREAM_TOKEN to your .env file."
-  exit 1
-fi
-
-MODEL="$DREAM_MODEL"
-BASE_URL="${DREAM_URL:-https://api.minimax.io/v1}"
-TOKEN="$DREAM_TOKEN"
-
-echo "  Model: $MODEL ($BASE_URL)"
-echo ""
-
-# ─── 3. Process each repo using Python ────────────────────────────────────────
-echo "Processing repos..."
-echo ""
-
-# Run the Python processing
-PROCESS_SCRIPT=$(mktemp /tmp/dream-process-XXXXXX.py)
-cat > "$PROCESS_SCRIPT" <<'PYEOF'
-import sys
-import json
-sys.path.insert(0, sys.argv[1])
-from dream_core import process_repos, write_cross_repo_memory
-
-extracted = sys.argv[2]
-data = json.loads(extracted)
-repos_data = data.get('repos', {})
-
-model_config = {
-    'model': sys.argv[3],
-    'token': sys.argv[4],
-    'base_url': sys.argv[5]
-}
-
-date = sys.argv[6]
-
-summary, cross_content = process_repos(
-    repos_data=repos_data,
-    model_config=model_config,
-    date=date,
-    dry_run=False
-)
-
-for repo_name, status in summary:
-    print(f'{repo_name}|{status}')
-
-if cross_content:
-    write_cross_repo_memory(cross_content, date, model_config)
-    print('cross-repo: written')
-PYEOF
-
-PROCESSING_OUTPUT=$(uv run --project "$PYTHON_PATH" python3 "$PROCESS_SCRIPT" "$PYTHON_PATH" "$EXTRACTED_DATA" "$MODEL" "$TOKEN" "$BASE_URL" "$DATE" 2>&1)
-rm -f "$PROCESS_SCRIPT"
-
-echo "$PROCESSING_OUTPUT"
-
-# ─── 4. Print summary ────────────────────────────────────────────────────────
-echo ""
-echo "dream complete — $DATE $TIMESTAMP"
-
-# Format the summary output to match original format
-echo "$PROCESSING_OUTPUT" | while IFS='|' read -r repo status; do
-  if [[ "$repo" == "cross-repo" ]]; then
-    echo ""
-    echo "  cross-repo: ~/.mesh/MEMORY.md (✓ written)"
-  elif [[ -n "$repo" ]]; then
-    echo "  $repo: .mesh/MEMORY.md ($status)"
-  fi
-done
-echo ""
-echo "Next: run 'mesh test-alpha-mesh' to run tests"
+# ─── Call Python CLI ──────────────────────────────────────────────────────────
+# Pass through all args; Python handles session extraction, repo processing,
+# cross-repo memory, and dry-run formatting.
+exec uv run --project "$PYTHON_PATH" python3 -m dream_core \
+  --projects-dir "$CLAUDE_PROJECTS" \
+  --model "$DREAM_MODEL" \
+  --token "$DREAM_TOKEN" \
+  --base-url "$DREAM_URL" \
+  "$@"

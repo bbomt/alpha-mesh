@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+@.mesh/MEMORY.md
+
 ## Project Purpose
 
 alpha-mesh is the memory and orchestration layer for the PMAT agent system. It provides a `mesh` CLI for model routing and session memory consolidation.
