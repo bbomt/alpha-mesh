@@ -20,11 +20,40 @@ from typing import Dict, List, Optional, Any, Tuple
 # Constants
 MESH_SUBDIR = ".mesh"
 MEMORY_FILENAME = "MEMORY.md"
-CROSS_REPO_TAG = "[CROSS-REPO]"
 MAX_MEMORY_LINES = 200
 CLAUDE_PROJECTS = os.path.expanduser("~/.claude/projects")
 SECTION_FIELDS = ["architecture", "patterns", "jira_workflow",
                   "deploy_commands", "testing", "workflow"]
+
+# Section headers for 3-layer memory model
+LAYER1_HEADER = "## Identity"
+LAYER2_HEADER = "## Current State"
+LAYER3_HEADER = "## Recent Signals"
+CONFLICTS_HEADER = "## ⚠️ Conflicts"
+REJECTED_HEADER = "### Rejected Decisions"
+REPO_LOCAL_TAG = "[REPO-LOCAL]"
+GLOBAL_TAG = "[GLOBAL]"
+
+def filter_empty(sections):
+    """Remove empty sections (headers with no bullet points following)."""
+    result = []
+    i = 0
+    while i < len(sections):
+        line = sections[i]
+        if line.startswith("### "):
+            # Check if next non-blank lines are bullets
+            j = i + 1
+            while j < len(sections) and (sections[j].strip() == "" or sections[j].strip().startswith("<!--")):
+                j += 1
+            has_content = j < len(sections) and sections[j].strip().startswith("-")
+            if has_content:
+                result.extend(sections[i:j])
+            i = j
+        else:
+            result.append(line)
+            i += 1
+    return result
+
 
 def split_routing(extracted: str) -> Tuple[str, str]:
     """
@@ -39,15 +68,12 @@ def split_routing(extracted: str) -> Tuple[str, str]:
     repo_local = []
     global_md = []
 
-    current_section = None
     in_rejected = False
 
     for line in extracted.split("\n"):
-        # Track section headers
+        # Track section headers - add to both
         if line.startswith("### "):
-            current_section = line
             in_rejected = "Rejected Decisions" in line
-            # Add section header to both if they end up having content
             repo_local.append(line)
             global_md.append(line)
             continue
@@ -65,37 +91,16 @@ def split_routing(extracted: str) -> Tuple[str, str]:
             continue
 
         # Route based on tag
-        if "[REPO-LOCAL]" in line:
+        if REPO_LOCAL_TAG in line:
             repo_local.append(line)
-        elif "[GLOBAL]" in line:
+        elif GLOBAL_TAG in line:
             global_md.append(line)
         else:
-            # Lines without tags go to both (section headers, etc.)
+            # Lines without tags go to both
             repo_local.append(line)
             global_md.append(line)
 
     # Filter out empty sections
-    def filter_empty(sections):
-        result = []
-        i = 0
-        while i < len(sections):
-            line = sections[i]
-            if line.startswith("### "):
-                # Check if next non-blank lines are bullets
-                j = i + 1
-                has_content = False
-                while j < len(sections) and (sections[j].strip() == "" or sections[j].strip().startswith("<!--")):
-                    j += 1
-                if j < len(sections) and sections[j].strip().startswith("-"):
-                    has_content = True
-                if has_content:
-                    result.extend(sections[i:j])
-                i = j
-            else:
-                result.append(line)
-                i += 1
-        return result
-
     repo_local = filter_empty(repo_local)
     global_md = filter_empty(global_md)
 
@@ -117,10 +122,9 @@ def enforce_recent_signals_cap(memory_content: str, max_entries: int = 5) -> str
     result = []
     in_recent_signals = False
     signals = []
-    other_lines = []
 
     for line in lines:
-        if line.startswith("## Recent Signals"):
+        if line.startswith(LAYER3_HEADER):
             in_recent_signals = True
             result.append(line)
             continue
@@ -159,7 +163,7 @@ def check_conflicts(memory_content: str) -> Tuple[bool, List[str]]:
     conflicts = []
     in_conflicts = False
     for line in memory_content.split("\n"):
-        if line.startswith("## ⚠️ Conflicts"):
+        if line.startswith(CONFLICTS_HEADER):
             in_conflicts = True
             continue
         if in_conflicts and line.startswith("## "):
@@ -470,6 +474,21 @@ def _extract_from_openai_choices(r: dict) -> Optional[str]:
     return None
 
 
+def _handle_repo_result(memory_file, updated_memory, repo_path, repo_name,
+                        global_learnings, cross_repo_lines, dry_run, status):
+    """Write memory, enforce caps, check conflicts, collect global."""
+    updated_memory = enforce_recent_signals_cap(updated_memory, max_entries=5)
+    has_conflicts, _ = check_conflicts(updated_memory)
+    if has_conflicts:
+        print(f"  WARNING: Conflicts section non-empty in {memory_file}", file=sys.stderr)
+    if not dry_run:
+        with open(memory_file, "w") as f:
+            f.write(updated_memory)
+    if global_learnings:
+        cross_repo_lines.append(global_learnings)
+    return (repo_path, repo_name, status)
+
+
 def process_repos(
     repos_data: Dict[str, Dict[str, Any]],
     model_config: Dict[str, str],
@@ -490,21 +509,17 @@ def process_repos(
     """
     summary = []
     cross_repo_lines = []
-    total_repos = len(repos_data)
-    current_repo = 0
 
     for repo_path, info in sorted(repos_data.items()):
-        current_repo += 1
         repo_name = os.path.basename(repo_path)
         dates_str = ', '.join(info['dates'])
 
-        print(f"[{current_repo}/{total_repos}] Processing: {repo_name} ({dates_str})", flush=True)
+        print(f"Processing: {repo_name} ({dates_str})", flush=True)
 
         # Step A: Extract learnings
         print(f"  Extracting learnings...", flush=True, file=sys.stderr)
-        session_content = info["content"]
         new_learnings = extract_learnings(
-            session_content=session_content,
+            session_content=info["content"],
             repo_name=repo_name,
             date=date,
             model_config=model_config
@@ -525,9 +540,11 @@ def process_repos(
                     existing_memory = f.read()
 
         # Step C: Synthesize
-        if model_config["model"] and model_config["token"] and existing_memory:
-            print(f"  Synthesizing with existing memory...", flush=True, file=sys.stderr)
-            updated_memory, cross_items = synthesize_memory(
+        if model_config["model"] and model_config["token"]:
+            has_existing = bool(existing_memory)
+            print(f"  Synthesizing{' with existing memory...' if has_existing else ' (new memory)...'}", flush=True, file=sys.stderr)
+
+            updated_memory, _ = synthesize_memory(
                 existing_memory=existing_memory,
                 new_learnings=repo_local_learnings,
                 date=date,
@@ -536,67 +553,27 @@ def process_repos(
             )
 
             if updated_memory:
-                # Enforce 5-entry cap on Recent Signals
-                updated_memory = enforce_recent_signals_cap(updated_memory, max_entries=5)
-                # Check for conflicts
-                has_conflicts, _ = check_conflicts(updated_memory)
-                if has_conflicts:
-                    print(f"  ⚠️  WARNING: Conflicts section non-empty in {memory_file}", file=sys.stderr)
-                if not dry_run:
-                    with open(memory_file, "w") as f:
-                        f.write(updated_memory)
-                summary.append((repo_path, repo_name, "written"))
-                # Collect GLOBAL insights for cross-repo memory
-                if global_learnings:
-                    cross_repo_lines.append(global_learnings)
+                status = "written" if has_existing else "new"
+                summary.append(_handle_repo_result(
+                    memory_file, updated_memory, repo_path, repo_name,
+                    global_learnings, cross_repo_lines, dry_run, status))
             else:
-                print(f"  Synthesis failed - appending raw learnings", flush=True, file=sys.stderr)
-                # Fallback: append
+                # Fallback
                 fallback_content = f"\n\n## {date}\n{new_learnings}"
                 if not dry_run:
-                    with open(memory_file, "a") as f:
-                        f.write(fallback_content)
-                summary.append((repo_path, repo_name, "append-fallback"))
-                cross_repo_lines.append(f"## {date} — {repo_name}\n{new_learnings}")
-                # Also collect GLOBAL insights
+                    if has_existing:
+                        with open(memory_file, "a") as f:
+                            f.write(fallback_content)
+                    else:
+                        with open(memory_file, "w") as f:
+                            f.write(f"# MEMORY.md — {repo_name}\n_Last updated: {date}_\n")
+                            f.write("\n## Identity\n\n## Current State\n\n## Recent Signals\n\n## ⚠️ Conflicts\n")
+                        with open(memory_file, "a") as f:
+                            f.write(f"\n\n## Raw Learnings\n{repo_local_learnings}")
+                status = "append-fallback" if has_existing else "new-fallback"
+                summary.append((repo_path, repo_name, status))
                 if global_learnings:
                     cross_repo_lines.append(global_learnings)
-
-        elif model_config["model"] and model_config["token"]:
-            # First run - no existing memory, use synthesize_memory to create structure
-            print(f"  Creating new memory file...", flush=True, file=sys.stderr)
-            updated_memory, cross_items = synthesize_memory(
-                existing_memory="",
-                new_learnings=repo_local_learnings,
-                date=date,
-                repo_name=repo_name,
-                model_config=model_config
-            )
-            if updated_memory:
-                # Enforce 5-entry cap on Recent Signals
-                updated_memory = enforce_recent_signals_cap(updated_memory, max_entries=5)
-                # Check for conflicts
-                has_conflicts, _ = check_conflicts(updated_memory)
-                if has_conflicts:
-                    print(f"  ⚠️ WARNING: Conflicts section non-empty in new memory", file=sys.stderr)
-                if not dry_run:
-                    with open(memory_file, "w") as f:
-                        f.write(updated_memory)
-                summary.append((repo_path, repo_name, "new"))
-            else:
-                # Fallback: write raw learnings
-                if not dry_run:
-                    with open(memory_file, "w") as f:
-                        header = f"# MEMORY.md — {repo_name}\n_Last updated: {date}_\n"
-                        structure = "\n## Identity\n\n## Current State\n\n## Recent Signals\n\n## ⚠️ Conflicts\n"
-                        f.write(header + structure)
-                    with open(memory_file, "a") as f:
-                        f.write(f"\n\n## Raw Learnings\n{repo_local_learnings}")
-                summary.append((repo_path, repo_name, "new-fallback"))
-            # Collect GLOBAL insights for cross-repo memory
-            if global_learnings:
-                cross_repo_lines.append(global_learnings)
-
         else:
             # LLM unavailable - raw content fallback
             print(f"  LLM unavailable - writing raw content", flush=True, file=sys.stderr)
@@ -605,9 +582,10 @@ def process_repos(
                 with open(memory_file, "a") as f:
                     f.write(raw_content)
             summary.append((repo_path, repo_name, "raw-fallback"))
+            if global_learnings:
+                cross_repo_lines.append(global_learnings)
 
     return summary, "\n".join(cross_repo_lines) if cross_repo_lines else None
-
 
 def extract_learnings(
     session_content: str,
@@ -714,7 +692,7 @@ def synthesize_memory(
     date: str,
     repo_name: str,
     model_config: Dict[str, str]
-) -> Tuple[Optional[str], List[str]]:
+) -> Optional[str]:
     """
     Synthesize existing memory with new learnings.
 
@@ -826,19 +804,14 @@ _Last updated: {date}_
     )
 
     if not result:
-        return None, []
+        return None
 
     updated_memory = extract_response_text(result)
     if not updated_memory:
-        return None, []
+        return None
 
     # Extract cross-repo items
-    cross_items = []
-    for line in updated_memory.split('\n'):
-        if CROSS_REPO_TAG in line:
-            cross_items.append(line)
-
-    return updated_memory, cross_items
+    return updated_memory
 
 
 def create_new_memory(new_learnings: str, date: str, repo_name: str) -> str:

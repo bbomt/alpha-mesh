@@ -22,7 +22,6 @@ from dream_core import (
     synthesize_memory,
     create_new_memory,
     MAX_MEMORY_LINES,
-    CROSS_REPO_TAG,
     split_routing,
     enforce_recent_signals_cap,
     check_conflicts,
@@ -309,15 +308,15 @@ class TestSynthesizeMemory:
     """Tests for synthesize_memory function."""
 
     @patch('dream_core.call_llm')
-    def test_extracts_cross_repo_items(self, mock_call_llm):
-        """Test that CROSS-REPO tagged lines are extracted."""
+    def test_synthesize_returns_memory(self, mock_call_llm):
+        """Test that synthesize_memory returns updated memory."""
         mock_call_llm.return_value = json.dumps({
             "content": [
-                {"type": "text", "text": "Regular learning\n**[CROSS-REPO]** This applies everywhere\nAnother point"}
+                {"type": "text", "text": "# MEMORY.md — test-repo\n_Last updated: 2026-05-11_\n\n## Identity\n\n## Current State\n\n## Recent Signals\n\n## ⚠️ Conflicts\n"}
             ]
         })
 
-        result, cross_items = synthesize_memory(
+        result = synthesize_memory(
             existing_memory="Old memory content",
             new_learnings="New learning",
             date="2026-05-11",
@@ -325,15 +324,14 @@ class TestSynthesizeMemory:
             model_config={"model": "test", "token": "test", "base_url": ""}
         )
 
-        assert len(cross_items) == 1
-        assert "[CROSS-REPO]" in cross_items[0]
-
+        assert result is not None
+        assert "MEMORY.md" in result
     @patch('dream_core.call_llm')
     def test_returns_none_on_llm_failure(self, mock_call_llm):
         """Test that None is returned when LLM call fails."""
         mock_call_llm.return_value = None
 
-        result, cross_items = synthesize_memory(
+        result = synthesize_memory(
             existing_memory="Old memory content",
             new_learnings="New learning",
             date="2026-05-11",
@@ -342,17 +340,25 @@ class TestSynthesizeMemory:
         )
 
         assert result is None
-        assert cross_items == []
+        assert result is None
 
 
-class TestCrossRepoTag:
-    """Tests for CROSS_REPO_TAG constant."""
+class TestConstants:
+    """Tests for memory model constants."""
 
-    def test_cross_repo_tag_is_defined(self):
-        """Test that CROSS_REPO_TAG is properly defined."""
-        assert CROSS_REPO_TAG == "[CROSS-REPO]"
-        assert len(CROSS_REPO_TAG) > 0
+    def test_layer_headers_defined(self):
+        """Test that section header constants are defined."""
+        from dream_core import LAYER1_HEADER, LAYER2_HEADER, LAYER3_HEADER, CONFLICTS_HEADER
+        assert LAYER1_HEADER == "## Identity"
+        assert LAYER2_HEADER == "## Current State"
+        assert LAYER3_HEADER == "## Recent Signals"
+        assert CONFLICTS_HEADER == "## ⚠️ Conflicts"
 
+    def test_routing_tags_defined(self):
+        """Test that routing tag constants are defined."""
+        from dream_core import REPO_LOCAL_TAG, GLOBAL_TAG
+        assert REPO_LOCAL_TAG == "[REPO-LOCAL]"
+        assert GLOBAL_TAG == "[GLOBAL]"
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
