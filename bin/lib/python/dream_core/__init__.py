@@ -37,7 +37,9 @@ def extract_sessions_from_jsonl(
     Args:
         projects_dir: Path to ~/.claude/projects
         cutoff: Date string (YYYY-MM-DD) - only process files modified since
-        target_repo: Optional repo path to filter results
+        target_repo: Optional repo path to filter results.
+            When set to a parent directory (e.g., ~/environment/pmat),
+            all child repos are included so multi-repo work is captured.
 
     Returns:
         Dict mapping repo_path -> {"content": str, "dates": List[str], "file_count": int}
@@ -49,15 +51,6 @@ def extract_sessions_from_jsonl(
         return {}
 
     for root, dirs, files in os.walk(projects_dir):
-        # Filter to target repo if specified
-        if target_repo:
-            root_basename = os.path.basename(root)
-            if not any(
-                candidate in root or root.endswith(candidate)
-                for candidate in [target_repo, os.path.basename(target_repo)]
-            ):
-                continue
-
         for fname in files:
             if not fname.endswith('.jsonl'):
                 continue
@@ -130,9 +123,13 @@ def extract_sessions_from_jsonl(
                     candidate = os.path.join(home, decoded.replace('-', '/'))
                     repo_path = candidate if os.path.isdir(candidate) else proj_dir_name
 
-                # Filter to target repo if specified
-                if target_repo and not (target_repo in repo_path or repo_path in target_repo):
-                    continue
+                # Filter to target repo if specified (exact path match only)
+                if target_repo:
+                    real_target = os.path.realpath(os.path.expanduser(target_repo))
+                    real_repo = os.path.realpath(repo_path)
+                    # Only include the exact target repo (no child repos)
+                    if real_repo != real_target:
+                        continue
 
                 repo_data[repo_path]["file_count"] += 1
                 session_lines = []
@@ -243,7 +240,11 @@ def extract_response_text(response_text: str) -> str:
     """
     Extract text content from LLM response.
 
-    Handles both Anthropic and OpenAI response formats.
+    Handles:
+    - Thinking blocks (<think>... -->) — stripped, content after used
+    - JSON with "content" field (structured output mode)
+    - JSON with code fences (```json ... ```)
+    - Plain text fallback
 
     Args:
         response_text: Raw response text
@@ -254,20 +255,113 @@ def extract_response_text(response_text: str) -> str:
     if not response_text:
         return ""
 
-    # Try parsing as JSON (Anthropic format)
+    # Strip thinking blocks: first remove the whole thinking block,
+    # but preserve what comes after it (the actual response)
+    # MiniMax: <think>...</think> and <!-- ... -->
+    response_text = re.sub(r'<think>.*?</think>', '', response_text, flags=re.DOTALL)
+    response_text = re.sub(r'<!--.*?-->', '', response_text, flags=re.DOTALL)
+
+    # Extract JSON from markdown code block: ```json ... ```
+    json_match = re.search(r'```json\s*(.*?)\s*```', response_text, re.DOTALL)
+    if json_match:
+        response_text = json_match.group(1).strip()
+    else:
+        # Fallback: find first brace
+        brace_pos = response_text.find('{')
+        if brace_pos >= 0:
+            response_text = response_text[brace_pos:]
+    response_text = response_text.strip()
+
+    # Try parsing as JSON
+    section_fields = ["architecture", "patterns", "jira_workflow",
+                     "deploy_commands", "testing", "workflow"]
     try:
         r = json.loads(response_text)
-        if "content" in r and isinstance(r["content"], list):
-            for block in r["content"]:
-                if isinstance(block, dict) and block.get("type") == "text":
-                    return block.get("text", "")
-        elif "choices" in r:
-            return r["choices"][0]["message"].get("content", "")
+        if isinstance(r, dict):
+            # Structured output with named fields (architecture, patterns, etc.)
+            if any(k in r for k in section_fields):
+                lines = []
+                for field in section_fields:
+                    value = r.get(field)
+                    if value is None or value == "":
+                        continue
+                    heading = "### " + field.replace("_", " ").title()
+                    lines.append(heading)
+                    if isinstance(value, list):
+                        for item in value:
+                            if item:
+                                lines.append(str(item).strip())
+                    else:
+                        lines.append(str(value).strip())
+                    lines.append("")
+                return "\n".join(lines).strip()
+            # OpenRouter nested: { "learnings": { "Architecture": [...], "Workflow": [...] } }
+            learnings = r.get("learnings")
+            if isinstance(learnings, dict):
+                lines = []
+                for field in section_fields:
+                    value = None
+                    for k, v in learnings.items():
+                        if k.lower() == field:
+                            value = v
+                            break
+                    if value is None or value == "":
+                        continue
+                    heading = "### " + field.replace("_", " ").title()
+                    lines.append(heading)
+                    if isinstance(value, list):
+                        for item in value:
+                            if item:
+                                lines.append(str(item).strip())
+                    else:
+                        lines.append(str(value).strip())
+                    lines.append("")
+                if lines:
+                    return "\n".join(lines).strip()
+            # Legacy: content field
+            if "content" in r and isinstance(r["content"], str):
+                return r["content"].strip()
+            # Anthropic content blocks: { "content": [{"type": "text", "text": "..."}] }
+            val = _extract_from_anthropic_block(r)
+            if val:
+                return val
+            # OpenAI choices format
+            val = _extract_from_openai_choices(r)
+            if val:
+                return val
+            # OpenRouter wrapped: { "response"|"text"|"answer": "actual markdown" }
+            for field in ("response", "text", "answer"):
+                val = r.get(field)
+                if isinstance(val, str) and val.strip():
+                    return val.strip()
+            # OpenRouter validation wrapper: { "is_valid": true, ... } — skip
+            if r.get("is_valid") is True and len(r) <= 3:
+                return ""
     except json.JSONDecodeError:
         pass
 
-    # Return as plain text if not JSON
+    # Plain text fallback (markdown returned directly, or unparseable)
     return response_text.strip()
+
+
+def _extract_from_anthropic_block(r: dict) -> Optional[str]:
+    """Extract from Anthropic content blocks format."""
+    content = r.get("content")
+    if isinstance(content, list):
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                return block.get("text", "").strip()
+    return None
+
+
+def _extract_from_openai_choices(r: dict) -> Optional[str]:
+    """Extract from OpenAI choices format."""
+    choices = r.get("choices")
+    if isinstance(choices, list) and len(choices) > 0:
+        msg = choices[0].get("message", {})
+        if isinstance(msg, dict):
+            return msg.get("content", "").strip()
+    return None
 
 
 def process_repos(
@@ -356,6 +450,10 @@ def process_repos(
                 with open(memory_file, "w") as f:
                     f.write(new_memory)
             summary.append((repo_path, repo_name, "new"))
+            # Extract cross-repo items from new learnings
+            for line in new_learnings.split('\n'):
+                if CROSS_REPO_TAG in line:
+                    cross_repo_lines.append(line)
 
         else:
             # LLM unavailable - raw content fallback
@@ -387,20 +485,31 @@ def extract_learnings(
     Returns:
         Extracted learnings text
     """
-    extract_prompt = f"""You are extracting learnings from a software development session.
-Be specific and concrete. Do not invent anything not in the source.
+    extract_prompt = f"""Extract learnings from this AI coding session. Output ONLY valid markdown — no JSON, no code fences, no explanatory text.
 
-## Session content from {repo_name}
-{session_content}
-
-Return only a markdown snippet (no preamble) with these sections:
-
-## {date} — {repo_name}
+Required format:
 ### Architecture
-### Deployment
+- [one-line architectural decision]
+
+### Patterns
+- [one-line code pattern or technique]
+
+### Jira Workflow
+- [one-line Jira or process learning]
+
+### Deploy Commands
+- [one-line deployment command or script]
+
 ### Testing
+- [one-line testing approach or command]
+
 ### Workflow
-### Patterns"""
+- [one-line development workflow learning]
+
+If no real learning exists for a section, omit the section entirely. Mark cross-repo learnings with **[CROSS-REPO]**.
+
+## Session content
+{session_content}"""
 
     base_url = model_config.get("base_url", "") or "https://api.anthropic.com"
 
@@ -413,7 +522,9 @@ Return only a markdown snippet (no preamble) with these sections:
     )
 
     if result:
-        return extract_response_text(result)
+        extracted = extract_response_text(result)
+        if extracted and extracted.strip():
+            return extracted
 
     return session_content
 
@@ -440,11 +551,17 @@ def synthesize_memory(
     """
     sys_prompt = f"""You are maintaining a memory file for an AI coding agent.
 Below is the existing memory and new learnings from recent sessions.
-Produce an updated memory file that:
-- Incorporates the new learnings
-- Removes duplicates (keep the best single statement of each point)
-- Removes anything superseded by newer learnings
-- Keeps the file concise — every line must earn its place
+
+Return a JSON object with this structure:
+{{
+  "content": "updated memory file content as markdown..."
+}}
+
+The content must:
+- Incorporate the new learnings
+- Remove duplicates (keep the best single statement of each point)
+- Remove anything superseded by newer learnings
+- Keep the file concise — every line must earn its place
 - Hard limit: 200 lines
 
 ## Existing memory
@@ -453,11 +570,8 @@ Produce an updated memory file that:
 ## New learnings
 {new_learnings}
 
-Return only the updated memory file content, no preamble.
-Keep the same section headings as the existing memory where present.
-
 If any learning applies across multiple repos or to the project as a whole,
-prefix it with **[CROSS-REPO]** so it can be collected for the cross-repo memory file."""
+prefix it with **[CROSS-REPO]** in the content field."""
 
     base_url = model_config.get("base_url", "") or "https://api.anthropic.com"
 
@@ -532,17 +646,27 @@ def write_cross_repo_memory(
         with open(local_cross_file) as f:
             local_cross_existing = f.read()
 
+    # Strip [CROSS-REPO] markers — global memory is already cross-repo by nature
+    clean_content = re.sub(r'\*\*\[CROSS-REPO\]\*\*', '', cross_content)
+
     sys_prompt = f"""You are maintaining a cross-repo memory file for an AI coding agent.
 This file contains learnings that apply across multiple repositories.
+
+Return a JSON object with this structure:
+{{
+  "content": "updated memory file content as markdown..."
+}}
+
+The content must:
+- Deduplicate with existing memory
+- Keep concise (max 200 lines)
+- Use same section headings as existing
 
 ## Existing memory
 {local_cross_existing or "No existing memory."}
 
 ## New cross-repo learnings
-{cross_content}
-
-Return only the updated memory file content, no preamble.
-Keep the same section headings. Max 200 lines. Deduplicate."""
+{clean_content}"""
 
     base_url = model_config.get("base_url", "") or "https://api.anthropic.com"
 
@@ -651,6 +775,8 @@ def main():
         "token": args.token,
         "base_url": base_url
     }
+
+    print(f"Using model: {args.model}  |  API: {base_url}", file=sys.stderr)
 
     # ─── 4. Process repos ──────────────────────────────────────────────────────
     print("Processing repos...", file=sys.stderr)

@@ -60,6 +60,64 @@ class TestExtractResponseText:
         """Test None handling."""
         assert extract_response_text(None) == ""
 
+    def test_extracts_openrouter_response_field(self):
+        """Test extraction from OpenRouter response field."""
+        response = json.dumps({
+            "response": "### Architecture\n- JWT auth pattern"
+        })
+        assert extract_response_text(response) == "### Architecture\n- JWT auth pattern"
+
+    def test_extracts_openrouter_text_field(self):
+        """Test extraction from OpenRouter text field."""
+        response = json.dumps({
+            "text": "### Patterns\n- Repository pattern"
+        })
+        assert extract_response_text(response) == "### Patterns\n- Repository pattern"
+
+    def test_extracts_openrouter_answer_field(self):
+        """Test extraction from OpenRouter answer field."""
+        response = json.dumps({
+            "answer": "### Workflow\n- Test first"
+        })
+        assert extract_response_text(response) == "### Workflow\n- Test first"
+
+    def test_extracts_openrouter_nested_learnings(self):
+        """Test extraction from OpenRouter nested learnings format."""
+        response = json.dumps({
+            "learnings": {
+                "Architecture": ["Modular monolith architecture"],
+                "Patterns": ["Repository pattern for data access"]
+            }
+        })
+        result = extract_response_text(response)
+        assert "### Architecture" in result
+        assert "Modular monolith" in result
+        assert "### Patterns" in result
+        assert "Repository pattern" in result
+
+    def test_extracts_openrouter_validation_wrapper_skipped(self):
+        """Test that OpenRouter validation wrapper {is_valid: true} returns empty."""
+        response = json.dumps({
+            "is_valid": True,
+            "review_reason": "format",
+            "reviewer_comment": "looks good"
+        })
+        assert extract_response_text(response) == ""
+
+    def test_extracts_section_fields_with_arrays(self):
+        """Test extraction from section fields with list values."""
+        response = json.dumps({
+            "architecture": ["Modular architecture", "Clean domain boundaries"],
+            "patterns": ["Repository pattern"],
+            "workflow": ["Test-driven development"]
+        })
+        result = extract_response_text(response)
+        assert "### Architecture" in result
+        assert "Modular architecture" in result
+        assert "Clean domain boundaries" in result
+        assert "### Patterns" in result
+        assert "Repository pattern" in result
+
 
 class TestReadModelConfig:
     """Tests for read_model_config function."""
