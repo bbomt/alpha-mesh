@@ -10,6 +10,11 @@ __pycache__/
 *.pyc
 *.pyo
 
+# Python project
+venv/
+dream_core.egg-info/
+uv.lock
+
 # editor
 .DS_Store
 *.swp

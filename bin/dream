@@ -15,7 +15,6 @@ set -euo pipefail
 # Resolve actual script path (handles symlinks in ~/bin/)
 SCRIPT_REALPATH="$(readlink -f "${BASH_SOURCE[0]}")"
 MESH_DIR="$(cd "$(dirname "$SCRIPT_REALPATH")/.." && pwd)"
-PYTHON_PATH="$MESH_DIR/bin/lib/python"
 ENV_FILE="$MESH_DIR/.env"
 CLAUDE_PROJECTS="$HOME/.claude/projects"
 
@@ -69,7 +68,7 @@ echo ""
 # ─── Call Python CLI ──────────────────────────────────────────────────────────
 # Pass through all args; Python handles session extraction, repo processing,
 # cross-repo memory, and dry-run formatting.
-exec uv run --project "$PYTHON_PATH" python3 -m dream_core \
+exec uv run --project "$MESH_DIR" python3 -m dream_core \
   --projects-dir "$CLAUDE_PROJECTS" \
   --model "$DREAM_MODEL" \
   --token "$DREAM_TOKEN" \

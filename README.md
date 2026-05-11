@@ -7,14 +7,17 @@ The memory and orchestration layer for the PMAT agent system.
 ```
 alpha-mesh/
 ├── bin/                     # Executable scripts (symlinked to ~/bin)
+│   ├── mesh                 # Unified CLI entry point (wraps all commands)
 │   ├── model                # Switch/check model config
 │   ├── dream                # End-of-session memory consolidation (dream)
 │   ├── bootstrap-memory     # One-time: extract from existing Claude Code logs
-│   ├── lib/
-│   │   └── repo             # Shared functions: find_repo_root, get_active_model
-│   ├── test/                # Test suites (run via test/run-all)
 │   ├── install              # One-time setup
-│   └── mesh                 # Unified CLI entry point (wraps all commands)
+│   └── lib/repo             # Shared bash functions: find_repo_root, get_active_model
+├── dream_core/              # Python package (uv project at project root)
+│   ├── __init__.py          # All dream logic: session extraction, LLM calls, memory synthesis
+│   └── __main__.py          # Entry point for: python3 -m dream_core
+├── tests/
+│   └── test_dream_core.py   # Python tests for dream_core module
 ├── config/
 │   └── models.json          # All model profiles
 ├── memory/
@@ -26,6 +29,9 @@ alpha-mesh/
 │   ├── test-dream           # Tests for bin/dream
 │   ├── test-model           # Tests for bin/model
 │   └── test-install         # Tests for bin/install
+├── pyproject.toml           # Python project definition (uv)
+├── uv.lock                  # Locked dependencies
+├── .python-version          # Python version pin
 └── .gitignore
 ```
 

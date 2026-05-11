@@ -55,9 +55,20 @@ config/active.json
 tasks/task-log.db
 tasks/*.db
 
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+
+# Python project
+venv/
+dream_core.egg-info/
+uv.lock
+
 # editor
 .DS_Store
 *.swp
+.env
 EOF
 echo "  ✓ .gitignore written"
 echo ""
