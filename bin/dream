@@ -88,151 +88,45 @@ TOTAL_FILES=$(find "$CLAUDE_PROJECTS" -name "*.jsonl" 2>/dev/null | wc -l)
 echo "  Found $TOTAL_FILES jsonl file(s) to scan"
 echo ""
 
-# Write Python script to temp file and execute it
+# ─── Use Python module for extraction ────────────────────────────────────────
+# Set up Python path to find the dream_core module
+PYTHON_PATH="$MESH_DIR/bin/lib/python"
+PYTHONPATH="${PYTHONPATH:-}"
+export PYTHONPATH="${PYTHON_PATH}${PYTHONPATH:+:$PYTHONPATH}"
+
+# Run the Python extraction
 EXTRACT_SCRIPT=$(mktemp /tmp/dream-extract-XXXXXX.py)
-cat > "$EXTRACT_SCRIPT" <<'PYTHON_SCRIPT'
-import sys, json, os, re
-from collections import defaultdict, Counter
+cat > "$EXTRACT_SCRIPT" <<'PYEOF'
+import sys
+import json
+sys.path.insert(0, sys.argv[1])
+from dream_core import extract_sessions_from_jsonl
 
-projects_dir = sys.argv[1]
-cutoff = sys.argv[2]
-target_repo = sys.argv[3] if len(sys.argv) > 3 else ""  # Optional: filter by repo path
+projects_dir = sys.argv[2]
+cutoff = sys.argv[3]
+target_repo = sys.argv[4] if len(sys.argv) > 4 and sys.argv[4] else None
 
-print(f"  Scanning {projects_dir}..." + (f" (repo filter: {target_repo})" if target_repo else ""), flush=True, file=sys.stderr)
+repos_data = extract_sessions_from_jsonl(
+    projects_dir=projects_dir,
+    cutoff=cutoff,
+    target_repo=target_repo
+)
 
-repo_data = defaultdict(lambda: {"content_lines": [], "dates": set()})
-file_count = 0
-processed = 0
-
-for root, dirs, files in os.walk(projects_dir):
-    # If target_repo specified, skip dirs that don't match
-    if target_repo:
-        # Check if this directory could contain our target repo
-        root_basename = os.path.basename(root)
-        if not any(candidate for candidate in [target_repo, os.path.basename(target_repo)] if candidate in root or root.endswith(candidate)):
-            continue
-
-    for fname in files:
-        if not fname.endswith('.jsonl'):
-            continue
-        fpath = os.path.join(root, fname)
-        processed += 1
-        if processed % 10 == 0:
-            print(f"  Processed {processed} files...", flush=True, file=sys.stderr)
-
-        try:
-            mtime = os.path.getmtime(fpath)
-            import time
-            # Use localtime to match how files were written
-            fdate = time.strftime('%Y-%m-%d', time.localtime(mtime))
-        except OSError:
-            continue
-
-        if fdate < cutoff:
-            continue
-
-        cwds = set()
-        messages = []
-
-        try:
-            with open(fpath) as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        obj = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-
-                    cwd = obj.get('cwd')
-                    if cwd:
-                        cwds.add(cwd)
-
-                    msg = obj.get('message', {})
-                    if 'role' not in msg:
-                        msg = obj
-                    role = msg.get('role', '')
-                    content = msg.get('content', '')
-
-                    # Only process valid assistant and user messages
-                    if role == 'assistant' and isinstance(content, list):
-                        for block in content:
-                            if isinstance(block, dict) and block.get('type') == 'text':
-                                text = block.get('text', '').strip()
-                                if text and len(text) > 100:
-                                    messages.append(f"[assistant] {text[:800]}")
-
-                    elif role == 'user':
-                        text = ''
-                        if isinstance(content, str):
-                            text = content.strip()
-                        elif isinstance(content, list):
-                            for block in content:
-                                if isinstance(block, dict) and block.get('type') == 'text':
-                                    text = block.get('text', '').strip()
-                                    break
-                        if text and len(text) > 20 and not text.startswith('/'):
-                            messages.append(f"[user] {text[:300]}")
-
-            if not messages:
-                continue
-
-            # Determine repo path from most common cwd
-            if cwds:
-                repo_path = Counter(cwds).most_common(1)[0][0]
-            else:
-                proj_dir_name = os.path.basename(root)
-                decoded = proj_dir_name.lstrip('-')
-                home = os.path.expanduser('~')
-                candidate = os.path.join(home, decoded.replace('-', '/'))
-                repo_path = candidate if os.path.isdir(candidate) else proj_dir_name
-
-            # Filter to target repo if specified
-            if target_repo and not (target_repo in repo_path or repo_path in target_repo):
-                continue
-
-            file_count += 1
-            # Format: markdown-friendly with role markers and content
-            session_lines = []
-            for msg in messages:
-                session_lines.append(msg)
-
-            if session_lines:
-                content_str = '\n'.join(session_lines)
-                repo_data[repo_path]["content_lines"].append(
-                    f"--- Session: {os.path.basename(root)} ({fdate}) ---\n{content_str}"
-                )
-                repo_data[repo_path]["dates"].add(fdate)
-
-        except OSError:
-            continue
-
-print(f"  Done scanning {processed} files, found {file_count} in date range", flush=True, file=sys.stderr)
-
-result = {"repos": {}, "file_count": file_count}
-for repo_path, data in repo_data.items():
-    repo_name = os.path.basename(repo_path)
-    print(f"  -> Found {len(data['content_lines'])} sessions from {repo_name}", flush=True, file=sys.stderr)
-    result["repos"][repo_path] = {
-        "content": '\n\n'.join(data["content_lines"]),
-        "dates": sorted(data["dates"])
-    }
-
-# Output JSON only to stdout
+file_count = sum(info.get('file_count', 0) for info in repos_data.values())
+result = {
+    'repos': {k: {'content': v['content'], 'dates': v['dates']} for k, v in repos_data.items()},
+    'file_count': file_count
+}
 print(json.dumps(result))
-PYTHON_SCRIPT
+PYEOF
 
-# Run the extraction script
-PYTHON_OUT=$(timeout 60 python3 "$EXTRACT_SCRIPT" "$CLAUDE_PROJECTS" "$CUTOFF" "$TARGET_REPO" 2>&1)
+EXTRACTED_DATA=$(uv run --project "$PYTHON_PATH" python3 "$EXTRACT_SCRIPT" "$PYTHON_PATH" "$CLAUDE_PROJECTS" "$CUTOFF" "$TARGET_REPO" 2>&1)
 rm -f "$EXTRACT_SCRIPT"
 
-# Extract stdout (JSON) - it's the last non-progress line
-EXTRACTED_DATA=$(echo "$PYTHON_OUT" | grep -vE "^  " | tail -1)
-
-# Check for errors (but ignore extraction warnings)
-if [[ -z "$EXTRACTED_DATA" ]] || echo "$EXTRACTED_DATA" | grep -qi "traceback\|timeout"; then
+# Extract stdout (JSON) - it should be valid JSON
+if echo "$EXTRACTED_DATA" | grep -qi "traceback\|error"; then
   echo "  Warning: Extraction issue, output may be incomplete"
+  echo "$EXTRACTED_DATA" | head -5 >&2
 fi
 
 FILE_COUNT=$(echo "$EXTRACTED_DATA" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('file_count',0))" 2>/dev/null || echo "0")
@@ -300,298 +194,62 @@ fi
 echo "  Model: $MODEL (${BASE_URL})"
 echo ""
 
-API_URL="${BASE_URL%/}/v1/messages"
-
-# ─── Helper: call LLM with the active model ──────────────────────────────────
-call_llm() {
-  local prompt_text="$1"
-  local max_tokens="${2:-2000}"
-
-  local payload
-  payload=$(python3 -c "
-import json, sys
-prompt = sys.stdin.read()
-print(json.dumps({
-    'model': '${MODEL}',
-    'max_tokens': ${max_tokens},
-    'messages': [{'role': 'user', 'content': prompt}]
-}))
-" <<< "$prompt_text")
-
-  curl -s -X POST "$API_URL" \
-    -H "Content-Type: application/json" \
-    -H "Authorization: Bearer $TOKEN" \
-    -d "$payload" 2>/dev/null || echo ""
-}
-
-# ─── Helper: extract text from LLM response (Anthropic or OpenAI format) ─────
-extract_response_text() {
-  python3 -c '
-import json, sys
-try:
-    r = json.load(sys.stdin)
-    if "content" in r and isinstance(r["content"], list):
-        for block in r["content"]:
-            if isinstance(block, dict) and block.get("type") == "text":
-                print(block["text"])
-                sys.exit(0)
-    elif "choices" in r:
-        print(r["choices"][0]["message"]["content"])
-        sys.exit(0)
-    else:
-        print(json.dumps(r))
-except Exception:
-    pass
-' 2>/dev/null || echo ""
-}
-
-# ─── Write repo summary data to tmp file to avoid subshell issues ────────────
-SUMMARY_FILE=$(mktemp /tmp/dream-summary-XXXXXX)
-CROSS_FILE=$(mktemp /tmp/dream-cross-XXXXXX)
-echo -n > "$SUMMARY_FILE"
-echo -n > "$CROSS_FILE"
-
-# Export functions and vars for subshells
-export -f call_llm extract_response_text
-export MODEL BASE_URL TOKEN API_URL MESH_DIR DATE
-
-# ─── 3. Process each repo ────────────────────────────────────────────────────
+# ─── 3. Process each repo using Python ────────────────────────────────────────
 echo "Processing repos..."
 echo ""
 
-# Extract repo list into a tmp file for iteration without pipes
-REPO_LIST_FILE=$(mktemp /tmp/dream-repos-XXXXXX)
-echo "$EXTRACTED_DATA" | python3 -c '
-import json, sys
-data = json.load(sys.stdin).get("repos", {})
-for repo, info in sorted(data.items()):
-    dates = ",".join(info["dates"])
-    # write: repo_path|dates|content (content base64-encoded to avoid pipe issues)
-    import base64
-    content_b64 = base64.b64encode(info["content"].encode()).decode()
-    print(f"{repo}|{dates}|{content_b64}")
-' > "$REPO_LIST_FILE" 2>/dev/null
+# Run the Python processing
+PROCESS_SCRIPT=$(mktemp /tmp/dream-process-XXXXXX.py)
+cat > "$PROCESS_SCRIPT" <<'PYEOF'
+import sys
+import json
+sys.path.insert(0, sys.argv[1])
+from dream_core import process_repos, write_cross_repo_memory
 
-TOTAL_REPOS=$(wc -l < "$REPO_LIST_FILE")
-CURRENT_REPO=0
+extracted = sys.argv[2]
+data = json.loads(extracted)
+repos_data = data.get('repos', {})
 
-while IFS='|' read -r repo_path dates content_b64; do
-  CURRENT_REPO=$((CURRENT_REPO + 1))
-  echo "[$CURRENT_REPO/$TOTAL_REPOS] --- Processing: $(basename "$repo_path") ($dates) ---"
+model_config = {
+    'model': sys.argv[3],
+    'token': sys.argv[4],
+    'base_url': sys.argv[5]
+}
 
-  # Decode base64 content
-  session_content=$(echo "$content_b64" | python3 -c "import sys,base64; print(base64.b64decode(sys.stdin.read()).decode())")
+date = sys.argv[6]
 
-  # ── Step A: Extract learnings from raw session content ──
-  echo -n "  Extracting learnings... "
+summary, cross_content = process_repos(
+    repos_data=repos_data,
+    model_config=model_config,
+    date=date,
+    dry_run=False
+)
 
-  extract_prompt="You are extracting learnings from a software development session.
-Be specific and concrete. Do not invent anything not in the source.
+for repo_name, status in summary:
+    print(f'{repo_name}|{status}')
 
-## Session content from $(basename "$repo_path")
-${session_content}
+if cross_content:
+    write_cross_repo_memory(cross_content, date, model_config)
+    print('cross-repo: written')
+PYEOF
 
-Return only a markdown snippet (no preamble) with these sections:
+PROCESSING_OUTPUT=$(uv run --project "$PYTHON_PATH" python3 "$PROCESS_SCRIPT" "$PYTHON_PATH" "$EXTRACTED_DATA" "$MODEL" "$TOKEN" "$BASE_URL" "$DATE" 2>&1)
+rm -f "$PROCESS_SCRIPT"
 
-## ${DATE} — $(basename "$repo_path")
-### Architecture
-### Deployment
-### Testing
-### Workflow
-### Patterns"
+echo "$PROCESSING_OUTPUT"
 
-  extraction_result=$(call_llm "$extract_prompt" 2000)
-
-  if [[ -z "$extraction_result" ]]; then
-    echo "⚠ LLM unavailable"
-    new_learnings="$session_content"
-    llm_success=false
-  else
-    echo "✓"
-    new_learnings=$(echo "$extraction_result" | extract_response_text)
-    if [[ -z "$new_learnings" ]]; then
-      new_learnings="$session_content"
-    fi
-    llm_success=true
-  fi
-
-  # ── Step B: Read existing .mesh/MEMORY.md ──
-  mesh_dir="$repo_path/.mesh"
-  memory_file="$mesh_dir/MEMORY.md"
-  existing_memory=""
-  mkdir -p "$mesh_dir"
-  if [[ -f "$memory_file" ]]; then
-    existing_memory=$(cat "$memory_file")
-  fi
-
-  # ── Step C: Synthesis rewrite (merge existing + new) ──
-  if $llm_success && [[ -n "$existing_memory" ]]; then
-    echo -n "  Synthesizing with existing memory... "
-
-    sys_prompt="You are maintaining a memory file for an AI coding agent.
-Below is the existing memory and new learnings from recent sessions.
-Produce an updated memory file that:
-- Incorporates the new learnings
-- Removes duplicates (keep the best single statement of each point)
-- Removes anything superseded by newer learnings
-- Keeps the file concise — every line must earn its place
-- Hard limit: 200 lines
-
-## Existing memory
-${existing_memory}
-
-## New learnings
-${new_learnings}
-
-Return only the updated memory file content, no preamble.
-Keep the same section headings as the existing memory where present.
-
-If any learning applies across multiple repos or to the project as a whole,
-prefix it with **[CROSS-REPO]** so it can be collected for the cross-repo memory file."
-
-    synthesis_result=$(call_llm "$sys_prompt" 3000)
-
-    if [[ -n "$synthesis_result" ]]; then
-      updated_memory=$(echo "$synthesis_result" | extract_response_text)
-      if [[ -n "$updated_memory" ]]; then
-        echo "✓"
-        # Extract cross-repo items (avoid pipefail with process substitution)
-        while IFS= read -r cross_line; do
-          echo "## $DATE — $(basename "$repo_path")" >> "$CROSS_FILE"
-          echo "$cross_line" >> "$CROSS_FILE"
-          echo "" >> "$CROSS_FILE"
-        done < <(echo "$updated_memory" | grep '\[CROSS-REPO\]' || true)
-
-        line_count=$(echo "$updated_memory" | wc -l)
-        if [[ "$line_count" -gt 200 ]]; then
-          echo "  ⚠ Warning: Memory file has $line_count lines (suggested max: 200)"
-        fi
-
-        echo "$updated_memory" > "$memory_file"
-        echo "$(basename "$repo_path")|written" >> "$SUMMARY_FILE"
-        continue
-      fi
-    fi
-
-    # Fallback: append to existing
-    echo "⚠ Synthesis failed — appending raw learnings"
-    {
-      echo ""
-      echo "## $DATE"
-      echo "$new_learnings"
-    } >> "$memory_file"
-    echo "$(basename "$repo_path")|append-fallback" >> "$SUMMARY_FILE"
-
-  elif $llm_success; then
-    # First run — no existing memory
-    echo "  Creating new memory file... ✓"
-    echo "$new_learnings" > "$memory_file"
-    echo "$(basename "$repo_path")|new" >> "$SUMMARY_FILE"
-
-  else
-    # LLM down — raw content fallback
-    echo -n "  Writing raw session content (LLM unavailable)... "
-    if [[ -f "$memory_file" ]]; then
-      {
-        echo ""
-        echo "## $DATE — Raw session content (LLM unavailable)"
-        echo "$new_learnings"
-      } >> "$memory_file"
-    else
-      {
-        echo "# Memory: $(basename "$repo_path")"
-        echo ""
-        echo "## $DATE — Raw session content (LLM unavailable)"
-        echo "$new_learnings"
-      } > "$memory_file"
-    fi
-    echo "✓"
-    echo "$(basename "$repo_path")|raw-fallback" >> "$SUMMARY_FILE"
-  fi
-
-done < "$REPO_LIST_FILE"
-
-rm -f "$REPO_LIST_FILE"
-
-# ─── 4. Cross-repo synthesis to ~/.mesh/MEMORY.md ────────────────────────────
-CROSS_CONTENT=$(cat "$CROSS_FILE" 2>/dev/null || echo "")
-rm -f "$CROSS_FILE"
-
-if [[ -n "$CROSS_CONTENT" ]]; then
-  echo ""
-  echo "--- Cross-repo learnings ---"
-  echo "  Processing cross-repo items..."
-
-  mkdir -p "$HOME/.mesh"
-  LOCAL_CROSS_FILE="$HOME/.mesh/MEMORY.md"
-  LOCAL_CROSS_EXISTING=""
-  [[ -f "$LOCAL_CROSS_FILE" ]] && LOCAL_CROSS_EXISTING=$(cat "$LOCAL_CROSS_FILE")
-
-  echo -n "  Running cross-repo synthesis... "
-
-  cross_sys_prompt="You are maintaining a cross-repo memory file for an AI coding agent.
-This file contains learnings that apply across multiple repositories.
-
-## Existing memory
-${LOCAL_CROSS_EXISTING:-}
-
-## New cross-repo learnings
-${CROSS_CONTENT}
-
-Return only the updated memory file content, no preamble.
-Keep the same section headings. Max 200 lines. Deduplicate."
-
-  cross_result=$(call_llm "$cross_sys_prompt" 3000)
-
-  if [[ -n "$cross_result" ]]; then
-    cross_updated=$(echo "$cross_result" | extract_response_text)
-    if [[ -n "$cross_updated" ]]; then
-      echo "$cross_updated" > "$LOCAL_CROSS_FILE"
-      echo "✓"
-    else
-      echo "⚠ Fallback — appending raw"
-      {
-        echo ""
-        echo "## $DATE"
-        echo "$CROSS_CONTENT"
-      } >> "$LOCAL_CROSS_FILE"
-    fi
-  else
-    echo "⚠ LLM unavailable — writing raw"
-    if [[ -f "$LOCAL_CROSS_FILE" ]]; then
-      {
-        echo ""
-        echo "## $DATE"
-        echo "$CROSS_CONTENT"
-      } >> "$LOCAL_CROSS_FILE"
-    else
-      {
-        echo "# Cross-Repo Memory"
-        echo ""
-        echo "## $DATE"
-        echo "$CROSS_CONTENT"
-      } > "$LOCAL_CROSS_FILE"
-    fi
-  fi
-fi
-
-# ─── 5. Print summary ────────────────────────────────────────────────────────
+# ─── 4. Print summary ────────────────────────────────────────────────────────
 echo ""
 echo "dream complete — $DATE $TIMESTAMP"
 
-if [[ -s "$SUMMARY_FILE" ]]; then
-  while IFS='|' read -r repo_name status; do
-    echo "  $repo_name: .mesh/MEMORY.md ($status)"
-  done < "$SUMMARY_FILE"
-
-  if [[ -f "$HOME/.mesh/MEMORY.md" ]]; then
+# Format the summary output to match original format
+echo "$PROCESSING_OUTPUT" | while IFS='|' read -r repo status; do
+  if [[ "$repo" == "cross-repo" ]]; then
+    echo ""
     echo "  cross-repo: ~/.mesh/MEMORY.md (✓ written)"
+  elif [[ -n "$repo" ]]; then
+    echo "  $repo: .mesh/MEMORY.md ($status)"
   fi
-else
-  echo "  No repos processed."
-fi
-
-rm -f "$SUMMARY_FILE"
-
+done
 echo ""
 echo "Next: run 'mesh test-alpha-mesh' to run tests"
