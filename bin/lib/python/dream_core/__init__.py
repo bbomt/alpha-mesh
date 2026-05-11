@@ -12,7 +12,6 @@ import sys
 import json
 import os
 import re
-import base64
 import time
 from collections import defaultdict, Counter
 from typing import Dict, List, Optional, Any, Tuple
@@ -24,6 +23,8 @@ MEMORY_FILENAME = "MEMORY.md"
 CROSS_REPO_TAG = "[CROSS-REPO]"
 MAX_MEMORY_LINES = 200
 CLAUDE_PROJECTS = os.path.expanduser("~/.claude/projects")
+SECTION_FIELDS = ["architecture", "patterns", "jira_workflow",
+                  "deploy_commands", "testing", "workflow"]
 
 
 def extract_sessions_from_jsonl(
@@ -45,7 +46,6 @@ def extract_sessions_from_jsonl(
         Dict mapping repo_path -> {"content": str, "dates": List[str], "file_count": int}
     """
     repo_data = defaultdict(lambda: {"content_lines": [], "dates": set(), "file_count": 0})
-    processed = 0
 
     if not os.path.isdir(projects_dir):
         return {}
@@ -55,7 +55,6 @@ def extract_sessions_from_jsonl(
             if not fname.endswith('.jsonl'):
                 continue
             fpath = os.path.join(root, fname)
-            processed += 1
 
             try:
                 mtime = os.path.getmtime(fpath)
@@ -132,12 +131,9 @@ def extract_sessions_from_jsonl(
                         continue
 
                 repo_data[repo_path]["file_count"] += 1
-                session_lines = []
-                for msg in messages:
-                    session_lines.append(msg)
 
-                if session_lines:
-                    content_str = '\n'.join(session_lines)
+                if messages:
+                    content_str = '\n'.join(messages)
                     repo_data[repo_path]["content_lines"].append(
                         f"--- Session: {os.path.basename(root)} ({fdate}) ---\n{content_str}"
                     )
@@ -156,36 +152,6 @@ def extract_sessions_from_jsonl(
             }
 
     return result
-
-
-def read_model_config(local_settings_path: str) -> Dict[str, str]:
-    """
-    Read model configuration from settings.json.
-
-    Args:
-        local_settings_path: Path to .claude/settings.json
-
-    Returns:
-        Dict with keys: model, base_url, token
-    """
-    config = {"model": "", "base_url": "", "token": ""}
-
-    if not os.path.isfile(local_settings_path):
-        return config
-
-    try:
-        with open(local_settings_path) as f:
-            settings = json.load(f)
-
-        env = settings.get("env", {})
-        config["model"] = env.get("ANTHROPIC_MODEL", "")
-        config["base_url"] = env.get("ANTHROPIC_BASE_URL", "")
-        config["token"] = env.get("ANTHROPIC_AUTH_TOKEN", env.get("ANTHROPIC_API_KEY", ""))
-
-    except (json.JSONDecodeError, IOError):
-        pass
-
-    return config
 
 
 def call_llm(
@@ -273,15 +239,13 @@ def extract_response_text(response_text: str) -> str:
     response_text = response_text.strip()
 
     # Try parsing as JSON
-    section_fields = ["architecture", "patterns", "jira_workflow",
-                     "deploy_commands", "testing", "workflow"]
     try:
         r = json.loads(response_text)
         if isinstance(r, dict):
             # Structured output with named fields (architecture, patterns, etc.)
-            if any(k in r for k in section_fields):
+            if any(k in r for k in SECTION_FIELDS):
                 lines = []
-                for field in section_fields:
+                for field in SECTION_FIELDS:
                     value = r.get(field)
                     if value is None or value == "":
                         continue
@@ -299,12 +263,10 @@ def extract_response_text(response_text: str) -> str:
             learnings = r.get("learnings")
             if isinstance(learnings, dict):
                 lines = []
-                for field in section_fields:
-                    value = None
-                    for k, v in learnings.items():
-                        if k.lower() == field:
-                            value = v
-                            break
+                # O(n+m) instead of O(n*m): build lowercase key map once
+                learnings_lower = {k.lower(): v for k, v in learnings.items()}
+                for field in SECTION_FIELDS:
+                    value = learnings_lower.get(field)
                     if value is None or value == "":
                         continue
                     heading = "### " + field.replace("_", " ").title()
@@ -375,7 +337,7 @@ def process_repos(
 
     Args:
         repos_data: Dict from extract_sessions_from_jsonl
-        model_config: Dict from read_model_config
+        model_config: Dict with keys: model, token, base_url
         date: Current date string
         dry_run: If True, don't write files
 

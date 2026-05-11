@@ -17,7 +17,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'bin', 'l
 
 from dream_core import (
     extract_sessions_from_jsonl,
-    read_model_config,
     extract_response_text,
     extract_learnings,
     synthesize_memory,
@@ -117,55 +116,6 @@ class TestExtractResponseText:
         assert "Clean domain boundaries" in result
         assert "### Patterns" in result
         assert "Repository pattern" in result
-
-
-class TestReadModelConfig:
-    """Tests for read_model_config function."""
-
-    def test_reads_valid_settings(self, tmp_path):
-        """Test reading a valid settings.json file."""
-        settings_file = tmp_path / "settings.json"
-        settings_file.write_text(json.dumps({
-            "env": {
-                "ANTHROPIC_MODEL": "claude-3-opus",
-                "ANTHROPIC_BASE_URL": "https://api.anthropic.com",
-                "ANTHROPIC_AUTH_TOKEN": "sk-ant-token"
-            }
-        }))
-
-        config = read_model_config(str(settings_file))
-
-        assert config["model"] == "claude-3-opus"
-        assert config["base_url"] == "https://api.anthropic.com"
-        assert config["token"] == "sk-ant-token"
-
-    def test_reads_api_key_fallback(self, tmp_path):
-        """Test that ANTHROPIC_API_KEY is used as fallback."""
-        settings_file = tmp_path / "settings.json"
-        settings_file.write_text(json.dumps({
-            "env": {
-                "ANTHROPIC_MODEL": "claude-3-sonnet",
-                "ANTHROPIC_API_KEY": "sk-test"
-            }
-        }))
-
-        config = read_model_config(str(settings_file))
-        assert config["token"] == "sk-test"
-
-    def test_returns_empty_config_for_missing_file(self):
-        """Test empty config returned when file doesn't exist."""
-        config = read_model_config("/nonexistent/path/settings.json")
-        assert config["model"] == ""
-        assert config["base_url"] == ""
-        assert config["token"] == ""
-
-    def test_returns_empty_config_for_invalid_json(self, tmp_path):
-        """Test empty config returned when file has invalid JSON."""
-        settings_file = tmp_path / "settings.json"
-        settings_file.write_text("not valid json")
-
-        config = read_model_config(str(settings_file))
-        assert config["model"] == ""
 
 
 class TestCreateNewMemory:
