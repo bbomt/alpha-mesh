@@ -1,8 +1,0 @@
-README.md
-pyproject.toml
-dream_core/__init__.py
-dream_core.egg-info/PKG-INFO
-dream_core.egg-info/SOURCES.txt
-dream_core.egg-info/dependency_links.txt
-dream_core.egg-info/requires.txt
-dream_core.egg-info/top_level.txt
