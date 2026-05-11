@@ -5,6 +5,12 @@ config/active.json
 tasks/task-log.db
 tasks/*.db
 
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+
 # editor
 .DS_Store
 *.swp
+.env
