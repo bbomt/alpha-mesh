@@ -96,9 +96,8 @@ def split_routing(extracted: str) -> Tuple[str, str]:
         elif GLOBAL_TAG in line:
             global_md.append(line)
         else:
-            # Lines without tags go to both
+            # Untagged lines: default to REPO-LOCAL only (keep local when unsure)
             repo_local.append(line)
-            global_md.append(line)
 
     # Filter out empty sections
     repo_local = filter_empty(repo_local)
@@ -544,7 +543,7 @@ def process_repos(
             has_existing = bool(existing_memory)
             print(f"  Synthesizing{' with existing memory...' if has_existing else ' (new memory)...'}", flush=True, file=sys.stderr)
 
-            updated_memory, _ = synthesize_memory(
+            updated_memory = synthesize_memory(
                 existing_memory=existing_memory,
                 new_learnings=repo_local_learnings,
                 date=date,
@@ -642,10 +641,13 @@ LAYER 2 — CURRENT STATE
 LAYER 3 — SESSION SIGNAL
   Expires within ~7 days. One sentence. Max 3 per session.
 
-# Routing Classification
-For every insight, also decide:
-- REPO-LOCAL: specific to this codebase's tech stack, folder structure, or domain logic
-- GLOBAL: applies across all repos (team process, JIRA workflow, communication norms)
+# Routing Classification — MANDATORY TAGS
+Every bullet MUST start with a routing tag, no exceptions:
+- `[REPO-LOCAL]`: specific to this codebase's tech stack, folder structure, or domain logic
+- `[GLOBAL]`: applies across all repos (team process, JIRA workflow, communication norms)
+
+If an insight is not clearly cross-repo team knowledge, tag it `[REPO-LOCAL]`.
+When in doubt, keep it local — global memory that grows too large loses value.
 
 # Session Source: {repo_name} | Date: {date}
 
@@ -656,16 +658,16 @@ For every insight, also decide:
 ## Extracted Insights
 
 ### Layer 1 — Durable Identity
-<!-- One bullet per insight. Format: `[REPO-LOCAL|GLOBAL] Insight text.` -->
+<!-- One bullet per insight. Format: `[REPO-LOCAL]` or `[GLOBAL]` — TAG IS MANDATORY, no untagged bullets -->
 
 ### Layer 2 — Current State
-<!-- One bullet per insight. Format: `[REPO-LOCAL|GLOBAL] Insight text. (Expires: condition)` -->
+<!-- One bullet per insight. Format: `[REPO-LOCAL]` or `[GLOBAL]` Insight text. (Expires: condition) — TAG IS MANDATORY -->
 
 ### Layer 3 — Session Signals
-<!-- Max 3 bullets. One sentence each. -->
+<!-- Max 3 bullets. Format: `[REPO-LOCAL]` or `[GLOBAL]` One sentence. — TAG IS MANDATORY -->
 
 ### Rejected Decisions
-<!-- Decisions that were explicitly ruled out this session. Format: Decision — Reason. -->
+<!-- Decisions explicitly ruled out. Format: Decision — Reason. -->
 <!-- This section is high value. Do not skip it if any rejections occurred. -->"""
 
     base_url = model_config.get("base_url", "") or "https://api.anthropic.com"
@@ -704,7 +706,7 @@ def synthesize_memory(
         model_config: Model configuration dict
 
     Returns:
-        Tuple of (updated_memory, cross_repo_items)
+        Updated memory content, or None on failure.
     """
     sys_prompt = f"""# Role
 You are a Memory Curator for a software development team's AI coding assistant.
