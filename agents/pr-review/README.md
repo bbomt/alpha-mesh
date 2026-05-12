@@ -5,9 +5,13 @@ The `pr-review` agent automates code reviews by running Claude Code locally insi
 ## Prerequisites
 
 1. **Claude Code CLI** - Must be installed and authenticated
-2. **GitHub CLI (`gh`)** - For GitHub API authentication
+2. **Git Credentials** - For GitHub API authentication
    ```bash
-   gh auth login
+   # Configure credential helper (macOS)
+   git config --global credential.helper osxkeychain
+   # Or for Linux:
+   git config --global credential.helper store
+   git credential fill  # Then enter: protocol=https, host=github.com
    ```
 3. **Atlassian MCP Plugin** - For JIRA ticket lookups (optional)
    - Run `claude` in your terminal
@@ -103,7 +107,7 @@ mesh pr-review https://github.com/org/repo/pull/123 --auto-fix
 ## Configuration
 
 The agent uses:
-- **GitHub Auth** - Via `gh auth token` (GitHub CLI)
+- **GitHub Auth** - Via `git credential fill` (git credentials) or `GITHUB_TOKEN` env var
 - **Claude Code Auth** - Existing Claude Code authentication
 - **Atlassian Auth** - Via Claude Code's Atlassian MCP plugin
 

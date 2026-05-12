@@ -36,7 +36,7 @@ The code in `claude_runner.py` captures stdout and returns it as a string. The `
 ### 4. GitHub token
 
 **Finding:**
-- Primary method: `gh auth token` (GitHub CLI)
+- Primary method: `git credential fill` (git credentials)
 - Fallback: `GITHUB_TOKEN` environment variable
 - If neither is available, raises an error with clear instructions
 
@@ -55,7 +55,7 @@ The code in `claude_runner.py` captures stdout and returns it as a string. The `
 1. **Package structure:** Follows `dream_core` pattern with `__init__.py` and `__main__.py`
 2. **Build system:** Uses `hatchling` (per Jira ticket example)
 3. **CLI framework:** Uses `click` (per Jira ticket dependencies)
-4. **No `.env` for this agent:** Unlike `dream`, this agent doesn't need API tokens stored in `.env` - it uses `gh` CLI for GitHub and Claude Code's own auth for Atlassian
+4. **No `.env` for this agent:** Unlike `dream`, this agent doesn't need API tokens stored in `.env` - it uses `git credential fill` for GitHub and Claude Code's own auth for Atlassian
 5. **Logging:** Follows CLAUDE.md conventions - logs to `~/environment/logs/ai/claude/alpha-mesh-YYYY-MM-DD.log`
 
 ## Testing

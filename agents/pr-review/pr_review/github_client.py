@@ -14,21 +14,30 @@ class GitHubClient:
         self.token = token or self._get_token()
         if not self.token:
             raise ValueError(
-                "GitHub token not found. Please install 'gh' CLI and run 'gh auth login', "
-                "or set GITHUB_TOKEN environment variable."
+                "GitHub token not found. Please configure git credentials for github.com "
+                "(e.g., git config credential.helper osxkeychain) or set GITHUB_TOKEN environment variable."
             )
         self.api_base = "https://api.github.com"
 
     def _get_token(self) -> Optional[str]:
-        """Get GitHub token from gh CLI or environment."""
-        # Try gh CLI first
-        result = subprocess.run(
-            ["gh", "auth", "token"],
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            return result.stdout.strip()
+        """Get GitHub token from git credentials or environment."""
+        # Try git credential fill (works with credential helpers, osxkeychain, etc.)
+        try:
+            result = subprocess.run(
+                ["git", "credential", "fill"],
+                input="protocol=https\nhost=github.com\n\n",
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode == 0:
+                for line in result.stdout.splitlines():
+                    if line.startswith("password="):
+                        token = line.split("=", 1)[1].strip()
+                        if token:
+                            return token
+        except Exception:
+            pass
 
         # Fall back to environment variable
         import os
