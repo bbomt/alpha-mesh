@@ -2,6 +2,7 @@
 
 import subprocess
 import sys
+import os
 from typing import Optional
 
 
@@ -33,19 +34,26 @@ def run_claude_code_review(
         ClaudeRunnerError: On non-zero exit or timeout
     """
     # Build the command.
-    # --print runs headless, picks up settings from repo's .claude/settings.json
+    # Use --print for headless mode.
     cmd = ["/home/ec2-user/.local/bin/claude", "--print"]
 
     if verbose:
         print(f"Running Claude Code: {' '.join(cmd)}", file=sys.stderr)
-        print(f"Prompt length: {len(prompt)} chars", file=sys.stderr)
         print(f"CWD: {repo_path}", file=sys.stderr)
+        print(f"Prompt length: {len(prompt)} chars", file=sys.stderr)
+
+    # Write prompt to a file in the repo directory (Claude Code has access to it)
+    prompt_file = os.path.join(repo_path, ".pr-review-prompt.txt")
 
     try:
-        # Pass prompt via stdin
+        with open(prompt_file, "w") as f:
+            f.write(prompt)
+
+        # Pass prompt file as -p argument
+        cmd.extend(["-p", f"Read {prompt_file} and respond to the instructions inside."])
+
         result = subprocess.run(
             cmd,
-            input=prompt,
             cwd=repo_path,
             capture_output=True,
             text=True,
@@ -76,3 +84,9 @@ def run_claude_code_review(
         raise ClaudeRunnerError(
             "Claude Code CLI not found. Please ensure 'claude' is installed and on your PATH."
         )
+    finally:
+        # Clean up prompt file
+        try:
+            os.unlink(prompt_file)
+        except Exception:
+            pass
