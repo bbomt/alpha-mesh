@@ -13,15 +13,72 @@ class GitHubClient:
     def __init__(self, token: Optional[str] = None):
         self.token = token or self._get_token()
         if not self.token:
-            raise ValueError(
-                "GitHub token not found. Please configure git credentials for github.com "
-                "(e.g., git config credential.helper osxkeychain) or set GITHUB_TOKEN environment variable."
+            print(
+                "WARNING: GitHub token not found. Some features may not work.",
+                file=sys.stderr,
+            )
+            print(
+                "  To fix: install 'gh' CLI (sudo dnf install gh) and run 'gh auth login', ",
+                file=sys.stderr,
+            )
+            print(
+                "  Or set GITHUB_TOKEN environment variable.",
+                file=sys.stderr,
             )
         self.api_base = "https://api.github.com"
 
+    def _command_exists(self, cmd: str) -> bool:
+        """Check if a command exists on the system."""
+        try:
+            subprocess.run(["which", cmd], capture_output=True, check=True)
+            return True
+        except Exception:
+            return False
+
+    def _check_gh_installed(self) -> bool:
+        """Check if gh CLI is installed and warn if not."""
+        if not self._command_exists("gh"):
+            print(
+                "WARNING: 'gh' CLI is not installed.",
+                file=sys.stderr,
+            )
+            print(
+                "  Install on Amazon Linux 2023:",
+                file=sys.stderr,
+            )
+            print(
+                "    sudo dnf config-manager --add-repo https://cli.github.com/packages/rpm/gh-cli.repo",
+                file=sys.stderr,
+            )
+            print(
+                "    sudo dnf install gh -y",
+                file=sys.stderr,
+            )
+            print(
+                "  Or continue using GITHUB_TOKEN environment variable.",
+                file=sys.stderr,
+            )
+            return False
+        return True
+
     def _get_token(self) -> Optional[str]:
-        """Get GitHub token from git credentials or environment."""
-        # Try git credential fill (works with credential helpers, osxkeychain, etc.)
+        """Get GitHub token from gh CLI, git credential helper, or environment."""
+        import os
+
+        # Check if gh is installed
+        gh_installed = self._check_gh_installed()
+
+        # Try gh CLI (if installed)
+        if gh_installed:
+            result = subprocess.run(
+                ["gh", "auth", "token"],
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                return result.stdout.strip()
+
+        # Fall back to git credential helper
         try:
             result = subprocess.run(
                 ["git", "credential", "fill"],
@@ -40,7 +97,6 @@ class GitHubClient:
             pass
 
         # Fall back to environment variable
-        import os
         return os.environ.get("GITHUB_TOKEN")
 
     def _request(self, method: str, url: str, **kwargs) -> dict:
@@ -126,7 +182,7 @@ class GitHubClient:
         self._request("POST", url, json=payload)
 
     def post_pr_comment(self, owner: str, repo: str, pr_number: int, body: str) -> None:
-        """Post a top-level markdown comment on the PR (legacy, use create_pr_review instead)."""
+        """Post a top-level markdown comment on the PR (legacy - use create_pr_review instead)."""
         url = f"{self.api_base}/repos/{owner}/{repo}/issues/{pr_number}/comments"
         payload = {"body": body}
         self._request("POST", url, json=payload)
