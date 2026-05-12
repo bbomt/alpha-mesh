@@ -33,24 +33,19 @@ def run_claude_code_review(
         ClaudeRunnerError: On non-zero exit or timeout
     """
     # Build the command
-    # Using --print for headless mode, -p for prompt
-    # Note: Verify these flags with `claude --help` as Claude Code CLI may update
-    cmd = ["claude", "--print", "--no-input"]
-
-    if not auto_fix:
-        # In review-only mode, we don't want Claude Code to make changes
-        # The --print flag with -p should be read-only by default
-        pass
-
-    cmd.extend(["-p", prompt])
+    # Use --print for headless mode
+    # Pass prompt via stdin (input=parameter) to avoid "Argument list too long" error
+    cmd = ["/home/ec2-user/.local/bin/claude", "--print"]
 
     if verbose:
         print(f"Running Claude Code: {' '.join(cmd)}", file=sys.stderr)
         print(f"CWD: {repo_path}", file=sys.stderr)
+        print(f"Prompt length: {len(prompt)} chars", file=sys.stderr)
 
     try:
         result = subprocess.run(
             cmd,
+            input=prompt,  # Pass prompt via stdin
             cwd=repo_path,
             capture_output=True,
             text=True,

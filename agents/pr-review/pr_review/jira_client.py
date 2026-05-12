@@ -45,7 +45,7 @@ def verify_atlassian_auth(repo_path: str, verbose: bool = False) -> bool:
     # We'll try to see if claude is available and has the Atlassian plugin
     try:
         result = subprocess.run(
-            ["claude", "--version"],
+            ["/home/ec2-user/.local/bin/claude", "--version"],
             cwd=repo_path,
             capture_output=True,
             text=True,
@@ -65,7 +65,7 @@ def verify_atlassian_auth(repo_path: str, verbose: bool = False) -> bool:
     try:
         result = subprocess.run(
             [
-                "claude",
+                "/home/ec2-user/.local/bin/claude",
                 "--print",
                 "--no-input",
                 "-p",

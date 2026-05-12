@@ -48,13 +48,26 @@ def format_inline_comments(
     Returns:
         List of comment dicts for the GitHub API
     """
-    # Build a map of filename -> diff content for position calculation
-    # Note: GitHub requires the position in the diff, not the line number in the file
-    # For simplicity, we'll use the line number and let GitHub figure it out
-    # In production, you'd need to parse the diff to get the correct position
+    # Build a set of lock files and config files to exclude
+    excluded_patterns = [
+        r".*\.lock$",
+        r".*\.toml$",
+        r".*pnpm-lock\.yaml$",
+    ]
+
+    def is_excluded(filename: str) -> bool:
+        import fnmatch
+        for pattern in excluded_patterns:
+            if fnmatch.fnmatch(filename, pattern):
+                return True
+        return False
 
     comments = []
     for comment in review.inline_comments:
+        # Skip excluded files (lock files, config)
+        if is_excluded(comment.file):
+            continue
+
         # Map severity to prefix
         prefix = SEVERITY_PREFIX.get(comment.severity, "🔵 **Suggestion:**")
 
