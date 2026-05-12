@@ -106,6 +106,41 @@ def split_routing(extracted: str) -> Tuple[str, str]:
     return "\n".join(repo_local).strip(), "\n".join(global_md).strip()
 
 
+def validate_routing(extracted: str, repo_name: str) -> str:
+    """
+    Post-extraction validation to catch obvious mis-taggings.
+
+    If a [GLOBAL] tagged line contains the repo name, it's likely mis-tagged
+    and should be [REPO-LOCAL].
+
+    Args:
+        extracted: Raw extracted insights from LLM
+        repo_name: Name of the repo (e.g., "alpha-mesh")
+
+    Returns:
+        Corrected extracted content
+    """
+    lines = extracted.split("\n")
+    corrected = []
+    corrections = 0
+
+    for line in lines:
+        # Check if line is tagged GLOBAL but contains repo name
+        if GLOBAL_TAG in line and repo_name in line:
+            # Re-tag as REPO-LOCAL
+            corrected_line = line.replace(GLOBAL_TAG, REPO_LOCAL_TAG, 1)
+            corrected.append(corrected_line)
+            corrections += 1
+            print(f"  [validate] Re-tagged GLOBAL→REPO-LOCAL: {line[:80]}...", flush=True, file=sys.stderr)
+        else:
+            corrected.append(line)
+
+    if corrections > 0:
+        print(f"  [validate] Fixed {corrections} mis-tagged line(s) containing '{repo_name}'", flush=True, file=sys.stderr)
+
+    return "\n".join(corrected)
+
+
 def enforce_recent_signals_cap(memory_content: str, max_entries: int = 5) -> str:
     """
     Enforce a max number of entries in ## Recent Signals section.
@@ -524,6 +559,9 @@ def process_repos(
             model_config=model_config
         )
 
+        # Validate routing (catch mis-tagged content)
+        new_learnings = validate_routing(new_learnings, repo_name)
+
         # Split into REPO-LOCAL and GLOBAL insights
         repo_local_learnings, global_learnings = split_routing(new_learnings)
 
@@ -646,8 +684,24 @@ Every bullet MUST start with a routing tag, no exceptions:
 - `[REPO-LOCAL]`: specific to this codebase's tech stack, folder structure, or domain logic
 - `[GLOBAL]`: applies across all repos (team process, JIRA workflow, communication norms)
 
+## Critical Routing Rules
+1. **If the insight mentions the repo name "{repo_name}", it MUST be `[REPO-LOCAL]`**
+2. **When in doubt, keep it local** — global memory that grows too large loses value.
+3. **GLOBAL means truly cross-repo**: team-wide JIRA settings, communication norms, shared CI/CD patterns
+
+## Examples (study these carefully)
+### REPO-LOCAL (correct tagging):
+- `[REPO-LOCAL] Log Path: Commands are logged to ~/environment/logs/ai/claude/{repo_name}.log`
+- `[REPO-LOCAL] Testing: uses pnpm test:unit (not npm or yarn)`
+- `[REPO-LOCAL] Architecture: single-spa MFE pattern with 6 sub-repos`
+- `[REPO-LOCAL] Claude Code uses --print flag (not --headless)`
+
+### GLOBAL (correct tagging):
+- `[GLOBAL] JIRA workflow: move ticket to IN PROGRESS when starting work`
+- `[GLOBAL] Git commits: format is feature|fix[{{summary}}{{JIRA-XX}}]: description`
+- `[GLOBAL] Team uses AWS CDK for infrastructure, SAM for local testing`
+
 If an insight is not clearly cross-repo team knowledge, tag it `[REPO-LOCAL]`.
-When in doubt, keep it local — global memory that grows too large loses value.
 
 # Session Source: {repo_name} | Date: {date}
 
