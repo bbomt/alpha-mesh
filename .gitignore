@@ -18,4 +18,11 @@ uv.lock
 # editor
 .DS_Store
 *.swp
+
+# project env
 .env
+
+# claude settings
+.claude/
+# dream output .mesh/MEMORY.md
+.mesh/
