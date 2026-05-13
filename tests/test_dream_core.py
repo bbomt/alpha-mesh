@@ -724,3 +724,26 @@ class TestIsRealUserMessage:
         """Test that partial tag match (e.g., <system-reminder with attrs) returns False."""
         text = "<system-reminder name=\"test\">Some reminder</system-reminder>"
         assert is_real_user_message(text) is False
+    def test_context_usage_table_returns_false(self):
+        """Test that Context Usage tables are filtered out."""
+        text = """## Context Usage
+
+**Model:** tencent/hy3-preview
+**Tokens:** 63.2k / 200k (32%)
+
+### Estimated usage by category
+
+| Category | Tokens | Percentage |
+|----------|---------|------------|
+| System prompt | 6.2k | 3.1% |"""
+        assert is_real_user_message(text) is False
+
+    def test_session_continuation_summary_returns_false(self):
+        """Test that session continuation summaries are filtered out."""
+        text = """This session is being continued from a previous conversation that ran out of context.
+
+Summary:
+1. Primary Request and Intent:
+   The user reported a bug..."""
+        assert is_real_user_message(text) is False
+

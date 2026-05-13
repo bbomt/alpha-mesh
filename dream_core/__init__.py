@@ -26,14 +26,32 @@ CLAUDE_CODE_TAGS = (
 
 def is_real_user_message(text: str) -> bool:
     """Check if a user message is actual user input vs Claude Code system-generated."""
+
     if not text:
         return False
+
     # Check for Claude Code internal tags
     for tag in CLAUDE_CODE_TAGS:
         if tag in text:
             return False
-    return True
 
+    # Check for system-generated content patterns
+    system_patterns = (
+        "## Context Usage",
+        "**Model:**",
+        "**Tokens:**",
+        "### Estimated usage by category",
+        "| Category | Tokens | Percentage |",
+        "This session is being continued from a previous conversation",
+        "Summary:",
+        "Primary Request and Intent:",
+        "## Context Usage",
+    )
+    for pattern in system_patterns:
+        if pattern in text:
+            return False
+
+    return True
 
 # Constants
 MESH_SUBDIR = ".mesh"
@@ -1105,6 +1123,27 @@ def main():
         return 0
 
     print(f"Found {file_count} session file(s)", file=sys.stderr)
+
+    # Warn if session files are stale (might miss recent messages)
+    now = time.time()
+    for repo_path, info in repos_data.items():
+        # Check if any session file is older than 5 minutes
+        stale_files = []
+        for root, dirs, files in os.walk(args.projects_dir if 'args' in dir() else CLAUDE_PROJECTS):
+            for fname in files:
+                if not fname.endswith('.jsonl'):
+                    continue
+                fpath = os.path.join(root, fname)
+                try:
+                    mtime = os.path.getmtime(fpath)
+                    if now - mtime > 300:  # 5 minutes
+                        stale_files.append(fname)
+                except OSError:
+                    continue
+        if stale_files:
+            print(f"  WARNING: Some session files are >5 min old — recent messages might be missing.", file=sys.stderr)
+            print(f"  For best results, exit Claude Code (to flush) then run mesh dream.", file=sys.stderr)
+            break
 
     # Print user messages to console before sending to LLM
     if repos_data:
