@@ -209,17 +209,27 @@ class TestExtractSessionsFromJsonl:
         # Create two session files in different repos
         repo1_session = projects_dir / "repo1-session" / "session.jsonl"
         repo1_session.parent.mkdir()
-        repo1_session.write_text(json.dumps({
-            "cwd": "/home/user/repos/repo1",
-            "message": {"role": "assistant", "content": [{"type": "text", "text": "A" * 150}]}
-        }) + "\n")
+        with repo1_session.open(mode="w") as f:
+            f.write(json.dumps({
+                "cwd": "/home/user/repos/repo1",
+                "message": {"role": "assistant", "content": [{"type": "text", "text": "A" * 150}]}
+            }) + "\n")
+            f.write(json.dumps({
+                "cwd": "/home/user/repos/repo1",
+                "message": {"role": "user", "content": "User message for repo1"}
+            }) + "\n")
 
         repo2_session = projects_dir / "repo2-session" / "session.jsonl"
         repo2_session.parent.mkdir()
-        repo2_session.write_text(json.dumps({
-            "cwd": "/home/user/repos/repo2",
-            "message": {"role": "assistant", "content": [{"type": "text", "text": "B" * 150}]}
-        }) + "\n")
+        with repo2_session.open(mode="w") as f:
+            f.write(json.dumps({
+                "cwd": "/home/user/repos/repo2",
+                "message": {"role": "assistant", "content": [{"type": "text", "text": "B" * 150}]}
+            }) + "\n")
+            f.write(json.dumps({
+                "cwd": "/home/user/repos/repo2",
+                "message": {"role": "user", "content": "User message for repo2"}
+            }) + "\n")
 
         # Set mtime to today
         import time
@@ -280,11 +290,11 @@ class TestExtractSessionsFromJsonl:
         session_file = projects_dir / "test-session" / "session.jsonl"
         session_file.parent.mkdir()
 
-        # Write valid and invalid lines using open with append
+        # Write valid (user message) and invalid lines
         with session_file.open(mode="w") as f:
             f.write(json.dumps({
                 "cwd": "/home/user/repos/test",
-                "message": {"role": "assistant", "content": [{"type": "text", "text": "A" * 150}]}
+                "message": {"role": "user", "content": "Valid user message for testing"}
             }) + "\n")
             f.write("this is not json\n")
 
@@ -302,6 +312,97 @@ class TestExtractSessionsFromJsonl:
 
         # Should still extract the valid entry
         assert len(result) == 1
+
+    def test_default_excludes_assistant_messages(self, tmp_path):
+        """Test that assistant messages are excluded by default (include_assistant=False)."""
+        projects_dir = tmp_path / "projects"
+        projects_dir.mkdir()
+
+        session_file = projects_dir / "test-session" / "session.jsonl"
+        session_file.parent.mkdir()
+
+        # Write assistant message (long enough) and user message
+        with session_file.open(mode="w") as f:
+            f.write(json.dumps({
+                "cwd": "/home/user/repos/test",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "A" * 150}]
+                }
+            }) + "\n")
+            f.write(json.dumps({
+                "cwd": "/home/user/repos/test",
+                "message": {
+                    "role": "user",
+                    "content": "This is a user message that is long enough"
+                }
+            }) + "\n")
+
+        import time
+        now = time.time()
+        os.utime(session_file, (now, now))
+
+        cutoff = datetime.now().strftime("%Y-%m-%d")
+
+        result = extract_sessions_from_jsonl(
+            projects_dir=str(projects_dir),
+            cutoff=cutoff,
+            target_repo=None,
+            include_assistant=False  # default
+        )
+
+        # Should have one repo
+        assert len(result) == 1
+        content = result[list(result.keys())[0]]["content"]
+        # Assistant message should NOT be present
+        assert "[assistant]" not in content
+        # User message should be present
+        assert "[user]" in content
+
+    def test_include_assistant_flag_includes_both(self, tmp_path):
+        """Test that include_assistant=True includes both user and assistant messages."""
+        projects_dir = tmp_path / "projects"
+        projects_dir.mkdir()
+
+        session_file = projects_dir / "test-session" / "session.jsonl"
+        session_file.parent.mkdir()
+
+        # Write assistant message and user message
+        with session_file.open(mode="w") as f:
+            f.write(json.dumps({
+                "cwd": "/home/user/repos/test",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "A" * 150}]
+                }
+            }) + "\n")
+            f.write(json.dumps({
+                "cwd": "/home/user/repos/test",
+                "message": {
+                    "role": "user",
+                    "content": "This is a user message that is long enough"
+                }
+            }) + "\n")
+
+        import time
+        now = time.time()
+        os.utime(session_file, (now, now))
+
+        cutoff = datetime.now().strftime("%Y-%m-%d")
+
+        result = extract_sessions_from_jsonl(
+            projects_dir=str(projects_dir),
+            cutoff=cutoff,
+            target_repo=None,
+            include_assistant=True
+        )
+
+        # Should have one repo
+        assert len(result) == 1
+        content = result[list(result.keys())[0]]["content"]
+        # Both messages should be present
+        assert "[assistant]" in content
+        assert "[user]" in content
 
 
 class TestSynthesizeMemory:

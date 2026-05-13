@@ -115,7 +115,7 @@ The `openrouter-default` profile provides the OpenRouter URL and token; the mode
 ### How it works
 
 1. **Scan**: Finds `.jsonl` session logs in `~/.claude/projects/*/` modified today
-2. **Extract**: Pulls assistant text (>100 chars), user messages (>20 chars, non-slash-commands), and error/fail lines
+2. **Extract**: Pulls user messages (>20 chars, non-slash-commands) by default. Use `--include-assistant` to also include assistant text (>100 chars)
 3. **Group**: Decodes repo paths from the `cwd` field in each session entry
 4. **Call LLM**: Uses `DREAM_MODEL`, `DREAM_URL`, `DREAM_TOKEN` from `.env`:
    - Extracts structured learnings (what worked, what failed, patterns, gotchas)
@@ -143,8 +143,9 @@ Dream does not touch CLAUDE.md — this is a manual step.
 | Flag | Description |
 |------|-------------|
 | `--dry-run` | Print extracted content, write nothing |
-| `--5-days` | Process sessions from last 5 days |
 | `--days N` | Process sessions from last N days |
+| `--repo <path>` | Process only specific repo |
+| `--include-assistant` | Include assistant messages (default: user only) |
 
 ### Error handling
 

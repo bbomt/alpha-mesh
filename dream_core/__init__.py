@@ -212,7 +212,8 @@ def check_conflicts(memory_content: str) -> Tuple[bool, List[str]]:
 def extract_sessions_from_jsonl(
     projects_dir: str,
     cutoff: str,
-    target_repo: Optional[str] = None
+    target_repo: Optional[str] = None,
+    include_assistant: bool = False
 ) -> Dict[str, Dict[str, Any]]:
     """
     Scan JSONL session files and extract content by repo.
@@ -223,6 +224,7 @@ def extract_sessions_from_jsonl(
         target_repo: Optional repo path to filter results.
             When set to a parent directory (e.g., ~/environment/pmat),
             all child repos are included so multi-repo work is captured.
+        include_assistant: If True, include assistant messages. Default False (user only).
 
     Returns:
         Dict mapping repo_path -> {"content": str, "dates": List[str], "file_count": int}
@@ -271,8 +273,8 @@ def extract_sessions_from_jsonl(
                         role = msg.get('role', '')
                         content = msg.get('content', '')
 
-                        # Only process valid assistant and user messages
-                        if role == 'assistant' and isinstance(content, list):
+                        # Process assistant messages only if include_assistant is True
+                        if include_assistant and role == 'assistant' and isinstance(content, list):
                             for block in content:
                                 if isinstance(block, dict) and block.get('type') == 'text':
                                     text = block.get('text', '').strip()
@@ -1051,6 +1053,8 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="Print without writing")
     parser.add_argument("--days", type=int, default=0, help="Days back to process")
     parser.add_argument("--repo", type=str, default="", help="Filter to specific repo")
+    parser.add_argument("--include-assistant", action="store_true",
+                        help="Include assistant messages (default: user only)")
     parser.add_argument("--projects-dir", type=str, default=CLAUDE_PROJECTS)
     parser.add_argument("--model", type=str, default=os.environ.get("DREAM_MODEL", ""))
     parser.add_argument("--token", type=str, default=os.environ.get("DREAM_TOKEN", ""))
@@ -1072,7 +1076,8 @@ def main():
     repos_data = extract_sessions_from_jsonl(
         projects_dir=args.projects_dir,
         cutoff=cutoff,
-        target_repo=args.repo if args.repo else None
+        target_repo=args.repo if args.repo else None,
+        include_assistant=args.include_assistant
     )
 
     file_count = sum(info.get('file_count', 0) for info in repos_data.values())
@@ -1082,6 +1087,16 @@ def main():
         return 0
 
     print(f"Found {file_count} session file(s)", file=sys.stderr)
+
+    # Print user messages to console before sending to LLM
+    if repos_data:
+        print("\n=== User Messages to be sent to LLM ===\n")
+        for repo_path, info in sorted(repos_data.items()):
+            repo_name = os.path.basename(repo_path)
+            print(f"--- {repo_name} ---")
+            print(info["content"])
+            print("")
+        print("=== End of User Messages ===\n")
 
     if not repos_data:
         return 0

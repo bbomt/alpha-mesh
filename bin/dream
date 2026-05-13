@@ -4,11 +4,12 @@
 # Handles .env loading, arg parsing, and calls the Python CLI.
 #
 # Usage:
-#   dream              # process today's sessions (default)
+#   dream              # process today's sessions (default, user messages only)
 #   dream --dry-run    # print extracted content, write nothing
 #   dream --days 3     # process sessions from last 3 days
 #   dream --days 5     # process sessions from last 5 days
 #   dream --repo ~/environment/pmat  # process only specific repo
+#   dream --include-assistant  # include assistant messages (default: user only)
 
 set -euo pipefail
 
