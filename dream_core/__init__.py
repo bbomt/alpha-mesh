@@ -16,6 +16,24 @@ import time
 from collections import defaultdict, Counter
 from typing import Dict, List, Optional, Any, Tuple
 
+# Claude Code internal tags that indicate system-generated messages (not real user input)
+CLAUDE_CODE_TAGS = (
+    "<command-name", "<command-message", "<command-args",
+    "<local-command-", "<system-reminder",
+    "<local-command-stdout", "<local-command-stderr",
+)
+
+
+def is_real_user_message(text: str) -> bool:
+    """Check if a user message is actual user input vs Claude Code system-generated."""
+    if not text:
+        return False
+    # Check for Claude Code internal tags
+    for tag in CLAUDE_CODE_TAGS:
+        if tag in text:
+            return False
+    return True
+
 
 # Constants
 MESH_SUBDIR = ".mesh"
@@ -290,7 +308,7 @@ def extract_sessions_from_jsonl(
                                     if isinstance(block, dict) and block.get('type') == 'text':
                                         text = block.get('text', '').strip()
                                         break
-                            if text and len(text) > 20 and not text.startswith('/'):
+                            if text and len(text) > 20 and not text.startswith('/') and is_real_user_message(text):
                                 messages.append(f"[user] {text[:300]}")
 
                 if not messages:

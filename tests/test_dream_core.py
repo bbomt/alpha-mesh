@@ -25,6 +25,7 @@ from dream_core import (
     split_routing,
     enforce_recent_signals_cap,
     check_conflicts,
+    is_real_user_message,
 )
 
 
@@ -403,6 +404,63 @@ class TestExtractSessionsFromJsonl:
         # Both messages should be present
         assert "[assistant]" in content
         assert "[user]" in content
+    def test_filters_out_claude_code_generated_messages(self, tmp_path):
+        """Test that Claude Code generated messages (with internal tags) are filtered out."""
+        projects_dir = tmp_path / "projects"
+        projects_dir.mkdir()
+
+        session_file = projects_dir / "test-session" / "session.jsonl"
+        session_file.parent.mkdir()
+
+        # Write messages - some are Claude Code generated (with tags), some are real user messages
+        with session_file.open(mode="w") as f:
+            # This is Claude Code generated - should be filtered out
+            f.write(json.dumps({
+                "cwd": "/home/user/repos/test",
+                "message": {
+                    "role": "user",
+                    "content": "<command-name>/exit</command-name>"
+                }
+            }) + "\n")
+            # This is also Claude Code generated - should be filtered out
+            f.write(json.dumps({
+                "cwd": "/home/user/repos/test",
+                "message": {
+                    "role": "user",
+                    "content": "<system-reminder>Some reminder</system-reminder>"
+                }
+            }) + "\n")
+            # This is a real user message - should be kept
+            f.write(json.dumps({
+                "cwd": "/home/user/repos/test",
+                "message": {
+                    "role": "user",
+                    "content": "This is a real user message for testing"
+                }
+            }) + "\n")
+
+        import time
+        now = time.time()
+        os.utime(session_file, (now, now))
+
+        cutoff = datetime.now().strftime("%Y-%m-%d")
+
+        result = extract_sessions_from_jsonl(
+            projects_dir=str(projects_dir),
+            cutoff=cutoff,
+            target_repo=None,
+            include_assistant=False
+        )
+
+        # Should have one repo
+        assert len(result) == 1
+        content = result[list(result.keys())[0]]["content"]
+        # Real user message should be present
+        assert "This is a real user message" in content
+        # Claude Code generated messages should NOT be present
+        assert "<command-name>" not in content
+        assert "<system-reminder>" not in content
+
 
 
 class TestSynthesizeMemory:
@@ -618,3 +676,51 @@ Some identity content."""
         has_conflicts, conflicts = check_conflicts(content)
 
         assert has_conflicts is False
+
+class TestIsRealUserMessage:
+    """Tests for is_real_user_message function."""
+
+    def test_real_user_message_returns_true(self):
+        """Test that a plain user message returns True."""
+        text = "feature-dev:feature-dev please implement PMAT-182"
+        assert is_real_user_message(text) is True
+
+    def test_command_name_tag_returns_false(self):
+        """Test that <command-name> tag returns False."""
+        text = "<command-name>/exit</command-name>"
+        assert is_real_user_message(text) is False
+
+    def test_command_message_tag_returns_false(self):
+        """Test that <command-message> tag returns False."""
+        text = "<command-message>exit</command-message>"
+        assert is_real_user_message(text) is False
+
+    def test_system_reminder_tag_returns_false(self):
+        """Test that <system-reminder> tag returns False."""
+        text = "<system-reminder>This is a reminder</system-reminder>"
+        assert is_real_user_message(text) is False
+
+    def test_local_command_tag_returns_false(self):
+        """Test that <local-command-*> tag returns False."""
+        text = "<local-command-caveat>Some caveat text</local-command-caveat>"
+        assert is_real_user_message(text) is False
+
+    def test_local_command_stdout_returns_false(self):
+        """Test that <local-command-stdout> tag returns False."""
+        text = "<local-command-stdout>Goodbye!</local-command-stdout>"
+        assert is_real_user_message(text) is False
+
+    def test_empty_message_returns_false(self):
+        """Test that empty message returns False."""
+        assert is_real_user_message("") is False
+        assert is_real_user_message(None) is False
+
+    def test_message_with_multiple_tags_returns_false(self):
+        """Test that message with multiple Claude Code tags returns False."""
+        text = "<command-name>/rename</command-name>\n<command-message>rename</command-message>"
+        assert is_real_user_message(text) is False
+
+    def test_partial_tag_match_returns_false(self):
+        """Test that partial tag match (e.g., <system-reminder with attrs) returns False."""
+        text = "<system-reminder name=\"test\">Some reminder</system-reminder>"
+        assert is_real_user_message(text) is False
