@@ -30,19 +30,22 @@ def is_real_user_message(text: str) -> bool:
     if not text:
         return False
 
-    # Check for Claude Code internal tags only at the START of the message
-    # (system-generated messages start with tags like <command-name>, <system-reminder>, etc.)
-    # User messages that merely QUOTE such tags should NOT be filtered
     stripped = text.lstrip()
-    if stripped.startswith("<"):
-        import re
-        # Remove all XML-like tags: <tag ...>...</tag> or <tag .../>
-        inner = re.sub(r"<[^>]*>", "", stripped)
-        inner = re.sub(r"[<>/]", "", inner).strip()
-        
-        # If after removing all tags, the remaining text is very small,
-        # this is a system-generated message (not a user message quoting tags)
-        if len(inner) < 20:
+
+    # System-generated messages START with these tags - filter them out
+    # (user messages that QUOTE such tags should NOT be filtered)
+    system_starts = (
+        "<command-name",
+        "<command-message",
+        "<command-args",
+        "<local-command-",
+        "<local-command-stdout",
+        "<local-command-stderr",
+        "<system-reminder",
+        "<local-command-caveat",
+    )
+    for tag in system_starts:
+        if stripped.startswith(tag):
             return False
 
     # Check for system-generated content patterns (must be near the start)
@@ -55,7 +58,6 @@ def is_real_user_message(text: str) -> bool:
         "This session is being continued from a previous conversation",
         "Summary:",
         "Primary Request and Intent:",
-        "## Context Usage",
     )
     for pattern in system_patterns:
         idx = text.find(pattern)
@@ -275,7 +277,7 @@ def extract_sessions_from_jsonl(
     Returns:
         Dict mapping repo_path -> {"content": str, "dates": List[str], "file_count": int}
     """
-    repo_data = defaultdict(lambda: {"content_lines": [], "dates": set(), "file_count": 0})
+    repo_data = defaultdict(lambda: {"content_lines": [], "dates": set(), "file_count": 0, "message_count": 0})
 
     if not os.path.isdir(projects_dir):
         return {}
@@ -379,6 +381,7 @@ def extract_sessions_from_jsonl(
                         f"--- Session: {os.path.basename(root)} ({fdate}) ---\n{content_str}"
                     )
                     repo_data[repo_path]["dates"].add(fdate)
+                    repo_data[repo_path]["message_count"] += len(messages)
 
             except OSError:
                 continue
@@ -386,10 +389,13 @@ def extract_sessions_from_jsonl(
     result = {}
     for repo_path, data in repo_data.items():
         if data["content_lines"]:
+            message_count = data.get("message_count", 0)
             result[repo_path] = {
                 "content": '\n\n'.join(data["content_lines"]),
                 "dates": sorted(data["dates"]),
-                "file_count": data["file_count"]
+                "file_count": data["file_count"],
+                "session_count": len(data["content_lines"]),
+                "message_count": message_count
             }
 
     return result
@@ -418,10 +424,17 @@ def call_llm(
     try:
         from openai import OpenAI
 
-        # Fix MiniMax URL: https://api.minimax.io/anthropic -> https://api.minimax.io/v1
+        # Adjust base URL for OpenAI SDK compatibility:
+        # 1. MiniMax uses /anthropic suffix -> convert to /v1
+        # 2. Other providers (OpenRouter, etc.) need /v1 appended if missing
         adjusted_base_url = base_url
-        if base_url and base_url.rstrip("/").endswith("/anthropic"):
-            adjusted_base_url = base_url.rstrip("/").replace("/anthropic", "") + "/v1"
+        if base_url:
+            stripped = base_url.rstrip("/")
+            if stripped.endswith("/anthropic"):
+                adjusted_base_url = stripped.replace("/anthropic", "") + "/v1"
+            elif not stripped.endswith("/v1"):
+                # Append /v1 for OpenAI-compatible APIs that don't have it
+                adjusted_base_url = stripped + "/v1"
 
         client = OpenAI(
             api_key=token,
@@ -1168,13 +1181,20 @@ def main():
 
     # Print user messages to console before sending to LLM
     if repos_data:
-        print("\n=== User Messages to be sent to LLM ===\n")
+        total_repos = len(repos_data)
+        total_sessions = sum(info.get('session_count', 0) for info in repos_data.values())
+        total_messages = sum(info.get('message_count', 0) for info in repos_data.values())
+        print(f"\n>>> ======== USER MESSAGES (start:) ========= \n\n\tLLM INPUT: {total_repos} repos, {total_sessions} sessions, {total_messages} user messages\n")
         for repo_path, info in sorted(repos_data.items()):
             repo_name = os.path.basename(repo_path)
-            print(f"--- {repo_name} ---")
+            session_count = info.get('session_count', 0)
+            message_count = info.get('message_count', 0)
+            print(f"  REPO: {repo_name} | Sessions: {session_count} | Messages: {message_count}")
+            print(f"  Date: {info['dates'][0] if info.get('dates') else 'unknown'}")
+            print(f"  ─────────────────────────────────────────────────────────")
             print(info["content"])
             print("")
-        print("=== End of User Messages ===\n")
+        print(f">>> ======== USER MESSAGES (end:) ========= \n\n\tEND OF LLM INPUT ({total_messages} messages total) ===\n")
 
     if not repos_data:
         return 0
@@ -1200,15 +1220,24 @@ def main():
         print("ERROR: DREAM_MODEL and DREAM_TOKEN must be set (via env or --model/--token)", file=sys.stderr)
         return 1
 
-    base_url = args.base_url or "https://api.minimax.io/v1"
+    raw_base_url = args.base_url or "https://api.minimax.io/v1"
+
+    # Apply same adjustments as call_llm for consistency in logging
+    adjusted_base_url = raw_base_url
+    if raw_base_url:
+        stripped = raw_base_url.rstrip("/")
+        if stripped.endswith("/anthropic"):
+            adjusted_base_url = stripped.replace("/anthropic", "") + "/v1"
+        elif not stripped.endswith("/v1"):
+            adjusted_base_url = stripped + "/v1"
 
     model_config = {
         "model": args.model,
         "token": args.token,
-        "base_url": base_url
+        "base_url": adjusted_base_url
     }
 
-    print(f"Using model: {args.model}  |  API: {base_url}", file=sys.stderr)
+    print(f"Using model: {args.model}  |  API: {adjusted_base_url}", file=sys.stderr)
 
     # ─── 4. Process repos ──────────────────────────────────────────────────────
     print("Processing repos...", file=sys.stderr)
