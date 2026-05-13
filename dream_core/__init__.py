@@ -299,10 +299,11 @@ def extract_sessions_from_jsonl(
 
             cwds = set()
             messages = []
+            recent_messages = []  # For deduplication of similar consecutive messages
 
             try:
                 with open(fpath) as f:
-                    for line in f:
+                    for line_counter, line in enumerate(f, 1):
                         line = line.strip()
                         if not line:
                             continue
@@ -332,6 +333,12 @@ def extract_sessions_from_jsonl(
                             role = msg.get('role', '')
                             content = msg.get('content', '')
 
+                        # Skip user messages that are system-generated (start with command/local tags)
+                        if role == 'user' and isinstance(content, str):
+                            stripped = content.strip()
+                            if stripped.startswith(('<command-', '<local-command-', '<system-reminder>')):
+                                continue
+
                         # Process assistant messages only if include_assistant is True
                         if include_assistant and role == 'assistant' and isinstance(content, list):
                             for block in content:
@@ -350,7 +357,16 @@ def extract_sessions_from_jsonl(
                                         text = block.get('text', '').strip()
                                         break
                             if text and len(text) > 20 and not text.startswith('/') and is_real_user_message(text):
-                                messages.append(f"[user] {text[:300]}")
+                                # Truncate for consistency
+                                truncated = text[:300]
+                                # Skip if very similar to last message (within same session)
+                                if recent_messages and recent_messages[-1].startswith('[user]'):
+                                    last_msg = recent_messages[-1][7:]  # strip [user] prefix
+                                    # If messages are >80% identical, skip this one
+                                    if truncated.startswith(last_msg[:50]) and len(truncated) <= len(last_msg) + 10:
+                                        continue
+                                recent_messages.append(f"[user] {truncated}")
+                                messages.append(f"[user] {truncated}")
 
                 if not messages:
                     continue
