@@ -30,12 +30,22 @@ def is_real_user_message(text: str) -> bool:
     if not text:
         return False
 
-    # Check for Claude Code internal tags
-    for tag in CLAUDE_CODE_TAGS:
-        if tag in text:
+    # Check for Claude Code internal tags only at the START of the message
+    # (system-generated messages start with tags like <command-name>, <system-reminder>, etc.)
+    # User messages that merely QUOTE such tags should NOT be filtered
+    stripped = text.lstrip()
+    if stripped.startswith("<"):
+        import re
+        # Remove all XML-like tags: <tag ...>...</tag> or <tag .../>
+        inner = re.sub(r"<[^>]*>", "", stripped)
+        inner = re.sub(r"[<>/]", "", inner).strip()
+        
+        # If after removing all tags, the remaining text is very small,
+        # this is a system-generated message (not a user message quoting tags)
+        if len(inner) < 20:
             return False
 
-    # Check for system-generated content patterns
+    # Check for system-generated content patterns (must be near the start)
     system_patterns = (
         "## Context Usage",
         "**Model:**",
@@ -48,12 +58,12 @@ def is_real_user_message(text: str) -> bool:
         "## Context Usage",
     )
     for pattern in system_patterns:
-        if pattern in text:
+        idx = text.find(pattern)
+        if idx >= 0 and idx < 100:  # Pattern near start = system-generated
             return False
 
     return True
 
-# Constants
 MESH_SUBDIR = ".mesh"
 MEMORY_FILENAME = "MEMORY.md"
 MAX_MEMORY_LINES = 200
