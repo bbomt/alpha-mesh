@@ -313,11 +313,22 @@ def extract_sessions_from_jsonl(
                         if cwd:
                             cwds.add(cwd)
 
-                        msg = obj.get('message', {})
-                        if 'role' not in msg:
-                            msg = obj
-                        role = msg.get('role', '')
-                        content = msg.get('content', '')
+                        # Handle both regular messages and queue-operation (user input)
+                        role = ''
+                        content = ''
+                        
+                        # Check if this is a queue-operation (user typed a message)
+                        if obj.get('type') == 'queue-operation' and obj.get('operation') == 'enqueue':
+                            # This is a user message sent via the queue
+                            role = 'user'
+                            content = obj.get('content', '')
+                        else:
+                            # Regular message format
+                            msg = obj.get('message', obj)
+                            if 'role' not in msg:
+                                msg = obj
+                            role = msg.get('role', '')
+                            content = msg.get('content', '')
 
                         # Process assistant messages only if include_assistant is True
                         if include_assistant and role == 'assistant' and isinstance(content, list):
