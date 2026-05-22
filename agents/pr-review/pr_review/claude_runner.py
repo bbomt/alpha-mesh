@@ -3,6 +3,8 @@
 import subprocess
 import sys
 import os
+import json
+import tempfile
 from typing import Optional
 
 
@@ -25,7 +27,7 @@ def run_claude_code_review(
         prompt: The review prompt to send to Claude Code
         auto_fix: If True, allow Claude Code to make edits (no --plan-mode)
         timeout: Maximum seconds to wait for Claude Code (default 5 minutes)
-        verbose: If True, print additional debug output
+        verbose: If True, print Claude Code output to stderr for visibility
 
     Returns:
         Raw stdout output as a string
@@ -34,38 +36,41 @@ def run_claude_code_review(
         ClaudeRunnerError: On non-zero exit or timeout
     """
     # Build the command.
-    # Use --print for headless mode.
-    cmd = ["/home/ec2-user/.local/bin/claude", "--print"]
+    # Use --print for headless mode (non-interactive output).
+    # Use --output-format json for structured output (clean, parseable).
+    cmd = ["/home/ec2-user/.local/bin/claude", "--print", "--output-format", "json"]
 
     if verbose:
         print(f"Running Claude Code: {' '.join(cmd)}", file=sys.stderr)
         print(f"CWD: {repo_path}", file=sys.stderr)
         print(f"Prompt length: {len(prompt)} chars", file=sys.stderr)
-
-    # Write prompt to a file in the repo directory (Claude Code has access to it)
-    prompt_file = os.path.join(repo_path, ".pr-review-prompt.txt")
+        print("Streaming Claude Code output to stderr (verbose mode)...", file=sys.stderr)
+        print("-" * 60, file=sys.stderr)
 
     try:
-        with open(prompt_file, "w") as f:
+        # Write prompt to temp file and pipe via stdin to avoid argument length limits
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
             f.write(prompt)
+            prompt_file = f.name
 
-        # Pass prompt file as -p argument
-        cmd.extend(["-p", f"Read {prompt_file} and respond to the instructions inside."])
-
-        result = subprocess.run(
-            cmd,
-            cwd=repo_path,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
+        try:
+            with open(prompt_file) as pf:
+                result = subprocess.run(
+                    cmd,
+                    cwd=repo_path,
+                    stdin=pf,
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout,
+                )
+        finally:
+            os.unlink(prompt_file)
 
         if verbose:
-            print(f"Claude Code stdout ({len(result.stdout)} chars):", file=sys.stderr)
-            print(result.stdout[:500] if result.stdout else "(empty)", file=sys.stderr)
             if result.stderr:
-                print(f"Claude Code stderr:", file=sys.stderr)
-                print(result.stderr[:500], file=sys.stderr)
+                print(result.stderr, file=sys.stderr)
+            print("-" * 60, file=sys.stderr)
+            print(f"Claude Code exit code: {result.returncode}", file=sys.stderr)
 
         if result.returncode != 0:
             error_msg = f"Claude Code exited with code {result.returncode}"
@@ -73,7 +78,22 @@ def run_claude_code_review(
                 error_msg += f": {result.stderr}"
             raise ClaudeRunnerError(error_msg)
 
-        return result.stdout
+        # Parse JSON output to extract the result field
+        try:
+            data = json.loads(result.stdout)
+            output = data.get("result", "")
+
+            if verbose:
+                print(f"Parsed JSON result ({len(output)} chars):", file=sys.stderr)
+                print(output[:500] + "..." if len(output) > 500 else output, file=sys.stderr)
+
+            return output
+        except json.JSONDecodeError as e:
+            if verbose:
+                print(f"Failed to parse JSON output: {e}", file=sys.stderr)
+                print(f"Raw stdout: {result.stdout[:1000]}", file=sys.stderr)
+            # Fall back to raw output
+            return result.stdout
 
     except subprocess.TimeoutExpired:
         raise ClaudeRunnerError(
@@ -84,9 +104,3 @@ def run_claude_code_review(
         raise ClaudeRunnerError(
             "Claude Code CLI not found. Please ensure 'claude' is installed and on your PATH."
         )
-    finally:
-        # Clean up prompt file
-        try:
-            os.unlink(prompt_file)
-        except Exception:
-            pass

@@ -93,10 +93,15 @@ Examples:
         help="Run everything except posting the comment and pushing",
     )
     parser.add_argument(
+        "--no-jira",
+        action="store_true",
+        help="Skip JIRA ticket lookup (skip Atlassian auth check and JIRA ticket retrieval)",
+    )
+    parser.add_argument(
         "--timeout",
         type=int,
-        default=300,
-        help="Timeout in seconds for Claude Code (default: 300)",
+        default=1200,
+        help="Timeout in seconds for Claude Code (default: 1200)",
     )
 
     args = parser.parse_args()
@@ -113,7 +118,7 @@ Examples:
         return 1
 
     # ─── Step 2: Determine repo path ─────────────────────────────────────
-    repo_path = args.repo_path or os.environ.get("OLDPWD", os.getcwd())
+    repo_path = args.repo_path or os.environ.get("REPO_PATH") or os.environ.get("OLDPWD", os.getcwd())
     if not os.path.isdir(repo_path):
         print(f"ERROR: Repository path not found: {repo_path}", file=sys.stderr)
         return 1
@@ -164,7 +169,7 @@ Examples:
         print("No JIRA IDs found in PR title, branch, or body.", file=sys.stderr)
 
     # ─── Step 5: Verify Atlassian MCP auth ──────────────────────────────
-    if jira_ids:
+    if jira_ids and not args.no_jira:
         print("Verifying Atlassian MCP auth...", file=sys.stderr)
         log_command("Verifying Atlassian MCP auth", verbose=verbose)
         if not verify_atlassian_auth(repo_path, verbose=verbose):
@@ -172,7 +177,10 @@ Examples:
             print("ERROR: Atlassian MCP plugin is not authenticated in Claude Code.", file=sys.stderr)
             print("Please run `claude` in your terminal, activate the Atlassian plugin,", file=sys.stderr)
             print("and complete the OAuth flow.", file=sys.stderr)
+            print("Or use --no-jira to skip JIRA ticket lookup.", file=sys.stderr)
             return 3
+    elif args.no_jira:
+        print("Skipping JIRA auth check (--no-jira)", file=sys.stderr)
 
     # ─── Step 6: Checkout PR branch ────────────────────────────────────
     print(f"Checking out PR branch: {branch_name}", file=sys.stderr)
@@ -256,6 +264,7 @@ Examples:
             pr=pr,
             review=review,
             dry_run=args.dry_run,
+            diff=diff,
         )
         if not args.dry_run:
             print("Review posted successfully!", file=sys.stderr)

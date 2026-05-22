@@ -180,3 +180,20 @@ Hope this helps!"""
 }'''
         review = parse_review_output(json_output)
         assert review.inline_comments[0].severity == "suggestion"
+
+    def test_json_fence_with_nested_braces_in_summary(self):
+        """Test parsing JSON in a fence where summary contains nested braces."""
+        output = """Here is my review:
+
+```json
+{
+  "summary": "This PR has {nested} braces in the {summary} text that should not break parsing",
+  "inline_comments": [],
+  "verdict": "approved"
+}
+```
+
+Let me know if you have questions!"""
+        review = parse_review_output(output)
+        assert review.summary == "This PR has {nested} braces in the {summary} text that should not break parsing"
+        assert review.verdict == "approved"

@@ -58,9 +58,6 @@ def _is_excluded_file(filename: str) -> bool:
 def parse_review_output(raw_output: str) -> Review:
     """Extract and parse the JSON review from Claude Code's output.
 
-    The output may contain prose before/after the JSON — find the JSON object
-    by looking for the first '{' and last '}' or use a regex.
-
     Args:
         raw_output: Raw stdout output from Claude Code
 
@@ -73,37 +70,134 @@ def parse_review_output(raw_output: str) -> Review:
     if not raw_output or not raw_output.strip():
         raise ReviewParseError("Empty output from Claude Code")
 
-    # Try to find JSON block in the output
-    # First, try to find ```json ... ``` blocks
-    json_match = re.search(r'```json\s*(.*?)\s*```', raw_output, re.DOTALL)
+    # Strip leading/trailing whitespace
+    raw_output = raw_output.strip()
+
+    # If output starts with { and ends with }, try parsing directly first
+    if raw_output.startswith('{') and raw_output.endswith('}'):
+        try:
+            data = json.loads(raw_output)
+            return _build_review(data)
+        except json.JSONDecodeError:
+            pass  # Fall through to more complex parsing
+
+    # Try to find ```json ... ``` blocks
+    json_match = re.search(r'```json\s*(\{.*?\})\s*```', raw_output, re.DOTALL)
     if json_match:
-        json_str = json_match.group(1)
-    else:
-        # Try to find the first { and last } for a JSON object
-        start = raw_output.find('{')
-        end = raw_output.rfind('}')
+        try:
+            data = json.loads(json_match.group(1))
+            return _build_review(data)
+        except json.JSONDecodeError:
+            pass
 
-        if start == -1 or end == -1 or start >= end:
-            # Try to find JSON with ``` without json specifier
-            json_match = re.search(r'```\s*(\{.*?\})\s*```', raw_output, re.DOTALL)
-            if json_match:
-                json_str = json_match.group(1)
-            else:
-                raise ReviewParseError(
-                    f"Could not find JSON in Claude Code output. Raw output:\n{raw_output[:500]}"
-                )
-        else:
-            json_str = raw_output[start:end + 1]
+    # Try to find ``` ... ``` blocks (without json specifier)
+    # Use balanced brace counting to find the full JSON object
+    json_str = _extract_json_from_fence(raw_output)
+    if json_str:
+        try:
+            data = json.loads(json_str)
+            return _build_review(data)
+        except json.JSONDecodeError:
+            pass
 
-    # Parse JSON
-    try:
-        data = json.loads(json_str)
-    except json.JSONDecodeError as e:
-        raise ReviewParseError(
-            f"Failed to parse JSON: {e}\nJSON string (first 500 chars):\n{json_str[:500]}"
-        )
+    # Try to find a JSON object using balanced brace matching
+    json_str = _extract_json_object(raw_output)
+    if json_str:
+        try:
+            data = json.loads(json_str)
+            return _build_review(data)
+        except json.JSONDecodeError:
+            pass
 
-    # Validate required fields
+    raise ReviewParseError(
+        f"Could not find valid JSON in Claude Code output. Raw output (first 500 chars):\n{raw_output[:500]}"
+    )
+
+
+def _extract_json_from_fence(text: str) -> Optional[str]:
+    """Extract a JSON object from a ``` ... ``` fenced code block.
+
+    Uses balanced brace matching within the fence, properly handling
+    content that may contain nested braces (like summary text).
+    """
+    # Find code fence opening
+    fence_start = text.find('```')
+    while fence_start != -1:
+        # Find the end of the opening fence (after ```)
+        eol = text.find('\n', fence_start)
+        if eol == -1:
+            break
+        fence_content_start = eol + 1
+
+        # Find matching closing fence
+        fence_end = text.find('```', fence_content_start)
+        if fence_end == -1:
+            break
+
+        candidate = text[fence_content_start:fence_end]
+        # Try to extract JSON object from this fence content
+        json_str = _extract_json_object(candidate)
+        if json_str:
+            return json_str
+
+        # Try next fence
+        fence_start = text.find('```', fence_end + 1)
+
+    return None
+
+
+def _extract_json_object(text: str) -> Optional[str]:
+    """Extract a JSON object from text using balanced brace matching.
+
+    This is more robust than find-first-{ and find-last-} as it handles
+    nested objects and ignores braces in code blocks.
+    """
+    # Look for the start of a JSON object
+    start = text.find('{')
+    while start != -1:
+        # Try to extract a valid JSON object starting at this position
+        depth = 0
+        in_string = False
+        escape_next = False
+        end = -1
+
+        for i in range(start, len(text)):
+            char = text[i]
+
+            if escape_next:
+                escape_next = False
+                continue
+
+            if char == '\\' and in_string:
+                escape_next = True
+                continue
+
+            if char == '"' and not escape_next:
+                in_string = not in_string
+
+            if not in_string:
+                if char == '{':
+                    depth += 1
+                elif char == '}':
+                    depth -= 1
+                    if depth == 0:
+                        end = i
+                        break
+
+        if end != -1:
+            candidate = text[start:end + 1]
+            # Quick validation: must start with { and contain valid JSON keys
+            if '"' in candidate:  # Must have at least one quoted string (JSON key)
+                return candidate
+
+        # Try next occurrence
+        start = text.find('{', start + 1)
+
+    return None
+
+
+def _build_review(data: dict) -> Review:
+    """Build a Review object from parsed JSON data."""
     if not isinstance(data, dict):
         raise ReviewParseError("JSON root is not an object")
 

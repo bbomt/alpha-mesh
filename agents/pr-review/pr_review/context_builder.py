@@ -121,9 +121,11 @@ Focus your review on:
 
 {fix_instruction}
 
-## Output Format
+## Output Format - CRITICAL
 
-Return your review in the following JSON structure:
+You MUST output ONLY a valid JSON object. No markdown formatting, no code fences, no prose before or after the JSON.
+
+Output ONLY this JSON structure:
 
 {{
   "summary": "Overall markdown summary of the review (2-5 paragraphs)",
@@ -137,6 +139,8 @@ Return your review in the following JSON structure:
   ],
   "verdict": "approved|changes_requested|comment"
 }}
+
+Do NOT wrap in ```json``` blocks. Do NOT add any text before or after the JSON object. Output MUST start with `{{` and end with `}}`.
 
 Only include inline comments for source files. Do not comment on test files, configuration files, or lockfiles (e.g. package-lock.json, poetry.lock, *.yaml config, *.toml config).
 """

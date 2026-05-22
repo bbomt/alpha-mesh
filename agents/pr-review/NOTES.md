@@ -5,29 +5,34 @@
 ### 1. Claude Code headless flags
 
 **Finding:** Based on Claude Code CLI documentation and typical usage:
-- `claude --print -p "prompt"` runs headless and prints output to stdout
-- `--no-input` prevents interactive prompts
-- There is no explicit `--plan-mode` flag - the `--print` mode with `-p` is inherently non-interactive
+- `claude --print` runs headless and prints output to stdout
+- `--output-format json` produces structured JSON output with a `result` field
+- There is no `--no-input` flag - use `--print` mode for non-interactive operation
+- There is no explicit `--plan-mode` flag - the `--print` mode is inherently non-interactive
 - For auto-fix mode, simply omit any special flags - Claude Code in `--print` mode can still make edits when instructed
 
 **Verified flags:**
 - `--print`: Run headless, print output
+- `--output-format json`: Output structured JSON with `result` field
 - `-p` / `--prompt`: Provide prompt (or use stdin)
-- `--no-input`: Don't prompt for input
+- Pass prompt via stdin for long prompts (>100K chars) to avoid argument length limits
 
 ### 2. Claude Code output format
 
-**Finding:** Claude Code with `--print` flag writes to stdout. The output includes:
-- The assistant's response text
-- Possible system messages or formatting
+**Finding:** Claude Code with `--output-format json` outputs a JSON object with a `result` field containing the assistant's response text.
 
-The code in `claude_runner.py` captures stdout and returns it as a string. The `reviewer.py` then parses this to extract JSON.
+Example output:
+```json
+{"result": "## Review Summary\n\n..."}
+```
+
+The code in `claude_runner.py` parses this JSON and extracts the `result` field. The `reviewer.py` then parses this to extract the structured review.
 
 ### 3. Atlassian MCP auth check
 
 **Finding:** Implemented in `jira_client.py` - `verify_atlassian_auth()` function.
 - Runs `claude --version` to check if Claude Code is available
-- Runs `claude --print --no-input -p "..."` to check if Atlassian plugin responds
+- Runs `claude --print -p "..."` to check if Atlassian plugin responds
 - Returns True if "atlassian" is mentioned in output along with tool names
 - Returns False if auth errors or "not found" messages appear
 

@@ -67,7 +67,6 @@ def verify_atlassian_auth(repo_path: str, verbose: bool = False) -> bool:
             [
                 "/home/ec2-user/.local/bin/claude",
                 "--print",
-                "--no-input",
                 "-p",
                 "List available MCP tools. If you have an Atlassian plugin connected, "
                 "list the Atlassian tools available. If not, say 'Atlassian plugin not found'.",

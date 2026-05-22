@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 # alpha-mesh/bin/pr-review
 # Entry point for the pr-review agent.
-# Runs from alpha-mesh repo; the target repo is passed via --repo-path or cwd.
+# Usage: pr-review <pr-url> [options]
+#   or: mesh pr-review <pr-url> [options]
+#
+# The PR URL is the first argument; remaining arguments are passed through.
+# Target repo is inferred from --repo-path or the current working directory.
 
 set -euo pipefail
 
@@ -22,13 +26,12 @@ for ((i=1; i<=$#; i++)); do
 done
 
 if [[ -z "$REPO_PATH" ]]; then
-    # Use OLDPWD if available (the directory user was in before `mesh` was called)
-    # Otherwise use current directory
-    REPO_PATH="${OLDPWD:-$PWD}"
+    REPO_PATH="$PWD"
 fi
 
 export REPO_PATH
 
 cd "$AGENT_DIR"
 
-exec uv run python -m pr_review "$@"
+# Pass repo path as --repo-path to the Python script
+exec uv run python -m pr_review --repo-path "$REPO_PATH" "$@"
