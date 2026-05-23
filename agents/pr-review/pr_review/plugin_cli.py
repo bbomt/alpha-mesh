@@ -136,7 +136,7 @@ Examples:
 
         # Get PR details
         result = subprocess.run(
-            ["gh", "pr", "view", str(pr_number), "--repo", gh_repo, "--json", "title,body,author,headRefName,baseRefName,state,head"],
+            ["gh", "pr", "view", str(pr_number), "--repo", gh_repo, "--json", "title,body,author,headRefName,baseRefName,state"],
             capture_output=True,
             text=True,
             timeout=30,
@@ -152,7 +152,15 @@ Examples:
         author = pr_data.get("author", {}).get("login", "")
         base_branch = pr_data.get("baseRefName", "")
         state = pr_data.get("state", "")
-        head_sha = pr_data.get("head", {}).get("sha", "")
+
+        # Get head commit SHA via gh api (gh pr view --json doesn't expose head.sha)
+        sha_result = subprocess.run(
+            ["gh", "api", f"repos/{owner}/{repo}/pulls/{pr_number}", "--jq", ".head.sha"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        head_sha = sha_result.stdout.strip() if sha_result.returncode == 0 else ""
 
         print(f"PR Title: {pr_title}", file=sys.stderr)
 
@@ -266,12 +274,14 @@ Examples:
             print("Posting review to GitHub PR...", file=sys.stderr)
             github = GitHubClient()
             try:
+                # Build pr dict with head.sha for post_review
+                pr_with_sha = {**pr_data, "head": {"sha": head_sha}}
                 post_review(
                     github=github,
                     owner=owner,
                     repo=repo,
                     pr_number=pr_number,
-                    pr=pr_data,
+                    pr=pr_with_sha,
                     review=review,
                     dry_run=args.dry_run,
                     diff="",  # Inline comments use file/line, not diff positions
