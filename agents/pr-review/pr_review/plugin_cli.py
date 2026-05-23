@@ -10,15 +10,15 @@ import sys
 import traceback
 from pathlib import Path
 
-from pr_review.agent_runner import (
+from agent_runner import (
     AgentContext,
     JiraTicket,
     GitHubData,
-    CodeReviewPluginHandler,
     run_claude_headless,
     ClaudeInvocationError,
 )
-from pr_review.context_gatherers import JiraContextGatherer, GitHubContextGatherer
+from agent_runner import JiraContextGatherer, GitHubContextGatherer
+from pr_review.plugin_handler import CodeReviewPluginHandler
 from pr_review.jira_client import extract_jira_ids, verify_atlassian_auth
 from pr_review.git_utils import (
     get_current_branch,
