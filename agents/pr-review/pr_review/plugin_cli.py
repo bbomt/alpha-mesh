@@ -134,7 +134,7 @@ Examples:
 
         # Get PR details
         result = subprocess.run(
-            ["gh", "pr", "view", str(pr_number), "--repo", gh_repo, "--json", "title,body,author,headRefName,baseRefName,state"],
+            ["gh", "pr", "view", str(pr_number), "--repo", gh_repo, "--json", "title,body,author,headRefName,baseRefName,state,head"],
             capture_output=True,
             text=True,
             timeout=30,
@@ -150,6 +150,7 @@ Examples:
         author = pr_data.get("author", {}).get("login", "")
         base_branch = pr_data.get("baseRefName", "")
         state = pr_data.get("state", "")
+        head_sha = pr_data.get("head", {}).get("sha", "")
 
         print(f"PR Title: {pr_title}", file=sys.stderr)
 
