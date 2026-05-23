@@ -233,25 +233,66 @@ class CodeReviewPluginHandler(PluginHandler):
         return "".join(parts)
 
     def parse_output(self, output: str, context: AgentContext) -> dict[str, Any]:
-        """Parse /code-review markdown output.
+        """Parse /code-review plugin output.
 
         Returns dict with:
-            - review_text: the markdown review
+            - review: Review object (or None if no issues)
+            - review_text: the raw text output
             - issues_found: bool
             - issue_count: int
         """
-        # For now, return the raw markdown
-        # Option B will parse this later
-        issues_found = "Found" in output and "issue" in output.lower()
+        import json
+        import re
+
+        review_text = output.strip()
+        issues_found = False
         issue_count = 0
-        if issues_found:
-            import re
+        review = None
+
+        # Try to extract JSON from ```json ... ``` block
+        json_match = re.search(r'```json\s*(\{.*?\})\s*```', output, re.DOTALL)
+        if json_match:
+            try:
+                data = json.loads(json_match.group(1))
+                inline_comments = data.get("inline_comments", [])
+                if isinstance(inline_comments, list) and len(inline_comments) > 0:
+                    issues_found = True
+                    issue_count = len(inline_comments)
+
+                    # Build InlineComment list
+                    from pr_review.reviewer import InlineComment
+                    comments = []
+                    for item in inline_comments:
+                        if isinstance(item, dict) and "file" in item and "line" in item:
+                            severity = item.get("severity", "suggestion")
+                            if severity not in ("error", "warning", "suggestion"):
+                                severity = "suggestion"
+                            comments.append(InlineComment(
+                                file=item["file"],
+                                line=int(item["line"]),
+                                severity=severity,
+                                comment=item.get("comment", ""),
+                            ))
+
+                    from pr_review.reviewer import Review
+                    review = Review(
+                        summary=data.get("summary", "Code review complete"),
+                        inline_comments=comments,
+                        verdict=data.get("verdict", "comment"),
+                    )
+            except (json.JSONDecodeError, ValueError, KeyError):
+                pass
+
+        # Also check for text-based "Found X issue" pattern as fallback
+        if not issues_found:
             match = re.search(r'Found (\d+) issue', output, re.IGNORECASE)
             if match:
+                issues_found = True
                 issue_count = int(match.group(1))
 
         return {
-            "review_text": output,
+            "review": review,
+            "review_text": review_text,
             "issues_found": issues_found,
             "issue_count": issue_count,
         }

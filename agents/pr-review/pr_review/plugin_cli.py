@@ -28,6 +28,8 @@ from pr_review.git_utils import (
     GitError,
 )
 from pr_review.github_client import parse_pr_url
+from pr_review.pr_commenter import post_review
+from pr_review.github_client import GitHubClient
 
 
 import time
@@ -254,8 +256,31 @@ Examples:
         print(f"Issues found: {result.get('issues_found', 'unknown')}", file=sys.stderr)
         print(f"Issue count: {result.get('issue_count', 0)}", file=sys.stderr)
 
-        # The /code-review plugin posts its own comments via gh pr comment
-        # We just log the result
+        # Post review to GitHub ourselves using the parsed Review object
+        review = result.get("review")
+        if review:
+            print("Posting review to GitHub PR...", file=sys.stderr)
+            github = GitHubClient()
+            try:
+                post_review(
+                    github=github,
+                    owner=owner,
+                    repo=repo,
+                    pr_number=pr_number,
+                    pr=pr_data,
+                    review=review,
+                    dry_run=args.dry_run,
+                    diff="",  # Inline comments use file/line, not diff positions
+                )
+                if not args.dry_run:
+                    print("Review posted successfully!", file=sys.stderr)
+            except Exception as e:
+                print(f"ERROR: Failed to post review: {e}", file=sys.stderr)
+                if verbose:
+                    traceback.print_exc(file=sys.stderr)
+                return 2
+        else:
+            print("No review issues found, skipping posting.", file=sys.stderr)
 
     except ClaudeInvocationError as e:
         print(f"ERROR: Claude Code failed: {e}", file=sys.stderr)
