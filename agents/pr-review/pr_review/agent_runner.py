@@ -249,35 +249,33 @@ class CodeReviewPluginHandler(PluginHandler):
         issue_count = 0
         review = None
 
-        # Try to extract JSON from ```json ... ``` block
-        json_match = re.search(r'```json\s*(\{.*?\})\s*```', output, re.DOTALL)
+        # Try to extract JSON array from ```json ... ``` block
+        json_match = re.search(r'```json\s*(\[[\s\S]*?)\s*```', output, re.DOTALL)
         if json_match:
             try:
                 data = json.loads(json_match.group(1))
-                inline_comments = data.get("inline_comments", [])
-                if isinstance(inline_comments, list) and len(inline_comments) > 0:
+                if isinstance(data, list) and len(data) > 0:
                     issues_found = True
-                    issue_count = len(inline_comments)
+                    issue_count = len(data)
 
-                    from pr_review.reviewer import InlineComment
+                    from pr_review.reviewer import InlineComment, Review
                     comments = []
-                    for item in inline_comments:
+                    for item in data:
                         if isinstance(item, dict) and "file" in item and "line" in item:
                             severity = item.get("severity", "suggestion")
                             if severity not in ("error", "warning", "suggestion"):
                                 severity = "suggestion"
                             comments.append(InlineComment(
-                                file=item["file"],
-                                line=int(item["line"]),
+                                file=str(item["file"]),
+                                line=int(str(item["line"]).rstrip('L')),
                                 severity=severity,
-                                comment=item.get("comment", ""),
+                                comment=item.get("summary", ""),
                             ))
 
-                    from pr_review.reviewer import Review
                     review = Review(
-                        summary=data.get("summary", "Code review complete"),
+                        summary=f"Code review found {issue_count} issue(s)",
                         inline_comments=comments,
-                        verdict=data.get("verdict", "comment"),
+                        verdict="changes_requested",
                     )
             except (json.JSONDecodeError, ValueError, KeyError):
                 pass
