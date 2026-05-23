@@ -258,7 +258,10 @@ Examples:
 
         # Post review to GitHub ourselves using the parsed Review object
         review = result.get("review")
+        review_text = result.get("review_text", "")
+
         if review:
+            # Post structured Review object
             print("Posting review to GitHub PR...", file=sys.stderr)
             github = GitHubClient()
             try:
@@ -271,6 +274,24 @@ Examples:
                     review=review,
                     dry_run=args.dry_run,
                     diff="",  # Inline comments use file/line, not diff positions
+                )
+                if not args.dry_run:
+                    print("Review posted successfully!", file=sys.stderr)
+            except Exception as e:
+                print(f"ERROR: Failed to post review: {e}", file=sys.stderr)
+                if verbose:
+                    traceback.print_exc(file=sys.stderr)
+                return 2
+        elif review_text and result.get("issues_found"):
+            # No structured Review but has text findings — post raw markdown
+            print("Posting text review to GitHub PR...", file=sys.stderr)
+            github = GitHubClient()
+            try:
+                github.post_pr_comment(
+                    owner=owner,
+                    repo=repo,
+                    pr_number=pr_number,
+                    body=review_text,
                 )
                 if not args.dry_run:
                     print("Review posted successfully!", file=sys.stderr)

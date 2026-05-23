@@ -289,39 +289,8 @@ class CodeReviewPluginHandler(PluginHandler):
             if findings:
                 issues_found = True
                 issue_count = len(findings)
-
-                # Extract text-based findings into a summary
-                from pr_review.reviewer import Review
-                summary = f"Code review found {issue_count} issue(s). See inline comments for details."
-
-                # Try to extract severity from output
-                severity = "suggestion"
-                if "Severity:" in output or "**Severity:**" in output:
-                    severity_match = re.search(r'(?:Severity:|\*\*Severity:\*\*)\s*(?:Medium|High|Critical|Low|Low)', output, re.IGNORECASE)
-                    if severity_match:
-                        sev_text = severity_match.group(1).lower()
-                        if sev_text in ("high", "critical"):
-                            severity = "error"
-                        elif sev_text == "medium":
-                            severity = "warning"
-                        else:
-                            severity = "suggestion"
-
-                # Build a single summary inline comment with the key findings
-                finding_lines = []
-                for match in re.finditer(r'### Finding (\d+) — (.+?)(?:\n|$)', output):
-                    finding_num = match.group(1)
-                    finding_title = match.group(2).strip()
-                    finding_lines.append(f"Finding {finding_num}: {finding_title}")
-
-                if finding_lines:
-                    summary = "; ".join(finding_lines)
-
-                review = Review(
-                    summary=summary,
-                    inline_comments=[],
-                    verdict="changes_requested" if severity in ("error", "warning") else "comment",
-                )
+                # Structured Review not needed — raw markdown will be posted directly
+                review = None
 
         # Fallback: check for text-based "Found X issue" pattern
         if not issues_found:
