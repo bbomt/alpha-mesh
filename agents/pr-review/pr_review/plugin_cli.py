@@ -1,7 +1,7 @@
 """CLI entry point for code-review plugin agent (PMAT-188).
 
-This uses the /code-review plugin headlessly with JIRA context,
-letting it post its own comments to GitHub.
+This uses the /code-review plugin headlessly to review PRs and post
+comments directly to GitHub.
 """
 
 import argparse
@@ -12,13 +12,11 @@ from pathlib import Path
 
 from agent_runner import (
     AgentContext,
-    JiraTicket,
     GitHubData,
     ClaudeInvocationError,
 )
-from agent_runner import JiraContextGatherer, GitHubContextGatherer
+from agent_runner import GitHubContextGatherer
 from pr_review.plugin_handler import CodeReviewPluginHandler
-from pr_review.jira_client import extract_jira_ids, verify_atlassian_auth
 from pr_review.git_utils import (
     get_current_branch,
     check_clean_state,
@@ -101,11 +99,6 @@ Examples:
         help="Run everything except posting the comment",
     )
     parser.add_argument(
-        "--no-jira",
-        action="store_true",
-        help="Skip JIRA ticket lookup (skip Atlassian auth check and JIRA ticket retrieval)",
-    )
-    parser.add_argument(
         "--timeout",
         type=int,
         default=2400,
@@ -185,28 +178,7 @@ Examples:
             traceback.print_exc(file=sys.stderr)
         return 2
 
-    # ─── Step 4: Extract JIRA IDs ───────────────────────────────────────
-    jira_ids = extract_jira_ids(pr_title, branch_name, pr_body)
-    if jira_ids:
-        print(f"JIRA IDs found: {', '.join(jira_ids)}", file=sys.stderr)
-    else:
-        print("No JIRA IDs found in PR title, branch, or body.", file=sys.stderr)
-
-    # ─── Step 5: Verify Atlassian MCP auth ──────────────────────────────
-    if jira_ids and not args.no_jira:
-        print("Verifying Atlassian MCP auth...", file=sys.stderr)
-        log_command("Verifying Atlassian MCP auth", verbose=verbose)
-        if not verify_atlassian_auth(repo_path, verbose=verbose):
-            print("", file=sys.stderr)
-            print("ERROR: Atlassian MCP plugin is not authenticated in Claude Code.", file=sys.stderr)
-            print("Please run `claude` in your terminal, activate the Atlassian plugin,", file=sys.stderr)
-            print("and complete the OAuth flow.", file=sys.stderr)
-            print("Or use --no-jira to skip JIRA ticket lookup.", file=sys.stderr)
-            return 3
-    elif args.no_jira:
-        print("Skipping JIRA auth check (--no-jira)", file=sys.stderr)
-
-    # ─── Step 6: Checkout PR branch ────────────────────────────────────
+    # ─── Step 4: Checkout PR branch ────────────────────────────────────
     print(f"Checking out PR branch: {branch_name}", file=sys.stderr)
     log_command(f"Checking out branch: {branch_name}", verbose=verbose)
     try:
@@ -219,10 +191,9 @@ Examples:
     except SystemExit as e:
         return e.code if isinstance(e.code, int) else 5
 
-    # ─── Step 7: Build context ────────────────────────────────────────────
+    # ─── Step 5: Build context ────────────────────────────────────────────
     print("Building agent context...", file=sys.stderr)
 
-    # Create GitHub data
     github_data = GitHubData(
         pr_url=args.pr_url,
         pr_title=pr_title,
@@ -233,21 +204,12 @@ Examples:
         state=state,
     )
 
-    # Create agent context with JIRA IDs
     context = AgentContext(
         agent_name="code-review",
         target=args.pr_url,
-        metadata={"jira_ids": jira_ids, "repo_path": repo_path},
+        metadata={"repo_path": repo_path},
         github_data=github_data,
     )
-
-    # Gather JIRA context if not skipped
-    if jira_ids and not args.no_jira:
-        print("Gathering JIRA ticket context...", file=sys.stderr)
-        jira_gatherer = JiraContextGatherer()
-        context = jira_gatherer.gather(context)
-        if context.jira_tickets:
-            print(f"Fetched details for {len(context.jira_tickets)} JIRA tickets", file=sys.stderr)
 
     # ─── Step 8: Run /code-review plugin ────────────────────────────────
     print("Running /code-review plugin...", file=sys.stderr)
