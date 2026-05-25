@@ -286,30 +286,32 @@ def post_review(
         print("=" * 60, file=None)
         return
 
-    # Post the review with no inline comments (avoids 422 position resolution errors)
-    github.create_pr_review(
+    # Post all comments as ONE aggregated PR comment
+    all_lines = []
+    if summary:
+        all_lines.append(summary)
+
+    for comment in line_comments:
+        all_lines.append(f"- **[{comment['path']}:{comment['position']}]:** {comment['body']}")
+
+    for comment in file_level_comments:
+        all_lines.append(f"- **{comment['path']} (file-level):** {comment['body']}")
+
+    combined = "\n".join(all_lines)
+
+    if dry_run:
+        print("=" * 60, file=None)
+        print("DRY RUN - Would post aggregated comment:", file=None)
+        print("=" * 60, file=None)
+        print(combined[:2000], file=None)
+        if len(combined) > 2000:
+            print(f"... (truncated, total {len(combined)} chars)", file=None)
+        print("=" * 60, file=None)
+        return
+
+    github.post_pr_comment(
         owner=owner,
         repo=repo,
         pr_number=pr_number,
-        commit_sha=commit_sha,
-        body=summary,
-        comments=[],
+        body=combined,
     )
-
-    # Post line-level comments as top-level PR comments
-    for comment in line_comments:
-        github.post_pr_comment(
-            owner=owner,
-            repo=repo,
-            pr_number=pr_number,
-            body=f"**[{comment['path']}:{comment['position']}]:** {comment['body']}",
-        )
-
-    # Post file-level comments as top-level PR comments
-    for comment in file_level_comments:
-        github.post_pr_comment(
-            owner=owner,
-            repo=repo,
-            pr_number=pr_number,
-            body=f"**File-level comment on {comment['path']}:** {comment['body']}",
-        )
