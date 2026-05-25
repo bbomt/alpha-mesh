@@ -136,7 +136,7 @@ Examples:
 
         # Get PR details
         result = subprocess.run(
-            ["gh", "pr", "view", str(pr_number), "--repo", gh_repo, "--json", "title,body,author,headRefName,baseRefName,state,head"],
+            ["gh", "pr", "view", str(pr_number), "--repo", gh_repo, "--json", "title,body,author,headRefName,baseRefName,state"],
             capture_output=True,
             text=True,
             timeout=30,
@@ -152,7 +152,6 @@ Examples:
         author = pr_data.get("author", {}).get("login", "")
         base_branch = pr_data.get("baseRefName", "")
         state = pr_data.get("state", "")
-        head_sha = pr_data.get("head", {}).get("sha", "")
 
         # Get head commit SHA via gh api (gh pr view --json doesn't expose head.sha)
         sha_result = subprocess.run(
