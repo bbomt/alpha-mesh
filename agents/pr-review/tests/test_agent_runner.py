@@ -5,10 +5,10 @@ from pr_review.agent_runner import (
     AgentContext,
     JiraTicket,
     GitHubData,
-    CodeReviewPluginHandler,
     PluginHandler,
     ClaudeInvocationError,
 )
+from pr_review.plugin_handler import CodeReviewPluginHandler
 
 
 class TestAgentContext:
