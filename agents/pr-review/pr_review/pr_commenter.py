@@ -257,10 +257,6 @@ def post_review(
 ) -> str:
     """Post the review to GitHub PR.
 
-    Returns the combined comment body string (for --show-pr-comment).
-    """
-    """Post the review to GitHub PR.
-
     Args:
         github: GitHubClient instance
         owner: Repo owner
@@ -270,6 +266,9 @@ def post_review(
         review: Review object to post
         dry_run: If True, print instead of posting
         diff: Unified diff string for mapping line numbers to diff positions
+
+    Returns:
+        The combined comment body string (for --show-pr-comment).
     """
     commit_sha = pr.get("head", {}).get("sha", "")
 

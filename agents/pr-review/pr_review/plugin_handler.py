@@ -86,7 +86,7 @@ class CodeReviewPluginHandler(PluginHandler):
             if findings:
                 issues_found = True
                 issue_count = len(findings)
-                review = None
+                # review=None indicates text-only findings (posted as issue comment, not PR review)
 
         # Fallback: check for text-based "Found X issue" pattern
         if not issues_found:

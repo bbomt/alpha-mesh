@@ -83,6 +83,7 @@ Format your response as:
         except (json.JSONDecodeError, ClaudeInvocationError) as e:
             print(f"Warning: Failed to fetch JIRA tickets: {e}", file=sys.stderr)
 
+        print("Warning: Could not extract JIRA ticket details from plugin output", file=sys.stderr)
         return []
 
 

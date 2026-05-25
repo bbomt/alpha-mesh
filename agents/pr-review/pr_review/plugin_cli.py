@@ -14,7 +14,6 @@ from agent_runner import (
     AgentContext,
     JiraTicket,
     GitHubData,
-    run_claude_headless,
     ClaudeInvocationError,
 )
 from agent_runner import JiraContextGatherer, GitHubContextGatherer
@@ -28,7 +27,6 @@ from pr_review.git_utils import (
     GitError,
 )
 from pr_review.github_client import parse_pr_url
-from pr_review.pr_commenter import post_review
 from pr_review.github_client import GitHubClient
 
 
@@ -60,8 +58,8 @@ def log_command(cmd: str, output: str = "", error: str = "", verbose: bool = Fal
                 f.write(f"OUTPUT:\n{output}\n")
             if error:
                 f.write(f"ERROR:\n{error}\n")
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Warning: log_command failed: {e}", file=sys.stderr)
 
     if verbose:
         print(f"$ {cmd}", file=sys.stderr)
@@ -282,47 +280,17 @@ Examples:
         print(f"Issues found: {result.get('issues_found', 'unknown')}", file=sys.stderr)
         print(f"Issue count: {result.get('issue_count', 0)}", file=sys.stderr)
 
-        # Fetch diff for inline comment placement (only needed when we have a structured review)
-        diff = get_diff(owner, repo, pr_number) if result.get("review") else ""
-
         # Track what we post for verification
         posted_body = ""
         post_target = ""
-        combined = ""
 
-        # Post review to GitHub ourselves using the parsed Review object
+        # Post raw review text from the plugin directly (no pr_commenter formatting)
         review = result.get("review")
         review_text = result.get("review_text", "")
 
-        if review:
-            # Post structured Review object
+        if review_text:
+            # Post raw text from plugin directly via GitHub issue comment API
             print("Posting review to GitHub PR...", file=sys.stderr)
-            github = GitHubClient()
-            try:
-                # Build pr dict with head.sha for post_review
-                pr_with_sha = {**pr_data, "head": {"sha": head_sha}}
-                combined = post_review(
-                    github=github,
-                    owner=owner,
-                    repo=repo,
-                    pr_number=pr_number,
-                    pr=pr_with_sha,
-                    review=review,
-                    dry_run=args.dry_run,
-                    diff=diff,
-                )
-                if not args.dry_run:
-                    print("Review posted successfully!", file=sys.stderr)
-                    log_command("code-review plugin completed successfully", verbose=verbose)
-                    post_target = f"repos/{owner}/{repo}/pulls/{pr_number}/reviews"
-            except Exception as e:
-                print(f"ERROR: Failed to post review: {e}", file=sys.stderr)
-                if verbose:
-                    traceback.print_exc(file=sys.stderr)
-                return 2
-        elif review_text:
-            # No structured Review but has text findings — post raw markdown
-            print("Posting text review to GitHub PR...", file=sys.stderr)
             github = GitHubClient()
             try:
                 github.post_pr_comment(
@@ -334,7 +302,6 @@ Examples:
                 if not args.dry_run:
                     print("Review posted successfully!", file=sys.stderr)
                     log_command("code-review plugin completed successfully", verbose=verbose)
-                    posted_body = review_text
                     post_target = f"repos/{owner}/{repo}/issues/{pr_number}/comments"
             except Exception as e:
                 print(f"ERROR: Failed to post review: {e}", file=sys.stderr)
@@ -345,9 +312,7 @@ Examples:
             print("No review issues found, skipping posting.", file=sys.stderr)
 
         # Show full comment if --show-pr-comment
-        if args.show_pr_comment and combined:
-            print(combined)
-        elif args.show_pr_comment and review_text:
+        if args.show_pr_comment and review_text:
             print(review_text)
 
         # Verify comment was posted and show it if requested
