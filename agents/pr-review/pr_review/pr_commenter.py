@@ -305,6 +305,11 @@ def post_review(
         print("=" * 60, file=None)
         return combined
 
+    GITHUB_REVIEW_BODY_LIMIT = 65536
+    if len(combined) > GITHUB_REVIEW_BODY_LIMIT:
+        print(f"WARNING: Review body ({len(combined)} chars) exceeds GitHub limit, truncating.", file=sys.stderr)
+        combined = combined[:GITHUB_REVIEW_BODY_LIMIT]
+
     github.create_pr_review(
         owner=owner,
         repo=repo,

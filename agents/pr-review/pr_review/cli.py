@@ -256,7 +256,7 @@ Examples:
     print("Posting review to GitHub PR...", file=sys.stderr)
     log_command(f"Posting review (dry_run={args.dry_run})", verbose=verbose)
     try:
-        post_review(
+        _ = post_review(
             github=github,
             owner=owner,
             repo=repo,

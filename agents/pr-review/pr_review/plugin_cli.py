@@ -243,11 +243,9 @@ Examples:
         print(f"Issue count: {result.get('issue_count', 0)}", file=sys.stderr)
 
         # Track what we post for verification
-        posted_body = ""
         post_target = ""
 
         # Post raw review text from the plugin directly (no pr_commenter formatting)
-        review = result.get("review")
         review_text = result.get("review_text", "")
 
         if review_text:

@@ -180,7 +180,11 @@ class PluginHandler(ABC):
             print(f"Plugin: {self.plugin_name}", file=sys.stderr)
             print(f"Prompt preview: {prompt[:200]}...", file=sys.stderr)
 
-        raw_output = run_claude_headless(prompt, repo_path, timeout, verbose)
-        log_agent_run(self.plugin_name, prompt, raw_output)
+        try:
+            raw_output = run_claude_headless(prompt, repo_path, timeout, verbose)
+            log_agent_run(self.plugin_name, prompt, raw_output)
+        except ClaudeInvocationError as e:
+            log_agent_run(self.plugin_name, prompt, error=str(e))
+            raise
 
         return self.parse_output(raw_output, context)
