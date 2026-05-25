@@ -65,8 +65,8 @@ Format your response as:
             import json
             import re
 
-            # Try to extract JSON from output (non-greedy to avoid spanning multiple arrays)
-            json_match = re.search(r'\[.*?\]', output, re.DOTALL)
+            # Try to extract JSON array from output (greedy; brackets in string fields are rare)
+            json_match = re.search(r'\[.*\]', output, re.DOTALL)
             if json_match:
                 tickets_data = json.loads(json_match.group(0))
                 tickets = []

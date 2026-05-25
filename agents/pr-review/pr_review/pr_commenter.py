@@ -75,9 +75,12 @@ def parse_diff_positions(diff: str) -> dict[tuple[str, int], int]:
             if hunk_match:
                 file_start_line = int(hunk_match.group(1))
             else:
-                # Malformed hunk header — skip this hunk to avoid stale file_start_line
+                # Malformed hunk header — clear stale file_start_line and skip to next marker
+                file_start_line = None
                 while i < len(lines) and not lines[i].startswith('@@') and not lines[i].startswith('diff --git'):
                     i += 1
+                if i >= len(lines):
+                    break
                 continue
 
             diff_position = i + 1  # 1-indexed position in diff
@@ -287,22 +290,22 @@ def post_review(
     combined = "\n".join(all_lines)
 
     if dry_run:
-        print("=" * 60, file=None)
-        print("DRY RUN - Would post the following review:", file=None)
-        print("=" * 60, file=None)
-        print(summary, file=None)
-        print(file=None)
+        print("=" * 60, file=sys.stderr)
+        print("DRY RUN - Would post the following review:", file=sys.stderr)
+        print("=" * 60, file=sys.stderr)
+        print(summary, file=sys.stderr)
+        print(file=sys.stderr)
         if review.inline_comments:
-            print(f"Would post {len(line_comments)} line comments and {len(file_level_comments)} file-level comments:", file=None)
+            print(f"Would post {len(line_comments)} line comments and {len(file_level_comments)} file-level comments:", file=sys.stderr)
             for comment in line_comments:
                 body = comment.get("body", "")
                 snippet = body.split(":**", 1)[0] if ":**" in body else body[:80]
-                print(f"  [{comment.get('path')}:{comment.get('position')}] {snippet}", file=None)
+                print(f"  [{comment.get('path')}:{comment.get('position')}] {snippet}", file=sys.stderr)
             for comment in file_level_comments:
                 body = comment.get("body", "")
                 snippet = body.split(":**", 1)[0] if ":**" in body else body[:80]
-                print(f"  [{comment.get('path')}:file-level] {snippet}", file=None)
-        print("=" * 60, file=None)
+                print(f"  [{comment.get('path')}:file-level] {snippet}", file=sys.stderr)
+        print("=" * 60, file=sys.stderr)
         return combined
 
     GITHUB_REVIEW_BODY_LIMIT = 65536
