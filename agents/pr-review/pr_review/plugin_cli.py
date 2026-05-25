@@ -105,9 +105,9 @@ Examples:
         help="Timeout in seconds for Claude Code (default: 2400)",
     )
     parser.add_argument(
-        "--show-pr-comment",
+        "--hide-pr-comment",
         action="store_true",
-        help="Print the posted PR comment to stdout after posting",
+        help="Suppress printing the posted PR comment to stdout",
     )
 
     args = parser.parse_args()
@@ -273,8 +273,8 @@ Examples:
         else:
             print("No review issues found, skipping posting.", file=sys.stderr)
 
-        # Show full comment if --show-pr-comment
-        if args.show_pr_comment and review_text:
+        # Show full comment unless --hide-pr-comment
+        if not args.hide_pr_comment and review_text:
             print(review_text)
 
         # Verify comment was posted and show it if requested

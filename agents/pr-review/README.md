@@ -36,7 +36,7 @@ mesh pr-review-plugin https://github.com/org/repo/pull/123
 | `--verbose` | Print detailed logs to stderr |
 | `--dry-run` | Run everything except posting the comment |
 | `--timeout N` | Timeout in seconds for Claude Code (default: 2400) |
-| `--show-pr-comment` | Print the posted PR comment to stdout |
+| `--hide-pr-comment` | Suppress printing the posted PR comment to stdout |
 
 ## Exit Codes
 
