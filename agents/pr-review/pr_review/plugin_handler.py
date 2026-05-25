@@ -13,10 +13,7 @@ class CodeReviewPluginHandler(PluginHandler):
 
     def build_prompt(self, context: AgentContext) -> str:
         """Build prompt for /code-review with JIRA context."""
-        pr_ref = ""
-        if context.github_data:
-            pr_ref = f" {context.github_data.pr_url}"
-        parts = [f"/code-review medium --comment{pr_ref}"]
+        parts = ["/code-review medium"]
 
         if context.jira_tickets:
             jira_ids = ", ".join(t.id for t in context.jira_tickets)

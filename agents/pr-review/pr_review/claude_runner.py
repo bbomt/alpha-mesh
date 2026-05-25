@@ -1,5 +1,6 @@
 """Claude Code runner for PR review agent."""
 
+import shutil
 import subprocess
 import sys
 import os
@@ -38,7 +39,7 @@ def run_claude_code_review(
     # Build the command.
     # Use --print for headless mode (non-interactive output).
     # Use --output-format json for structured output (clean, parseable).
-    cmd = ["/home/ec2-user/.local/bin/claude", "--print", "--output-format", "json"]
+    cmd = [shutil.which("claude") or "/home/ec2-user/.local/bin/claude", "--print", "--output-format", "json"]
 
     if verbose:
         print(f"Running Claude Code: {' '.join(cmd)}", file=sys.stderr)

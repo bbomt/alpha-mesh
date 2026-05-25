@@ -1,6 +1,7 @@
 """JIRA client for PR review agent - extracts ticket IDs and verifies MCP auth."""
 
 import re
+import shutil
 import subprocess
 import sys
 from typing import Optional
@@ -45,7 +46,7 @@ def verify_atlassian_auth(repo_path: str, verbose: bool = False) -> bool:
     # We'll try to see if claude is available and has the Atlassian plugin
     try:
         result = subprocess.run(
-            ["/home/ec2-user/.local/bin/claude", "--version"],
+            [shutil.which("claude") or "/home/ec2-user/.local/bin/claude", "--version"],
             cwd=repo_path,
             capture_output=True,
             text=True,
@@ -65,7 +66,7 @@ def verify_atlassian_auth(repo_path: str, verbose: bool = False) -> bool:
     try:
         result = subprocess.run(
             [
-                "/home/ec2-user/.local/bin/claude",
+                shutil.which("claude") or "/home/ec2-user/.local/bin/claude",
                 "--print",
                 "-p",
                 "List available MCP tools. If you have an Atlassian plugin connected, "

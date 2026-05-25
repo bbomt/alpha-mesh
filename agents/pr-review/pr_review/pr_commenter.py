@@ -87,8 +87,7 @@ def parse_diff_positions(diff: str) -> dict[tuple[str, int], int]:
                     if hunk_match:
                         file_start_line = int(hunk_match.group(1))
                     diff_position = i + 1
-                    # Reset file_line_map for the new hunk (same file, new offset)
-                    file_line_map = {}
+                    # Don't reset file_line_map — accumulate mappings across all hunks of this file
                     i += 1
                     continue
                 if l.startswith('diff --git'):
@@ -298,16 +297,6 @@ def post_review(
         all_lines.append(f"- **{comment['path']} (file-level):** {comment['body']}")
 
     combined = "\n".join(all_lines)
-
-    if dry_run:
-        print("=" * 60, file=None)
-        print("DRY RUN - Would post aggregated comment:", file=None)
-        print("=" * 60, file=None)
-        print(combined[:2000], file=None)
-        if len(combined) > 2000:
-            print(f"... (truncated, total {len(combined)} chars)", file=None)
-        print("=" * 60, file=None)
-        return
 
     github.post_pr_comment(
         owner=owner,

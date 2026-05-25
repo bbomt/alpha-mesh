@@ -299,12 +299,13 @@ Examples:
                     print("Review posted successfully!", file=sys.stderr)
                     # Verify local completion — check our own output, not just task status
                     log_command("code-review plugin completed successfully", verbose=verbose)
+                    post_target = f"repos/{owner}/{repo}/issues/{pr_number}/comments"
             except Exception as e:
                 print(f"ERROR: Failed to post review: {e}", file=sys.stderr)
                 if verbose:
                     traceback.print_exc(file=sys.stderr)
                 return 2
-        elif review_text and result.get("issues_found"):
+        elif review_text:
             # No structured Review but has text findings — post raw markdown
             print("Posting text review to GitHub PR...", file=sys.stderr)
             github = GitHubClient()
