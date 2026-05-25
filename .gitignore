@@ -22,6 +22,8 @@ uv.lock
 # project env
 .env
 
+# test comment for PMAT-188
+
 # claude settings
 .claude/
 # dream output .mesh/MEMORY.md

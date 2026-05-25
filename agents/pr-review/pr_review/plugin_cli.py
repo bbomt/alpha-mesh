@@ -10,15 +10,15 @@ import sys
 import traceback
 from pathlib import Path
 
-from pr_review.agent_runner import (
+from agent_runner import (
     AgentContext,
     JiraTicket,
     GitHubData,
-    CodeReviewPluginHandler,
     run_claude_headless,
     ClaudeInvocationError,
 )
-from pr_review.context_gatherers import JiraContextGatherer, GitHubContextGatherer
+from agent_runner import JiraContextGatherer, GitHubContextGatherer
+from pr_review.plugin_handler import CodeReviewPluginHandler
 from pr_review.jira_client import extract_jira_ids, verify_atlassian_auth
 from pr_review.git_utils import (
     get_current_branch,
@@ -28,6 +28,8 @@ from pr_review.git_utils import (
     GitError,
 )
 from pr_review.github_client import parse_pr_url
+from pr_review.pr_commenter import post_review
+from pr_review.github_client import GitHubClient
 
 
 import time
@@ -152,6 +154,15 @@ Examples:
         state = pr_data.get("state", "")
         head_sha = pr_data.get("head", {}).get("sha", "")
 
+        # Get head commit SHA via gh api (gh pr view --json doesn't expose head.sha)
+        sha_result = subprocess.run(
+            ["gh", "api", f"repos/{owner}/{repo}/pulls/{pr_number}", "--jq", ".head.sha"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        head_sha = sha_result.stdout.strip() if sha_result.returncode == 0 else ""
+
         print(f"PR Title: {pr_title}", file=sys.stderr)
 
     except Exception as e:
@@ -255,8 +266,54 @@ Examples:
         print(f"Issues found: {result.get('issues_found', 'unknown')}", file=sys.stderr)
         print(f"Issue count: {result.get('issue_count', 0)}", file=sys.stderr)
 
-        # The /code-review plugin posts its own comments via gh pr comment
-        # We just log the result
+        # Post review to GitHub ourselves using the parsed Review object
+        review = result.get("review")
+        review_text = result.get("review_text", "")
+
+        if review:
+            # Post structured Review object
+            print("Posting review to GitHub PR...", file=sys.stderr)
+            github = GitHubClient()
+            try:
+                # Build pr dict with head.sha for post_review
+                pr_with_sha = {**pr_data, "head": {"sha": head_sha}}
+                post_review(
+                    github=github,
+                    owner=owner,
+                    repo=repo,
+                    pr_number=pr_number,
+                    pr=pr_with_sha,
+                    review=review,
+                    dry_run=args.dry_run,
+                    diff="",  # Inline comments use file/line, not diff positions
+                )
+                if not args.dry_run:
+                    print("Review posted successfully!", file=sys.stderr)
+            except Exception as e:
+                print(f"ERROR: Failed to post review: {e}", file=sys.stderr)
+                if verbose:
+                    traceback.print_exc(file=sys.stderr)
+                return 2
+        elif review_text and result.get("issues_found"):
+            # No structured Review but has text findings — post raw markdown
+            print("Posting text review to GitHub PR...", file=sys.stderr)
+            github = GitHubClient()
+            try:
+                github.post_pr_comment(
+                    owner=owner,
+                    repo=repo,
+                    pr_number=pr_number,
+                    body=review_text,
+                )
+                if not args.dry_run:
+                    print("Review posted successfully!", file=sys.stderr)
+            except Exception as e:
+                print(f"ERROR: Failed to post review: {e}", file=sys.stderr)
+                if verbose:
+                    traceback.print_exc(file=sys.stderr)
+                return 2
+        else:
+            print("No review issues found, skipping posting.", file=sys.stderr)
 
     except ClaudeInvocationError as e:
         print(f"ERROR: Claude Code failed: {e}", file=sys.stderr)
