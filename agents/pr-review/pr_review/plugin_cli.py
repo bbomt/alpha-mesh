@@ -28,8 +28,20 @@ from pr_review.git_utils import (
     GitError,
 )
 from pr_review.github_client import parse_pr_url
-from pr_review.pr_commenter import post_review
+from pr_review.pr_commenter import post_review, format_combined_review
 from pr_review.github_client import GitHubClient
+
+
+def get_diff(owner: str, repo: str, pr_number: int) -> str:
+    """Fetch the unified diff for a PR via GitHub API."""
+    import subprocess
+    result = subprocess.run(
+        ["gh", "api", f"repos/{owner}/{repo}/pulls/{pr_number}", "--jq", ".diff"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    return result.stdout if result.returncode == 0 else ""
 
 
 import time
@@ -293,13 +305,15 @@ Examples:
                     pr=pr_with_sha,
                     review=review,
                     dry_run=args.dry_run,
-                    diff="",  # Inline comments use file/line, not diff positions
+                    diff=diff,
                 )
                 if not args.dry_run:
                     print("Review posted successfully!", file=sys.stderr)
-                    # Verify local completion — check our own output, not just task status
+                    if args.show_pr_comment:
+                        combined = format_combined_review(review, line_comments, file_level_comments, summary)
+                        print(combined)
                     log_command("code-review plugin completed successfully", verbose=verbose)
-                    post_target = f"repos/{owner}/{repo}/issues/{pr_number}/comments"
+                    post_target = f"repos/{owner}/{repo}/pulls/{pr_number}/reviews"
             except Exception as e:
                 print(f"ERROR: Failed to post review: {e}", file=sys.stderr)
                 if verbose:
@@ -318,6 +332,8 @@ Examples:
                 )
                 if not args.dry_run:
                     print("Review posted successfully!", file=sys.stderr)
+                    if args.show_pr_comment:
+                        print(review_text)
                     # Verify local completion
                     log_command("code-review plugin completed successfully", verbose=verbose)
                     posted_body = review_text
@@ -343,7 +359,7 @@ Examples:
                 print("\n" + "=" * 60, file=sys.stderr)
                 print("VERIFIED: Comment posted to PR:", file=sys.stderr)
                 print("=" * 60, file=sys.stderr)
-                print(verify_result.stdout.strip()[:2000], file=sys.stderr)
+                print(verify_result.stdout.strip()[:100], file=sys.stderr)
                 print("=" * 60, file=sys.stderr)
             else:
                 print("WARNING: Could not verify comment was posted", file=sys.stderr)

@@ -74,6 +74,11 @@ def parse_diff_positions(diff: str) -> dict[tuple[str, int], int]:
             hunk_match = re.match(r'@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@', lines[i])
             if hunk_match:
                 file_start_line = int(hunk_match.group(1))
+            else:
+                # Malformed hunk header — skip this hunk to avoid stale file_start_line
+                while i < len(lines) and not lines[i].startswith('@@') and not lines[i].startswith('diff --git'):
+                    i += 1
+                continue
 
             diff_position = i + 1  # 1-indexed position in diff
             i += 1
@@ -120,6 +125,8 @@ def parse_diff_positions(diff: str) -> dict[tuple[str, int], int]:
 
 def format_summary_comment(review: Review, file_level_comments: list[dict] = None) -> str:
     """Format the summary comment for GitHub PR."""
+    if file_level_comments is None:
+        file_level_comments = []
     verdict_emoji = VERDICT_EMOJI.get(review.verdict, "💬")
     verdict_label = VERDICT_LABEL.get(review.verdict, "COMMENT")
 
@@ -298,9 +305,11 @@ def post_review(
 
     combined = "\n".join(all_lines)
 
-    github.post_pr_comment(
+    github.create_pr_review(
         owner=owner,
         repo=repo,
         pr_number=pr_number,
+        commit_sha=commit_sha,
         body=combined,
+        comments=[],  # All comments are in the combined body markdown
     )

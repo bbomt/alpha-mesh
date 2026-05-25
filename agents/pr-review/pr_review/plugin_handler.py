@@ -48,7 +48,8 @@ class CodeReviewPluginHandler(PluginHandler):
         review = None
 
         # Try to extract JSON array from ```json ... ``` block
-        json_match = re.search(r'```json\s*(\[[\s\S]*?)\s*```', output, re.DOTALL)
+        # Handle text before [ inside the fence by matching [ to ] non-greedily
+        json_match = re.search(r'```json\s*\n?([\s\S]*?)\n?\s*```', output, re.DOTALL)
         if json_match:
             try:
                 data = json.loads(json_match.group(1))
