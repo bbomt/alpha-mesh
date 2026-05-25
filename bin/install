@@ -62,7 +62,9 @@ __pycache__/
 
 # Python project
 venv/
-dream_core.egg-info/
+agents/*/*.egg-info/
+agents/*/.venv/
+agents/*/uv.lock
 uv.lock
 
 # editor

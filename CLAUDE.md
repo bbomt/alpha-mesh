@@ -15,11 +15,16 @@ alpha-mesh/
 ├── bin/                     # Executable bash scripts; mesh is the unified dispatcher
 │   ├── mesh                 # Entry point: mesh <command>
 │   ├── model                # Model switching (local/global scope)
-│   ├── dream                # End-of-session memory consolidation
+│   ├── dream                # End-of-session memory consolidation (delegates to agents/dream/)
 │   ├── bootstrap-memory     # Extract memory from existing Claude Code logs
 │   ├── lib/                  # Shared library
 │   │   └── repo              # find_repo_root, get_active_model_from_settings
 │   └── install              # One-time setup (run after clone)
+├── agents/
+│   ├── dream/               # Dream agent (mirrors pr-review pattern)
+│   │   ├── dream/           # Python package with dream logic
+│   │   └── tests/           # Dream tests
+│   └── pr-review/          # PR review agent
 ├── test/
 │   ├── run-all              # Runs all test suites
 │   └── test-*               # Individual test suites
