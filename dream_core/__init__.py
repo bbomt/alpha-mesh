@@ -16,8 +16,56 @@ import time
 from collections import defaultdict, Counter
 from typing import Dict, List, Optional, Any, Tuple
 
+# Claude Code internal tags that indicate system-generated messages (not real user input)
+CLAUDE_CODE_TAGS = (
+    "<command-name", "<command-message", "<command-args",
+    "<local-command-", "<system-reminder",
+    "<local-command-stdout", "<local-command-stderr",
+)
 
-# Constants
+
+def is_real_user_message(text: str) -> bool:
+    """Check if a user message is actual user input vs Claude Code system-generated."""
+
+    if not text:
+        return False
+
+    stripped = text.lstrip()
+
+    # System-generated messages START with these tags - filter them out
+    # (user messages that QUOTE such tags should NOT be filtered)
+    system_starts = (
+        "<command-name",
+        "<command-message",
+        "<command-args",
+        "<local-command-",
+        "<local-command-stdout",
+        "<local-command-stderr",
+        "<system-reminder",
+        "<local-command-caveat",
+    )
+    for tag in system_starts:
+        if stripped.startswith(tag):
+            return False
+
+    # Check for system-generated content patterns (must be near the start)
+    system_patterns = (
+        "## Context Usage",
+        "**Model:**",
+        "**Tokens:**",
+        "### Estimated usage by category",
+        "| Category | Tokens | Percentage |",
+        "This session is being continued from a previous conversation",
+        "Summary:",
+        "Primary Request and Intent:",
+    )
+    for pattern in system_patterns:
+        idx = text.find(pattern)
+        if idx >= 0 and idx < 100:  # Pattern near start = system-generated
+            return False
+
+    return True
+
 MESH_SUBDIR = ".mesh"
 MEMORY_FILENAME = "MEMORY.md"
 MAX_MEMORY_LINES = 200
@@ -106,6 +154,41 @@ def split_routing(extracted: str) -> Tuple[str, str]:
     return "\n".join(repo_local).strip(), "\n".join(global_md).strip()
 
 
+def validate_routing(extracted: str, repo_name: str) -> str:
+    """
+    Post-extraction validation to catch obvious mis-taggings.
+
+    If a [GLOBAL] tagged line contains the repo name, it's likely mis-tagged
+    and should be [REPO-LOCAL].
+
+    Args:
+        extracted: Raw extracted insights from LLM
+        repo_name: Name of the repo (e.g., "alpha-mesh")
+
+    Returns:
+        Corrected extracted content
+    """
+    lines = extracted.split("\n")
+    corrected = []
+    corrections = 0
+
+    for line in lines:
+        # Check if line is tagged GLOBAL but contains repo name
+        if GLOBAL_TAG in line and repo_name in line:
+            # Re-tag as REPO-LOCAL
+            corrected_line = line.replace(GLOBAL_TAG, REPO_LOCAL_TAG, 1)
+            corrected.append(corrected_line)
+            corrections += 1
+            print(f"  [validate] Re-tagged GLOBAL→REPO-LOCAL: {line[:80]}...", flush=True, file=sys.stderr)
+        else:
+            corrected.append(line)
+
+    if corrections > 0:
+        print(f"  [validate] Fixed {corrections} mis-tagged line(s) containing '{repo_name}'", flush=True, file=sys.stderr)
+
+    return "\n".join(corrected)
+
+
 def enforce_recent_signals_cap(memory_content: str, max_entries: int = 5) -> str:
     """
     Enforce a max number of entries in ## Recent Signals section.
@@ -177,7 +260,8 @@ def check_conflicts(memory_content: str) -> Tuple[bool, List[str]]:
 def extract_sessions_from_jsonl(
     projects_dir: str,
     cutoff: str,
-    target_repo: Optional[str] = None
+    target_repo: Optional[str] = None,
+    include_assistant: bool = False
 ) -> Dict[str, Dict[str, Any]]:
     """
     Scan JSONL session files and extract content by repo.
@@ -188,11 +272,12 @@ def extract_sessions_from_jsonl(
         target_repo: Optional repo path to filter results.
             When set to a parent directory (e.g., ~/environment/pmat),
             all child repos are included so multi-repo work is captured.
+        include_assistant: If True, include assistant messages. Default False (user only).
 
     Returns:
         Dict mapping repo_path -> {"content": str, "dates": List[str], "file_count": int}
     """
-    repo_data = defaultdict(lambda: {"content_lines": [], "dates": set(), "file_count": 0})
+    repo_data = defaultdict(lambda: {"content_lines": [], "dates": set(), "file_count": 0, "message_count": 0})
 
     if not os.path.isdir(projects_dir):
         return {}
@@ -214,10 +299,11 @@ def extract_sessions_from_jsonl(
 
             cwds = set()
             messages = []
+            recent_messages = []  # For deduplication of similar consecutive messages
 
             try:
                 with open(fpath) as f:
-                    for line in f:
+                    for line_counter, line in enumerate(f, 1):
                         line = line.strip()
                         if not line:
                             continue
@@ -230,14 +316,31 @@ def extract_sessions_from_jsonl(
                         if cwd:
                             cwds.add(cwd)
 
-                        msg = obj.get('message', {})
-                        if 'role' not in msg:
-                            msg = obj
-                        role = msg.get('role', '')
-                        content = msg.get('content', '')
+                        # Handle both regular messages and queue-operation (user input)
+                        role = ''
+                        content = ''
+                        
+                        # Check if this is a queue-operation (user typed a message)
+                        if obj.get('type') == 'queue-operation' and obj.get('operation') == 'enqueue':
+                            # This is a user message sent via the queue
+                            role = 'user'
+                            content = obj.get('content', '')
+                        else:
+                            # Regular message format
+                            msg = obj.get('message', obj)
+                            if 'role' not in msg:
+                                msg = obj
+                            role = msg.get('role', '')
+                            content = msg.get('content', '')
 
-                        # Only process valid assistant and user messages
-                        if role == 'assistant' and isinstance(content, list):
+                        # Skip user messages that are system-generated (start with command/local tags)
+                        if role == 'user' and isinstance(content, str):
+                            stripped = content.strip()
+                            if stripped.startswith(('<command-', '<local-command-', '<system-reminder>')):
+                                continue
+
+                        # Process assistant messages only if include_assistant is True
+                        if include_assistant and role == 'assistant' and isinstance(content, list):
                             for block in content:
                                 if isinstance(block, dict) and block.get('type') == 'text':
                                     text = block.get('text', '').strip()
@@ -253,8 +356,17 @@ def extract_sessions_from_jsonl(
                                     if isinstance(block, dict) and block.get('type') == 'text':
                                         text = block.get('text', '').strip()
                                         break
-                            if text and len(text) > 20 and not text.startswith('/'):
-                                messages.append(f"[user] {text[:300]}")
+                            if text and len(text) > 20 and not text.startswith('/') and is_real_user_message(text):
+                                # Truncate for consistency
+                                truncated = text[:300]
+                                # Skip if very similar to last message (within same session)
+                                if recent_messages and recent_messages[-1].startswith('[user]'):
+                                    last_msg = recent_messages[-1][7:]  # strip [user] prefix
+                                    # If messages are >80% identical, skip this one
+                                    if truncated.startswith(last_msg[:50]) and len(truncated) <= len(last_msg) + 10:
+                                        continue
+                                recent_messages.append(f"[user] {truncated}")
+                                messages.append(f"[user] {truncated}")
 
                 if not messages:
                     continue
@@ -285,6 +397,7 @@ def extract_sessions_from_jsonl(
                         f"--- Session: {os.path.basename(root)} ({fdate}) ---\n{content_str}"
                     )
                     repo_data[repo_path]["dates"].add(fdate)
+                    repo_data[repo_path]["message_count"] += len(messages)
 
             except OSError:
                 continue
@@ -292,10 +405,13 @@ def extract_sessions_from_jsonl(
     result = {}
     for repo_path, data in repo_data.items():
         if data["content_lines"]:
+            message_count = data.get("message_count", 0)
             result[repo_path] = {
                 "content": '\n\n'.join(data["content_lines"]),
                 "dates": sorted(data["dates"]),
-                "file_count": data["file_count"]
+                "file_count": data["file_count"],
+                "session_count": len(data["content_lines"]),
+                "message_count": message_count
             }
 
     return result
@@ -324,10 +440,17 @@ def call_llm(
     try:
         from openai import OpenAI
 
-        # Fix MiniMax URL: https://api.minimax.io/anthropic -> https://api.minimax.io/v1
+        # Adjust base URL for OpenAI SDK compatibility:
+        # 1. MiniMax uses /anthropic suffix -> convert to /v1
+        # 2. Other providers (OpenRouter, etc.) need /v1 appended if missing
         adjusted_base_url = base_url
-        if base_url and base_url.rstrip("/").endswith("/anthropic"):
-            adjusted_base_url = base_url.rstrip("/").replace("/anthropic", "") + "/v1"
+        if base_url:
+            stripped = base_url.rstrip("/")
+            if stripped.endswith("/anthropic"):
+                adjusted_base_url = stripped.replace("/anthropic", "") + "/v1"
+            elif not stripped.endswith("/v1"):
+                # Append /v1 for OpenAI-compatible APIs that don't have it
+                adjusted_base_url = stripped + "/v1"
 
         client = OpenAI(
             api_key=token,
@@ -524,6 +647,9 @@ def process_repos(
             model_config=model_config
         )
 
+        # Validate routing (catch mis-tagged content)
+        new_learnings = validate_routing(new_learnings, repo_name)
+
         # Split into REPO-LOCAL and GLOBAL insights
         repo_local_learnings, global_learnings = split_routing(new_learnings)
 
@@ -646,8 +772,24 @@ Every bullet MUST start with a routing tag, no exceptions:
 - `[REPO-LOCAL]`: specific to this codebase's tech stack, folder structure, or domain logic
 - `[GLOBAL]`: applies across all repos (team process, JIRA workflow, communication norms)
 
+## Critical Routing Rules
+1. **If the insight mentions the repo name "{repo_name}", it MUST be `[REPO-LOCAL]`**
+2. **When in doubt, keep it local** — global memory that grows too large loses value.
+3. **GLOBAL means truly cross-repo**: team-wide JIRA settings, communication norms, shared CI/CD patterns
+
+## Examples (study these carefully)
+### REPO-LOCAL (correct tagging):
+- `[REPO-LOCAL] Log Path: Commands are logged to ~/environment/logs/ai/claude/{repo_name}.log`
+- `[REPO-LOCAL] Testing: uses pnpm test:unit (not npm or yarn)`
+- `[REPO-LOCAL] Architecture: single-spa MFE pattern with 6 sub-repos`
+- `[REPO-LOCAL] Claude Code uses --print flag (not --headless)`
+
+### GLOBAL (correct tagging):
+- `[GLOBAL] JIRA workflow: move ticket to IN PROGRESS when starting work`
+- `[GLOBAL] Git commits: format is feature|fix[{{summary}}{{JIRA-XX}}]: description`
+- `[GLOBAL] Team uses AWS CDK for infrastructure, SAM for local testing`
+
 If an insight is not clearly cross-repo team knowledge, tag it `[REPO-LOCAL]`.
-When in doubt, keep it local — global memory that grows too large loses value.
 
 # Session Source: {repo_name} | Date: {date}
 
@@ -997,6 +1139,8 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="Print without writing")
     parser.add_argument("--days", type=int, default=0, help="Days back to process")
     parser.add_argument("--repo", type=str, default="", help="Filter to specific repo")
+    parser.add_argument("--include-assistant", action="store_true",
+                        help="Include assistant messages (default: user only)")
     parser.add_argument("--projects-dir", type=str, default=CLAUDE_PROJECTS)
     parser.add_argument("--model", type=str, default=os.environ.get("DREAM_MODEL", ""))
     parser.add_argument("--token", type=str, default=os.environ.get("DREAM_TOKEN", ""))
@@ -1018,7 +1162,8 @@ def main():
     repos_data = extract_sessions_from_jsonl(
         projects_dir=args.projects_dir,
         cutoff=cutoff,
-        target_repo=args.repo if args.repo else None
+        target_repo=args.repo if args.repo else None,
+        include_assistant=args.include_assistant
     )
 
     file_count = sum(info.get('file_count', 0) for info in repos_data.values())
@@ -1028,6 +1173,44 @@ def main():
         return 0
 
     print(f"Found {file_count} session file(s)", file=sys.stderr)
+
+    # Warn if session files are stale (might miss recent messages)
+    now = time.time()
+    for repo_path, info in repos_data.items():
+        # Check if any session file is older than 5 minutes
+        stale_files = []
+        for root, dirs, files in os.walk(args.projects_dir if 'args' in dir() else CLAUDE_PROJECTS):
+            for fname in files:
+                if not fname.endswith('.jsonl'):
+                    continue
+                fpath = os.path.join(root, fname)
+                try:
+                    mtime = os.path.getmtime(fpath)
+                    if now - mtime > 300:  # 5 minutes
+                        stale_files.append(fname)
+                except OSError:
+                    continue
+        if stale_files:
+            print(f"  WARNING: Some session files are >5 min old — recent messages might be missing.", file=sys.stderr)
+            print(f"  For best results, exit Claude Code (to flush) then run mesh dream.", file=sys.stderr)
+            break
+
+    # Print user messages to console before sending to LLM
+    if repos_data:
+        total_repos = len(repos_data)
+        total_sessions = sum(info.get('session_count', 0) for info in repos_data.values())
+        total_messages = sum(info.get('message_count', 0) for info in repos_data.values())
+        print(f"\n>>> ======== USER MESSAGES (start:) ========= \n\n\tLLM INPUT: {total_repos} repos, {total_sessions} sessions, {total_messages} user messages\n")
+        for repo_path, info in sorted(repos_data.items()):
+            repo_name = os.path.basename(repo_path)
+            session_count = info.get('session_count', 0)
+            message_count = info.get('message_count', 0)
+            print(f"  REPO: {repo_name} | Sessions: {session_count} | Messages: {message_count}")
+            print(f"  Date: {info['dates'][0] if info.get('dates') else 'unknown'}")
+            print(f"  ─────────────────────────────────────────────────────────")
+            print(info["content"])
+            print("")
+        print(f">>> ======== USER MESSAGES (end:) ========= \n\n\tEND OF LLM INPUT ({total_messages} messages total) ===\n")
 
     if not repos_data:
         return 0
@@ -1053,15 +1236,24 @@ def main():
         print("ERROR: DREAM_MODEL and DREAM_TOKEN must be set (via env or --model/--token)", file=sys.stderr)
         return 1
 
-    base_url = args.base_url or "https://api.minimax.io/v1"
+    raw_base_url = args.base_url or "https://api.minimax.io/v1"
+
+    # Apply same adjustments as call_llm for consistency in logging
+    adjusted_base_url = raw_base_url
+    if raw_base_url:
+        stripped = raw_base_url.rstrip("/")
+        if stripped.endswith("/anthropic"):
+            adjusted_base_url = stripped.replace("/anthropic", "") + "/v1"
+        elif not stripped.endswith("/v1"):
+            adjusted_base_url = stripped + "/v1"
 
     model_config = {
         "model": args.model,
         "token": args.token,
-        "base_url": base_url
+        "base_url": adjusted_base_url
     }
 
-    print(f"Using model: {args.model}  |  API: {base_url}", file=sys.stderr)
+    print(f"Using model: {args.model}  |  API: {adjusted_base_url}", file=sys.stderr)
 
     # ─── 4. Process repos ──────────────────────────────────────────────────────
     print("Processing repos...", file=sys.stderr)

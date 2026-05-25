@@ -25,6 +25,7 @@ from dream_core import (
     split_routing,
     enforce_recent_signals_cap,
     check_conflicts,
+    is_real_user_message,
 )
 
 
@@ -209,17 +210,27 @@ class TestExtractSessionsFromJsonl:
         # Create two session files in different repos
         repo1_session = projects_dir / "repo1-session" / "session.jsonl"
         repo1_session.parent.mkdir()
-        repo1_session.write_text(json.dumps({
-            "cwd": "/home/user/repos/repo1",
-            "message": {"role": "assistant", "content": [{"type": "text", "text": "A" * 150}]}
-        }) + "\n")
+        with repo1_session.open(mode="w") as f:
+            f.write(json.dumps({
+                "cwd": "/home/user/repos/repo1",
+                "message": {"role": "assistant", "content": [{"type": "text", "text": "A" * 150}]}
+            }) + "\n")
+            f.write(json.dumps({
+                "cwd": "/home/user/repos/repo1",
+                "message": {"role": "user", "content": "User message for repo1"}
+            }) + "\n")
 
         repo2_session = projects_dir / "repo2-session" / "session.jsonl"
         repo2_session.parent.mkdir()
-        repo2_session.write_text(json.dumps({
-            "cwd": "/home/user/repos/repo2",
-            "message": {"role": "assistant", "content": [{"type": "text", "text": "B" * 150}]}
-        }) + "\n")
+        with repo2_session.open(mode="w") as f:
+            f.write(json.dumps({
+                "cwd": "/home/user/repos/repo2",
+                "message": {"role": "assistant", "content": [{"type": "text", "text": "B" * 150}]}
+            }) + "\n")
+            f.write(json.dumps({
+                "cwd": "/home/user/repos/repo2",
+                "message": {"role": "user", "content": "User message for repo2"}
+            }) + "\n")
 
         # Set mtime to today
         import time
@@ -280,11 +291,11 @@ class TestExtractSessionsFromJsonl:
         session_file = projects_dir / "test-session" / "session.jsonl"
         session_file.parent.mkdir()
 
-        # Write valid and invalid lines using open with append
+        # Write valid (user message) and invalid lines
         with session_file.open(mode="w") as f:
             f.write(json.dumps({
                 "cwd": "/home/user/repos/test",
-                "message": {"role": "assistant", "content": [{"type": "text", "text": "A" * 150}]}
+                "message": {"role": "user", "content": "Valid user message for testing"}
             }) + "\n")
             f.write("this is not json\n")
 
@@ -302,6 +313,154 @@ class TestExtractSessionsFromJsonl:
 
         # Should still extract the valid entry
         assert len(result) == 1
+
+    def test_default_excludes_assistant_messages(self, tmp_path):
+        """Test that assistant messages are excluded by default (include_assistant=False)."""
+        projects_dir = tmp_path / "projects"
+        projects_dir.mkdir()
+
+        session_file = projects_dir / "test-session" / "session.jsonl"
+        session_file.parent.mkdir()
+
+        # Write assistant message (long enough) and user message
+        with session_file.open(mode="w") as f:
+            f.write(json.dumps({
+                "cwd": "/home/user/repos/test",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "A" * 150}]
+                }
+            }) + "\n")
+            f.write(json.dumps({
+                "cwd": "/home/user/repos/test",
+                "message": {
+                    "role": "user",
+                    "content": "This is a user message that is long enough"
+                }
+            }) + "\n")
+
+        import time
+        now = time.time()
+        os.utime(session_file, (now, now))
+
+        cutoff = datetime.now().strftime("%Y-%m-%d")
+
+        result = extract_sessions_from_jsonl(
+            projects_dir=str(projects_dir),
+            cutoff=cutoff,
+            target_repo=None,
+            include_assistant=False  # default
+        )
+
+        # Should have one repo
+        assert len(result) == 1
+        content = result[list(result.keys())[0]]["content"]
+        # Assistant message should NOT be present
+        assert "[assistant]" not in content
+        # User message should be present
+        assert "[user]" in content
+
+    def test_include_assistant_flag_includes_both(self, tmp_path):
+        """Test that include_assistant=True includes both user and assistant messages."""
+        projects_dir = tmp_path / "projects"
+        projects_dir.mkdir()
+
+        session_file = projects_dir / "test-session" / "session.jsonl"
+        session_file.parent.mkdir()
+
+        # Write assistant message and user message
+        with session_file.open(mode="w") as f:
+            f.write(json.dumps({
+                "cwd": "/home/user/repos/test",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "A" * 150}]
+                }
+            }) + "\n")
+            f.write(json.dumps({
+                "cwd": "/home/user/repos/test",
+                "message": {
+                    "role": "user",
+                    "content": "This is a user message that is long enough"
+                }
+            }) + "\n")
+
+        import time
+        now = time.time()
+        os.utime(session_file, (now, now))
+
+        cutoff = datetime.now().strftime("%Y-%m-%d")
+
+        result = extract_sessions_from_jsonl(
+            projects_dir=str(projects_dir),
+            cutoff=cutoff,
+            target_repo=None,
+            include_assistant=True
+        )
+
+        # Should have one repo
+        assert len(result) == 1
+        content = result[list(result.keys())[0]]["content"]
+        # Both messages should be present
+        assert "[assistant]" in content
+        assert "[user]" in content
+    def test_filters_out_claude_code_generated_messages(self, tmp_path):
+        """Test that Claude Code generated messages (with internal tags) are filtered out."""
+        projects_dir = tmp_path / "projects"
+        projects_dir.mkdir()
+
+        session_file = projects_dir / "test-session" / "session.jsonl"
+        session_file.parent.mkdir()
+
+        # Write messages - some are Claude Code generated (with tags), some are real user messages
+        with session_file.open(mode="w") as f:
+            # This is Claude Code generated - should be filtered out
+            f.write(json.dumps({
+                "cwd": "/home/user/repos/test",
+                "message": {
+                    "role": "user",
+                    "content": "<command-name>/exit</command-name>"
+                }
+            }) + "\n")
+            # This is also Claude Code generated - should be filtered out
+            f.write(json.dumps({
+                "cwd": "/home/user/repos/test",
+                "message": {
+                    "role": "user",
+                    "content": "<system-reminder>Some reminder</system-reminder>"
+                }
+            }) + "\n")
+            # This is a real user message - should be kept
+            f.write(json.dumps({
+                "cwd": "/home/user/repos/test",
+                "message": {
+                    "role": "user",
+                    "content": "This is a real user message for testing"
+                }
+            }) + "\n")
+
+        import time
+        now = time.time()
+        os.utime(session_file, (now, now))
+
+        cutoff = datetime.now().strftime("%Y-%m-%d")
+
+        result = extract_sessions_from_jsonl(
+            projects_dir=str(projects_dir),
+            cutoff=cutoff,
+            target_repo=None,
+            include_assistant=False
+        )
+
+        # Should have one repo
+        assert len(result) == 1
+        content = result[list(result.keys())[0]]["content"]
+        # Real user message should be present
+        assert "This is a real user message" in content
+        # Claude Code generated messages should NOT be present
+        assert "<command-name>" not in content
+        assert "<system-reminder>" not in content
+
 
 
 class TestSynthesizeMemory:
@@ -517,3 +676,74 @@ Some identity content."""
         has_conflicts, conflicts = check_conflicts(content)
 
         assert has_conflicts is False
+
+class TestIsRealUserMessage:
+    """Tests for is_real_user_message function."""
+
+    def test_real_user_message_returns_true(self):
+        """Test that a plain user message returns True."""
+        text = "feature-dev:feature-dev please implement PMAT-182"
+        assert is_real_user_message(text) is True
+
+    def test_command_name_tag_returns_false(self):
+        """Test that <command-name> tag returns False."""
+        text = "<command-name>/exit</command-name>"
+        assert is_real_user_message(text) is False
+
+    def test_command_message_tag_returns_false(self):
+        """Test that <command-message> tag returns False."""
+        text = "<command-message>exit</command-message>"
+        assert is_real_user_message(text) is False
+
+    def test_system_reminder_tag_returns_false(self):
+        """Test that <system-reminder> tag returns False."""
+        text = "<system-reminder>This is a reminder</system-reminder>"
+        assert is_real_user_message(text) is False
+
+    def test_local_command_tag_returns_false(self):
+        """Test that <local-command-*> tag returns False."""
+        text = "<local-command-caveat>Some caveat text</local-command-caveat>"
+        assert is_real_user_message(text) is False
+
+    def test_local_command_stdout_returns_false(self):
+        """Test that <local-command-stdout> tag returns False."""
+        text = "<local-command-stdout>Goodbye!</local-command-stdout>"
+        assert is_real_user_message(text) is False
+
+    def test_empty_message_returns_false(self):
+        """Test that empty message returns False."""
+        assert is_real_user_message("") is False
+        assert is_real_user_message(None) is False
+
+    def test_message_with_multiple_tags_returns_false(self):
+        """Test that message with multiple Claude Code tags returns False."""
+        text = "<command-name>/rename</command-name>\n<command-message>rename</command-message>"
+        assert is_real_user_message(text) is False
+
+    def test_partial_tag_match_returns_false(self):
+        """Test that partial tag match (e.g., <system-reminder with attrs) returns False."""
+        text = "<system-reminder name=\"test\">Some reminder</system-reminder>"
+        assert is_real_user_message(text) is False
+    def test_context_usage_table_returns_false(self):
+        """Test that Context Usage tables are filtered out."""
+        text = """## Context Usage
+
+**Model:** tencent/hy3-preview
+**Tokens:** 63.2k / 200k (32%)
+
+### Estimated usage by category
+
+| Category | Tokens | Percentage |
+|----------|---------|------------|
+| System prompt | 6.2k | 3.1% |"""
+        assert is_real_user_message(text) is False
+
+    def test_session_continuation_summary_returns_false(self):
+        """Test that session continuation summaries are filtered out."""
+        text = """This session is being continued from a previous conversation that ran out of context.
+
+Summary:
+1. Primary Request and Intent:
+   The user reported a bug..."""
+        assert is_real_user_message(text) is False
+

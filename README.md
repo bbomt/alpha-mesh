@@ -115,7 +115,7 @@ The `openrouter-default` profile provides the OpenRouter URL and token; the mode
 ### How it works
 
 1. **Scan**: Finds `.jsonl` session logs in `~/.claude/projects/*/` modified today
-2. **Extract**: Pulls assistant text (>100 chars), user messages (>20 chars, non-slash-commands), and error/fail lines
+2. **Extract**: Pulls user messages (>20 chars, non-slash-commands) by default. Use `--include-assistant` to also include assistant text (>100 chars)
 3. **Group**: Decodes repo paths from the `cwd` field in each session entry
 4. **Call LLM**: Uses `DREAM_MODEL`, `DREAM_URL`, `DREAM_TOKEN` from `.env`:
    - Extracts structured learnings (what worked, what failed, patterns, gotchas)
@@ -143,11 +143,58 @@ Dream does not touch CLAUDE.md — this is a manual step.
 | Flag | Description |
 |------|-------------|
 | `--dry-run` | Print extracted content, write nothing |
-| `--5-days` | Process sessions from last 5 days |
 | `--days N` | Process sessions from last N days |
+| `--repo <path>` | Process only specific repo |
+| `--include-assistant` | Include assistant messages (default: user only) |
 
 ### Error handling
 
 - No sessions today: prints message, exits 0
 - LLM unreachable: writes raw extracted content as fallback, exits 0
 - Model not configured: exits with error (run `mesh model use` first)
+
+## PR Review Agent
+
+`mesh pr-review` runs AI-powered code reviews using Claude Code with full repository context.
+
+### Quick Start
+
+```bash
+# Review a PR (from any directory)
+mesh pr-review https://github.com/org/repo/pull/123
+
+# Auto-fix mode (apply fixes and push)
+mesh pr-review https://github.com/org/repo/pull/123 --auto-fix
+
+# Dry run (see what would be posted)
+mesh pr-review https://github.com/org/repo/pull/123 --dry-run --verbose
+```
+
+### Prerequisites
+
+1. **Claude Code CLI** - Must be installed and authenticated
+2. **GitHub CLI (`gh`)** - For GitHub API authentication
+   ```bash
+   gh auth login
+   ```
+3. **Atlassian MCP Plugin** - For JIRA ticket lookups (optional)
+   - Run `claude` in your terminal
+   - Activate the Atlassian plugin
+   - Complete the OAuth flow
+
+### Documentation
+
+- Full documentation: `agents/pr-review/README.md`
+- Implementation notes: `agents/pr-review/NOTES.md`
+- Unit tests: `agents/pr-review/tests/`
+
+### Exit Codes
+
+| Code | Meaning |
+|------|----------|
+| `0` | Review completed successfully |
+| `1` | General error |
+| `2` | GitHub API error |
+| `3` | Atlassian MCP auth not available |
+| `4` | Claude Code subprocess failed |
+| `5` | Git error |

@@ -20,13 +20,15 @@ fi
 case "$cmd" in
   model|model_use)       shift; exec "$SCRIPTS_DIR/model" "$@" ;;
   dream)                 shift; exec "$SCRIPTS_DIR/dream" "$@" ;;
+  pr-review)             shift; exec "$SCRIPTS_DIR/pr-review" "$@" ;;
+  pr-review-plugin)       shift; exec "$SCRIPTS_DIR/pr-review-plugin" "$@" ;;
   test)                  shift; exec "$SCRIPTS_DIR/../test/run-all" "$@" ;;
   help|--help|-h)        echo "Usage: mesh <command> [args]" >&2
-                         echo "Commands: model | dream | bootstrap-memory | test" >&2
+                         echo "Commands: model | dream | pr-review | pr-review-plugin | test" >&2
                          exit 0 ;;
   *)
     echo "ERROR: unknown command '$cmd'" >&2
-    echo "Commands: model | dream | test" >&2
+    echo "Commands: model | dream | pr-review | test" >&2
     exit 1
     ;;
 esac

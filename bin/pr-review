@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# alpha-mesh/bin/pr-review
+# Entry point for the pr-review agent.
+# Usage: pr-review <pr-url> [options]
+#   or: mesh pr-review <pr-url> [options]
+#
+# The PR URL is the first argument; remaining arguments are passed through.
+# Target repo is inferred from --repo-path or the current working directory.
+
+set -euo pipefail
+
+# Resolve actual script path (handles symlinks)
+SCRIPT_REALPATH="$(readlink -f "${BASH_SOURCE[0]}")"
+MESH_DIR="$(cd "$(dirname "$SCRIPT_REALPATH")/.." && pwd)"
+AGENT_DIR="$MESH_DIR/agents/pr-review"
+
+# Determine repo path: use --repo-path from args or current directory
+REPO_PATH=""
+for ((i=1; i<=$#; i++)); do
+    arg="${!i}"
+    if [[ "$arg" == "--repo-path" ]] && [[ $((i+1)) -le $# ]]; then
+        j=$((i+1))
+        REPO_PATH="${!j}"
+        break
+    fi
+done
+
+if [[ -z "$REPO_PATH" ]]; then
+    REPO_PATH="$PWD"
+fi
+
+export REPO_PATH
+
+cd "$AGENT_DIR"
+
+# Pass repo path as --repo-path to the Python script
+exec uv run python -m pr_review --repo-path "$REPO_PATH" "$@"
