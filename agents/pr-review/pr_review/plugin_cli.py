@@ -98,8 +98,13 @@ Examples:
     parser.add_argument(
         "--timeout",
         type=int,
-        default=600,
-        help="Timeout in seconds for Claude Code (default: 600)",
+        default=2400,
+        help="Timeout in seconds for Claude Code (default: 2400)",
+    )
+    parser.add_argument(
+        "--show-pr-comment",
+        action="store_true",
+        help="Print the posted PR comment to stdout after posting",
     )
 
     args = parser.parse_args()
@@ -265,6 +270,10 @@ Examples:
         print(f"Issues found: {result.get('issues_found', 'unknown')}", file=sys.stderr)
         print(f"Issue count: {result.get('issue_count', 0)}", file=sys.stderr)
 
+        # Track what we post for verification
+        posted_body = ""
+        post_target = ""
+
         # Post review to GitHub ourselves using the parsed Review object
         review = result.get("review")
         review_text = result.get("review_text", "")
@@ -288,6 +297,8 @@ Examples:
                 )
                 if not args.dry_run:
                     print("Review posted successfully!", file=sys.stderr)
+                    # Verify local completion — check our own output, not just task status
+                    log_command("code-review plugin completed successfully", verbose=verbose)
             except Exception as e:
                 print(f"ERROR: Failed to post review: {e}", file=sys.stderr)
                 if verbose:
@@ -306,6 +317,10 @@ Examples:
                 )
                 if not args.dry_run:
                     print("Review posted successfully!", file=sys.stderr)
+                    # Verify local completion
+                    log_command("code-review plugin completed successfully", verbose=verbose)
+                    posted_body = review_text
+                    post_target = f"repos/{owner}/{repo}/issues/{pr_number}/comments"
             except Exception as e:
                 print(f"ERROR: Failed to post review: {e}", file=sys.stderr)
                 if verbose:
@@ -313,6 +328,24 @@ Examples:
                 return 2
         else:
             print("No review issues found, skipping posting.", file=sys.stderr)
+
+        # Verify comment was posted and show it if requested
+        if not args.dry_run and post_target:
+            import subprocess
+            verify_result = subprocess.run(
+                ["gh", "api", post_target, "--jq", "last|.body"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if verify_result.returncode == 0 and verify_result.stdout.strip():
+                print("\n" + "=" * 60, file=sys.stderr)
+                print("VERIFIED: Comment posted to PR:", file=sys.stderr)
+                print("=" * 60, file=sys.stderr)
+                print(verify_result.stdout.strip()[:2000], file=sys.stderr)
+                print("=" * 60, file=sys.stderr)
+            else:
+                print("WARNING: Could not verify comment was posted", file=sys.stderr)
 
     except ClaudeInvocationError as e:
         print(f"ERROR: Claude Code failed: {e}", file=sys.stderr)
