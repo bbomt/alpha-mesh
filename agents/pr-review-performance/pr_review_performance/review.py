@@ -115,9 +115,11 @@ Examples:
         return 1
 
     pr_desc = ""
-    github_token = __import__("os").environ.get(config.github_token_env_var, "")
     if args.pr_url:
-        pr_desc = get_pr_description(args.pr_url, github_token)
+        import subprocess as _subprocess
+        _result = _subprocess.run(["gh", "auth", "token"], capture_output=True, text=True)
+        _token = _result.stdout.strip() if _result.returncode == 0 else ""
+        pr_desc = get_pr_description(args.pr_url, _token)
         if pr_desc:
             print("Fetched PR description.", flush=True)
 

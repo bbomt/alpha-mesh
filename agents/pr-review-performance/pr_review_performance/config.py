@@ -38,7 +38,8 @@ class Config:
     exclusions: list[str] = field(default_factory=list)
     output_file: str = "review_output.md"
     github_repo: str = ""
-    github_token_env_var: str = "CODE_REVIEW_GITHUB_TOKEN"
+
+    # Runtime
     repo_root: str = ""
 
     @property
@@ -90,7 +91,6 @@ def load_config(args) -> Config:
     github_repo = github_section.get("repo", "")
     output_file = output_section.get("file", "review_output.md")
     overview_model = models_section.get("overview_model", "")
-    github_token_env_var = github_section.get("token_env_var", "CODE_REVIEW_GITHUB_TOKEN")
 
     repo_root = args.repo_path or os.getcwd()
 
@@ -105,6 +105,5 @@ def load_config(args) -> Config:
         exclusions=exclusions,
         output_file=output_file,
         github_repo=github_repo,
-        github_token_env_var=github_token_env_var,
         repo_root=repo_root,
     )

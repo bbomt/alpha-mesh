@@ -1,10 +1,22 @@
 """Post a comment to a GitHub PR via REST API using httpx."""
 
-import os
+import subprocess
 
 import httpx
 
 from pr_review_performance.git import parse_pr_url
+
+
+def _get_github_token() -> str | None:
+    """Get GitHub token: gh auth token > GITHUB_TOKEN env var."""
+    result = subprocess.run(
+        ["gh", "auth", "token"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0 and result.stdout.strip():
+        return result.stdout.strip()
+    return None
 
 
 def post_comment(body: str, pr_url: str, config) -> None:
@@ -12,9 +24,9 @@ def post_comment(body: str, pr_url: str, config) -> None:
 
     Silently continues on failure (never raises).
     """
-    github_token = os.environ.get(config.github_token_env_var, "")
+    github_token = _get_github_token()
     if not github_token:
-        print("WARNING: GitHub token not available, skipping PR comment.", flush=True)
+        print("WARNING: GitHub token not available ( gh auth token | GITHUB_TOKEN ), skipping PR comment.", flush=True)
         return
 
     try:
