@@ -39,7 +39,12 @@ def run_claude_code_review(
     # Build the command.
     # Use --print for headless mode (non-interactive output).
     # Use --output-format json for structured output (clean, parseable).
-    cmd = [shutil.which("claude") or "/home/ec2-user/.local/bin/claude", "--print", "--output-format", "json"]
+    claude_path = shutil.which("claude")
+    if not claude_path:
+        claude_path = "/home/ec2-user/.local/bin/claude"
+        if not os.path.exists(claude_path):
+            raise ClaudeRunnerError(f"Claude CLI not found at {claude_path} and not on PATH")
+    cmd = [claude_path, "--print", "--output-format", "json"]
 
     if verbose:
         print(f"Running Claude Code: {' '.join(cmd)}", file=sys.stderr)

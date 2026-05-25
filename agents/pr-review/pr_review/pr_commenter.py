@@ -309,16 +309,17 @@ def post_review(
         return combined
 
     GITHUB_REVIEW_BODY_LIMIT = 65536
-    if len(combined) > GITHUB_REVIEW_BODY_LIMIT:
-        print(f"WARNING: Review body ({len(combined)} chars) exceeds GitHub limit, truncating.", file=sys.stderr)
-        combined = combined[:GITHUB_REVIEW_BODY_LIMIT]
+    body_to_post = combined
+    if len(body_to_post) > GITHUB_REVIEW_BODY_LIMIT:
+        print(f"WARNING: Review body ({len(body_to_post)} chars) exceeds GitHub limit, truncating.", file=sys.stderr)
+        body_to_post = body_to_post[:GITHUB_REVIEW_BODY_LIMIT]
 
     github.create_pr_review(
         owner=owner,
         repo=repo,
         pr_number=pr_number,
         commit_sha=commit_sha,
-        body=combined,
+        body=body_to_post,
         comments=[],  # All comments are in the combined body markdown
     )
 

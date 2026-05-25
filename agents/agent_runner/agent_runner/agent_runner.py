@@ -80,7 +80,11 @@ def run_claude_headless(
     Raises:
         ClaudeInvocationError on failure
     """
-    claude_path = shutil.which("claude") or "/home/ec2-user/.local/bin/claude"
+    claude_path = shutil.which("claude")
+    if not claude_path:
+        claude_path = "/home/ec2-user/.local/bin/claude"
+        if not os.path.exists(claude_path):
+            raise ClaudeInvocationError(f"Claude CLI not found at {claude_path} and not on PATH")
     cmd = [claude_path, "--print"]
 
     if verbose:
