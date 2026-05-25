@@ -161,7 +161,6 @@ Examples:
         base_branch = pr_data.get("baseRefName", "")
         state = pr_data.get("state", "")
 
-        # Get head commit SHA via gh api (gh pr view --json doesn't expose head.sha)
         print(f"PR Title: {pr_title}", file=sys.stderr)
 
     except Exception as e:

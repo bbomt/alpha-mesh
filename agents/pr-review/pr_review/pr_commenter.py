@@ -104,15 +104,16 @@ def parse_diff_positions(diff: str) -> dict[tuple[str, int], int]:
 
                 # Track lines added (those starting with '+' but not '+++')
                 if l.startswith('+') and not l.startswith('+++'):
-                    if file_start_line in file_line_map:
-                        print(f"WARNING: file_line_map collision at {file_start_line} in {current_file} — keeping first occurrence", file=sys.stderr)
-                    else:
-                        file_line_map[file_start_line] = diff_position
-                    file_start_line += 1
+                    if file_start_line is not None:
+                        if file_start_line in file_line_map:
+                            print(f"WARNING: file_line_map collision at {file_start_line} in {current_file} — keeping first occurrence", file=sys.stderr)
+                        else:
+                            file_line_map[file_start_line] = diff_position
+                        file_start_line += 1
                 elif l.startswith('-'):
                     # Deleted lines - don't increment file line
                     pass
-                elif not l.startswith('\\'):
+                elif not l.startswith('\\') and file_start_line is not None:
                     # Context or nothing (blank lines, etc) - increment file line
                     file_start_line += 1
 
@@ -317,13 +318,18 @@ def post_review(
         print("=" * 60, file=sys.stderr)
         return combined
 
-    github.create_pr_review(
-        owner=owner,
-        repo=repo,
-        pr_number=pr_number,
-        commit_sha=commit_sha,
-        body=combined,
-        comments=[],  # All comments are in the combined body markdown
-    )
+    try:
+        github.create_pr_review(
+            owner=owner,
+            repo=repo,
+            pr_number=pr_number,
+            commit_sha=commit_sha,
+            body=combined,
+            comments=[],  # All comments are in the combined body markdown
+        )
+    except Exception:
+        # Fallback: post combined body as a PR issue comment if review post fails
+        print(f"WARNING: create_pr_review failed, falling back to post_pr_comment", file=sys.stderr)
+        github.post_pr_comment(owner=owner, repo=repo, pr_number=pr_number, body=combined)
 
     return combined
