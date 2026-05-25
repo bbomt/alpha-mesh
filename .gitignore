@@ -21,3 +21,7 @@ uv.lock
 .DS_Store
 *.swp
 .env
+
+# Claude Code and alpha-mesh runtime dirs
+.claude/
+.mesh/
