@@ -66,6 +66,11 @@ cd "$AGENT_DIR"
 
 # Pass through all args; Python handles session extraction, repo processing,
 # cross-repo memory, and dry-run formatting.
+# Uses the dream module's main() which includes:
+# - extract_learnings (normalizes session content)
+# - validate_routing (auto-corrects mis-tagged GLOBAL lines)
+# - check_conflicts (warns on contradictory entries)
+# - stale-file warnings (alerts if sessions <5 min old)
 exec uv run python -m dream \
   --projects-dir "$CLAUDE_PROJECTS" \
   --model "$DREAM_MODEL" \
