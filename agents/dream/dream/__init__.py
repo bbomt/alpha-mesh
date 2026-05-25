@@ -1192,7 +1192,7 @@ def main():
                     continue
         if stale_files:
             print(f"  WARNING: Some session files are >5 min old — recent messages might be missing.", file=sys.stderr)
-            print(f"  For best results, exit Claude Code (to flush) then run mesh dream.", file=sys.stderr)
+            print(f"  ACTION: Close Claude Code completely, then run 'mesh dream' to ensure all messages are flushed to disk.", file=sys.stderr)
             break
 
     # Print user messages to console before sending to LLM
