@@ -389,6 +389,11 @@ def extract_sessions_from_jsonl(
                     if real_repo != real_target:
                         continue
 
+                # Skip Claude Code subagent sessions - they contain system-generated verification messages
+                session_name = os.path.basename(root)
+                if session_name == "subagents":
+                    continue
+
                 repo_data[repo_path]["file_count"] += 1
 
                 if messages:
