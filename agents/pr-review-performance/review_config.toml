@@ -1,0 +1,26 @@
+[models]
+overview_model = ""
+
+[limits]
+max_tool_calls = 10
+max_file_lines = 8000
+
+[exclusions]
+patterns = [
+    "package-lock.json",
+    "yarn.lock",
+    "pnpm-lock.yaml",
+    "*/dist/*",
+    "*/build/*",
+    "*/node_modules/*",
+    "*.min.js",
+    "*.min.css",
+    "*.lock",
+]
+
+[github]
+token_env_var = "CODE_REVIEW_GITHUB_TOKEN"
+repo = ""
+
+[output]
+file = "review_output.md"
