@@ -1,5 +1,6 @@
 """Generic agent runner for Claude + plugin agents."""
 
+import shutil
 import subprocess
 import os
 import tempfile
@@ -79,7 +80,8 @@ def run_claude_headless(
     Raises:
         ClaudeInvocationError on failure
     """
-    cmd = ["/home/ec2-user/.local/bin/claude", "--print"]
+    claude_path = shutil.which("claude") or "/home/ec2-user/.local/bin/claude"
+    cmd = [claude_path, "--print"]
 
     if verbose:
         print(f"Running Claude: {' '.join(cmd)}", file=sys.stderr)
@@ -120,7 +122,10 @@ def run_claude_headless(
     except subprocess.TimeoutExpired:
         raise ClaudeInvocationError(f"Claude timed out after {timeout}s")
     except FileNotFoundError:
-        raise ClaudeInvocationError("Claude CLI not found at /home/ec2-user/.local/bin/claude")
+        raise ClaudeInvocationError(
+            "Claude CLI not found. Ensure 'claude' is installed and on your PATH, "
+            "or that /home/ec2-user/.local/bin/claude exists."
+        )
 
 
 def log_agent_run(agent_name: str, prompt: str, output: str = "", error: str = "") -> None:
@@ -134,8 +139,8 @@ def log_agent_run(agent_name: str, prompt: str, output: str = "", error: str = "
                 f.write(f"OUTPUT:\n{output[:1000]}...\n")
             if error:
                 f.write(f"ERROR:\n{error}\n")
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Warning: failed to write agent run log: {e}", file=sys.stderr)
 
 
 class PluginHandler(ABC):
