@@ -9,6 +9,26 @@ from agent_runner.types import JiraTicket, GitHubData
 from agent_runner.agent_runner import AgentContext, ClaudeInvocationError, run_claude_headless, log_agent_run
 
 
+def _extract_balanced_json_array(output: str) -> Optional[str]:
+    """Extract JSON array by counting brackets from the first '[' to its matching ']'.
+
+    This avoids greedy regex matching through to the last ']' in the output,
+    which would corrupt the JSON if any ']' appears in string field values.
+    """
+    start = output.find("[")
+    if start == -1:
+        return None
+    depth = 0
+    for i, c in enumerate(output[start:], start):
+        if c == "[":
+            depth += 1
+        elif c == "]":
+            depth -= 1
+            if depth == 0:
+                return output[start : i + 1]
+    return None
+
+
 class ContextGatherer(ABC):
     """Abstract base class for context gatherers."""
 
@@ -63,12 +83,11 @@ Format your response as:
 
             # Parse JSON response
             import json
-            import re
 
-            # Try to extract JSON array from output (greedy; brackets in string fields are rare)
-            json_match = re.search(r'\[.*\]', output, re.DOTALL)
-            if json_match:
-                tickets_data = json.loads(json_match.group(0))
+            # Try to extract JSON array using balanced bracket counting
+            json_str = _extract_balanced_json_array(output)
+            if json_str:
+                tickets_data = json.loads(json_str)
                 tickets = []
                 for t in tickets_data:
                     tickets.append(JiraTicket(

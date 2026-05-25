@@ -162,14 +162,6 @@ Examples:
         state = pr_data.get("state", "")
 
         # Get head commit SHA via gh api (gh pr view --json doesn't expose head.sha)
-        sha_result = subprocess.run(
-            ["gh", "api", f"repos/{owner}/{repo}/pulls/{pr_number}", "--jq", ".head.sha"],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        head_sha = sha_result.stdout.strip() if sha_result.returncode == 0 else ""
-
         print(f"PR Title: {pr_title}", file=sys.stderr)
 
     except Exception as e:
