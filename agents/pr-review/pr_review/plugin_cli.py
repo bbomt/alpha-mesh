@@ -28,7 +28,7 @@ from pr_review.git_utils import (
     GitError,
 )
 from pr_review.github_client import parse_pr_url
-from pr_review.pr_commenter import post_review, format_combined_review
+from pr_review.pr_commenter import post_review
 from pr_review.github_client import GitHubClient
 
 
@@ -282,9 +282,13 @@ Examples:
         print(f"Issues found: {result.get('issues_found', 'unknown')}", file=sys.stderr)
         print(f"Issue count: {result.get('issue_count', 0)}", file=sys.stderr)
 
+        # Fetch diff for inline comment placement (only needed when we have a structured review)
+        diff = get_diff(owner, repo, pr_number) if result.get("review") else ""
+
         # Track what we post for verification
         posted_body = ""
         post_target = ""
+        combined = ""
 
         # Post review to GitHub ourselves using the parsed Review object
         review = result.get("review")
@@ -297,7 +301,7 @@ Examples:
             try:
                 # Build pr dict with head.sha for post_review
                 pr_with_sha = {**pr_data, "head": {"sha": head_sha}}
-                post_review(
+                combined = post_review(
                     github=github,
                     owner=owner,
                     repo=repo,
@@ -309,9 +313,6 @@ Examples:
                 )
                 if not args.dry_run:
                     print("Review posted successfully!", file=sys.stderr)
-                    if args.show_pr_comment:
-                        combined = format_combined_review(review, line_comments, file_level_comments, summary)
-                        print(combined)
                     log_command("code-review plugin completed successfully", verbose=verbose)
                     post_target = f"repos/{owner}/{repo}/pulls/{pr_number}/reviews"
             except Exception as e:
@@ -332,9 +333,6 @@ Examples:
                 )
                 if not args.dry_run:
                     print("Review posted successfully!", file=sys.stderr)
-                    if args.show_pr_comment:
-                        print(review_text)
-                    # Verify local completion
                     log_command("code-review plugin completed successfully", verbose=verbose)
                     posted_body = review_text
                     post_target = f"repos/{owner}/{repo}/issues/{pr_number}/comments"
@@ -345,6 +343,12 @@ Examples:
                 return 2
         else:
             print("No review issues found, skipping posting.", file=sys.stderr)
+
+        # Show full comment if --show-pr-comment
+        if args.show_pr_comment and combined:
+            print(combined)
+        elif args.show_pr_comment and review_text:
+            print(review_text)
 
         # Verify comment was posted and show it if requested
         if not args.dry_run and post_target:

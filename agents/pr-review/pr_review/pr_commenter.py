@@ -254,7 +254,11 @@ def post_review(
     review: Review,
     dry_run: bool = False,
     diff: str = "",
-) -> None:
+) -> str:
+    """Post the review to GitHub PR.
+
+    Returns the combined comment body string (for --show-pr-comment).
+    """
     """Post the review to GitHub PR.
 
     Args:
@@ -313,3 +317,5 @@ def post_review(
         body=combined,
         comments=[],  # All comments are in the combined body markdown
     )
+
+    return combined
