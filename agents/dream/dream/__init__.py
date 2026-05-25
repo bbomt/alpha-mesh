@@ -5,7 +5,7 @@ This module provides the internal Python implementation for the dream feature.
 The bin/dream shell script acts as a thin wrapper, calling into this module.
 
 Usage (from bin/dream):
-    python3 -m dream_core [command] [options]
+    python3 -m dream [command] [options]
 """
 
 import sys
@@ -1129,7 +1129,7 @@ _Last updated: {date}_
 
 
 def main():
-    """Main entry point for dream_core module - unified CLI."""
+    """Main entry point for dream module - unified CLI."""
     import argparse
 
     parser = argparse.ArgumentParser(

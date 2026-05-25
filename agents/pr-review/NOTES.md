@@ -57,7 +57,7 @@ The code in `claude_runner.py` parses this JSON and extracts the `result` field.
 
 ## Implementation Decisions
 
-1. **Package structure:** Follows `dream_core` pattern with `__init__.py` and `__main__.py`
+1. **Package structure:** Follows `dream` pattern with `__init__.py` and `__main__.py`
 2. **Build system:** Uses `hatchling` (per Jira ticket example)
 3. **CLI framework:** Uses `click` (per Jira ticket dependencies)
 4. **No `.env` for this agent:** Unlike `dream`, this agent doesn't need API tokens stored in `.env` - it uses `gh` CLI for GitHub and Claude Code's own auth for Atlassian
