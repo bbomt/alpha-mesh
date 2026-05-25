@@ -276,6 +276,16 @@ def post_review(
     line_comments, file_level_comments = format_inline_comments(review, commit_sha, diff)
     summary = format_summary_comment(review, file_level_comments)
 
+    # Build combined comment body for both dry_run and real paths
+    all_lines = []
+    if summary:
+        all_lines.append(summary)
+    for comment in line_comments:
+        all_lines.append(f"- **[{comment['path']}:{comment['position']}]:** {comment['body']}")
+    for comment in file_level_comments:
+        all_lines.append(f"- **{comment['path']} (file-level):** {comment['body']}")
+    combined = "\n".join(all_lines)
+
     if dry_run:
         print("=" * 60, file=None)
         print("DRY RUN - Would post the following review:", file=None)
@@ -293,20 +303,7 @@ def post_review(
                 snippet = body.split(":**", 1)[0] if ":**" in body else body[:80]
                 print(f"  [{comment.get('path')}:file-level] {snippet}", file=None)
         print("=" * 60, file=None)
-        return
-
-    # Post all comments as ONE aggregated PR comment
-    all_lines = []
-    if summary:
-        all_lines.append(summary)
-
-    for comment in line_comments:
-        all_lines.append(f"- **[{comment['path']}:{comment['position']}]:** {comment['body']}")
-
-    for comment in file_level_comments:
-        all_lines.append(f"- **{comment['path']} (file-level):** {comment['body']}")
-
-    combined = "\n".join(all_lines)
+        return combined
 
     github.create_pr_review(
         owner=owner,
