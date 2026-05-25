@@ -58,6 +58,9 @@ def is_real_user_message(text: str) -> bool:
         "This session is being continued from a previous conversation",
         "Summary:",
         "Primary Request and Intent:",
+        "Review target:",
+        "medium effort",
+        "3 angles × 6 candidates",
     )
     for pattern in system_patterns:
         idx = text.find(pattern)
