@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# alpha-mesh/agents/dream/dream/bin/dream
+# Entry point for the dream agent.
+# Usage: dream [options]
+#   or: mesh dream [options]
+
+set -euo pipefail
+
+# Resolve actual script path (handles symlinks in ~/bin/)
+SCRIPT_REALPATH="$(readlink -f "${BASH_SOURCE[0]}")"
+AGENT_DIR="$(cd "$(dirname "$SCRIPT_REALPATH")/.." && pwd)"
+MESH_DIR="$(cd "$AGENT_DIR/../../.." && pwd)"
+ENV_FILE="$MESH_DIR/.env"
+CLAUDE_PROJECTS="$HOME/.claude/projects"
+
+# Load .env if it exists (sets DREAM_MODEL, DREAM_TOKEN, DREAM_URL)
+if [[ -f "$ENV_FILE" ]]; then
+  set -a
+  source "$ENV_FILE"
+  set +a
+fi
+
+# Check for --dry-run first - it doesn't need env vars
+if [[ "$*" == *"--dry-run"* ]]; then
+  DATE=$(date +%Y-%m-%d)
+  echo "=== PMAT Dream: $DATE ==="
+  echo "Window: today (since $(date +%Y-%m-%d))"
+  echo ""
+  cd "$AGENT_DIR"
+  exec uv run python -m dream --dry-run --projects-dir "$CLAUDE_PROJECTS" "$@"
+fi
+
+# Validate required env vars are present (needed for actual runs)
+if [[ -z "${DREAM_MODEL:-}" ]]; then
+  echo "ERROR: DREAM_MODEL is not set in .env"
+  echo "Add DREAM_MODEL to $ENV_FILE (e.g., DREAM_MODEL=MiniMax-M2.7)"
+  exit 1
+fi
+
+if [[ -z "${DREAM_TOKEN:-}" ]]; then
+  echo "ERROR: DREAM_TOKEN is not set in .env"
+  echo "Add DREAM_TOKEN to $ENV_FILE"
+  exit 1
+fi
+
+if [[ -z "${DREAM_URL:-}" ]]; then
+  echo "ERROR: DREAM_URL is not set in .env"
+  echo "Add DREAM_URL to $ENV_FILE (e.g., DREAM_URL=https://api.minimax.io/v1)"
+  exit 1
+fi
+
+# ─── Header ──────────────────────────────────────────────────────────────────
+DATE=$(date +%Y-%m-%d)
+
+# Determine window label for header
+if [[ "${1:-}" == "--days" ]] && [[ "${2:-}" =~ ^[0-9]+$ ]]; then
+  DAYS_BACK="${2}"
+  if date -u -d "$DAYS_BACK days ago" +%Y-%m-%d &>/dev/null; then
+    CUTOFF=$(date -u -d "$DAYS_BACK days ago" +%Y-%m-%d)
+  else
+    CUTOFF=$(date -u -v-${DAYS_BACK}d +%Y-%m-%d)
+  fi
+  WINDOW_LABEL="last $DAYS_BACK days"
+else
+  CUTOFF=$(date +%Y-%m-%d)
+  WINDOW_LABEL="today"
+fi
+
+echo "=== PMAT Dream: $DATE ==="
+echo "Window: $WINDOW_LABEL (since $CUTOFF)"
+echo ""
+
+# ─── Call Python CLI ──────────────────────────────────────────────────────────
+# cd to agent directory so uv can find the pyproject.toml and module
+cd "$AGENT_DIR"
+
+# Pass through all args; Python handles session extraction, repo processing,
+# cross-repo memory, and dry-run formatting.
+# Uses the dream module's main() which includes:
+# - extract_learnings (normalizes session content)
+# - validate_routing (auto-corrects mis-tagged GLOBAL lines)
+# - check_conflicts (warns on contradictory entries)
+# - stale-file warnings (alerts if sessions <5 min old)
+exec uv run python -m dream \
+  --projects-dir "$CLAUDE_PROJECTS" \
+  --model "$DREAM_MODEL" \
+  --token "$DREAM_TOKEN" \
+  --base-url "$DREAM_URL" \
+  "$@"

@@ -9,15 +9,18 @@ alpha-mesh/
 ├── bin/                     # Executable scripts (symlinked to ~/bin)
 │   ├── mesh                 # Unified CLI entry point (wraps all commands)
 │   ├── model                # Switch/check model config
-│   ├── dream                # End-of-session memory consolidation (dream)
+│   ├── dream                # End-of-session memory consolidation (delegates to agents/dream/)
 │   ├── bootstrap-memory     # One-time: extract from existing Claude Code logs
 │   ├── install              # One-time setup
 │   └── lib/repo             # Shared bash functions: find_repo_root, get_active_model
-├── dream_core/              # Python package (uv project at project root)
-│   ├── __init__.py          # All dream logic: session extraction, LLM calls, memory synthesis
-│   └── __main__.py          # Entry point for: python3 -m dream_core
-├── tests/
-│   └── test_dream_core.py   # Python tests for dream_core module
+├── agents/
+│   └── dream/               # Dream agent (mirrors pr-review pattern)
+│       ├── dream/           # Python package
+│       │   ├── __init__.py  # All dream logic: session extraction, LLM calls, memory synthesis
+│       │   ├── __main__.py  # Entry point for: python3 -m dream
+│       │   └── bin/dream    # Shell entry point
+│       └── tests/
+│           └── test_dream_core.py  # Python tests for dream module
 ├── config/
 │   └── models.json          # All model profiles
 ├── memory/

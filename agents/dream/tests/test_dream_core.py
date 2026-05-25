@@ -1,5 +1,5 @@
 """
-Tests for dream_core module.
+Tests for dream module.
 Tests the Python implementation of the dream feature.
 """
 
@@ -15,7 +15,7 @@ import pytest
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from dream_core import (
+from dream import (
     extract_sessions_from_jsonl,
     extract_response_text,
     extract_learnings,
@@ -466,7 +466,7 @@ class TestExtractSessionsFromJsonl:
 class TestSynthesizeMemory:
     """Tests for synthesize_memory function."""
 
-    @patch('dream_core.call_llm')
+    @patch('dream.call_llm')
     def test_synthesize_returns_memory(self, mock_call_llm):
         """Test that synthesize_memory returns updated memory."""
         mock_call_llm.return_value = json.dumps({
@@ -485,7 +485,7 @@ class TestSynthesizeMemory:
 
         assert result is not None
         assert "MEMORY.md" in result
-    @patch('dream_core.call_llm')
+    @patch('dream.call_llm')
     def test_returns_none_on_llm_failure(self, mock_call_llm):
         """Test that None is returned when LLM call fails."""
         mock_call_llm.return_value = None
@@ -507,7 +507,7 @@ class TestConstants:
 
     def test_layer_headers_defined(self):
         """Test that section header constants are defined."""
-        from dream_core import LAYER1_HEADER, LAYER2_HEADER, LAYER3_HEADER, CONFLICTS_HEADER
+        from dream import LAYER1_HEADER, LAYER2_HEADER, LAYER3_HEADER, CONFLICTS_HEADER
         assert LAYER1_HEADER == "## Identity"
         assert LAYER2_HEADER == "## Current State"
         assert LAYER3_HEADER == "## Recent Signals"
@@ -515,7 +515,7 @@ class TestConstants:
 
     def test_routing_tags_defined(self):
         """Test that routing tag constants are defined."""
-        from dream_core import REPO_LOCAL_TAG, GLOBAL_TAG
+        from dream import REPO_LOCAL_TAG, GLOBAL_TAG
         assert REPO_LOCAL_TAG == "[REPO-LOCAL]"
         assert GLOBAL_TAG == "[GLOBAL]"
 

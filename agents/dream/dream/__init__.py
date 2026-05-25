@@ -5,7 +5,7 @@ This module provides the internal Python implementation for the dream feature.
 The bin/dream shell script acts as a thin wrapper, calling into this module.
 
 Usage (from bin/dream):
-    python3 -m dream_core [command] [options]
+    python3 -m dream [command] [options]
 """
 
 import sys
@@ -58,6 +58,9 @@ def is_real_user_message(text: str) -> bool:
         "This session is being continued from a previous conversation",
         "Summary:",
         "Primary Request and Intent:",
+        "Review target:",
+        "medium effort",
+        "3 angles × 6 candidates",
     )
     for pattern in system_patterns:
         idx = text.find(pattern)
@@ -388,6 +391,11 @@ def extract_sessions_from_jsonl(
                     # Only include the exact target repo (no child repos)
                     if real_repo != real_target:
                         continue
+
+                # Skip Claude Code subagent sessions - they contain system-generated verification messages
+                session_name = os.path.basename(root)
+                if session_name == "subagents":
+                    continue
 
                 repo_data[repo_path]["file_count"] += 1
 
@@ -1129,7 +1137,7 @@ _Last updated: {date}_
 
 
 def main():
-    """Main entry point for dream_core module - unified CLI."""
+    """Main entry point for dream module - unified CLI."""
     import argparse
 
     parser = argparse.ArgumentParser(
@@ -1192,7 +1200,7 @@ def main():
                     continue
         if stale_files:
             print(f"  WARNING: Some session files are >5 min old — recent messages might be missing.", file=sys.stderr)
-            print(f"  For best results, exit Claude Code (to flush) then run mesh dream.", file=sys.stderr)
+            print(f"  ACTION: Close Claude Code completely, then run 'mesh dream' to ensure all messages are flushed to disk.", file=sys.stderr)
             break
 
     # Print user messages to console before sending to LLM
