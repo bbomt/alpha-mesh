@@ -26,7 +26,7 @@ fi
 # ─── test: dream --dry-run runs without error ──────────────────────────────────
 echo "[2/10] dream --dry-run runs without error..."
 dry_output=$(dream --dry-run 2>&1 || true)
-if echo "$dry_output" | grep -q "DRY RUN COMPLETE\|nothing to process\|no session\|ERROR: DREAM_MODEL is not set"; then
+if echo "$dry_output" | grep -q "DRY RUN COMPLETE\|nothing to process\|no session"; then
   echo "  PASS: --dry-run succeeded"
 else
   echo "  FAIL: --dry-run did not show expected output"

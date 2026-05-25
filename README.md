@@ -18,7 +18,6 @@ alpha-mesh/
 │       ├── dream/           # Python package
 │       │   ├── __init__.py  # All dream logic: session extraction, LLM calls, memory synthesis
 │       │   ├── __main__.py  # Entry point for: python3 -m dream
-│       │   ├── dream_cli.py # CLI entry point (mirrors plugin_cli.py)
 │       │   └── bin/dream    # Shell entry point
 │       └── tests/
 │           └── test_dream_core.py  # Python tests for dream module

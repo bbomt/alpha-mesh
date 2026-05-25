@@ -20,7 +20,17 @@ if [[ -f "$ENV_FILE" ]]; then
   set +a
 fi
 
-# Validate required env vars are present
+# Check for --dry-run first - it doesn't need env vars
+if [[ "$*" == *"--dry-run"* ]]; then
+  DATE=$(date +%Y-%m-%d)
+  echo "=== PMAT Dream: $DATE ==="
+  echo "Window: today (since $(date +%Y-%m-%d))"
+  echo ""
+  cd "$AGENT_DIR"
+  exec uv run python -m dream --dry-run --projects-dir "$CLAUDE_PROJECTS" "$@"
+fi
+
+# Validate required env vars are present (needed for actual runs)
 if [[ -z "${DREAM_MODEL:-}" ]]; then
   echo "ERROR: DREAM_MODEL is not set in .env"
   echo "Add DREAM_MODEL to $ENV_FILE (e.g., DREAM_MODEL=MiniMax-M2.7)"
