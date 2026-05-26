@@ -4,6 +4,26 @@
 
 set -euo pipefail
 
+# Capture PWD before any cd — used as fallback REPO_PATH
+ORIG_PWD="$(pwd)"
+
+# Parse --repo-path from args (explicit arg overrides default)
+REPO_PATH=""
+for ((i=1; i<=$#; i++)); do
+    arg="${!i}"
+    if [[ "$arg" == "--repo-path" ]] && [[ $((i+1)) -le $# ]]; then
+        j=$((i+1))
+        REPO_PATH="${!j}"
+        break
+    fi
+done
+
+if [[ -z "$REPO_PATH" ]]; then
+    REPO_PATH="$ORIG_PWD"
+fi
+
+export REPO_PATH
+
 SCRIPT_REALPATH="$(readlink -f "${BASH_SOURCE[0]}")"
 AGENT_DIR="$(cd "$(dirname "$SCRIPT_REALPATH")/.." && pwd)"
 MESH_DIR="$(cd "$AGENT_DIR/../../.." && pwd)"
@@ -23,4 +43,4 @@ mkdir -p "$LOG_DIR"
 
 cd "$AGENT_DIR"
 
-exec uv run python -m pr_review_performance "$@" 2>&1 | tee "$LOG_FILE"
+exec uv run python -m pr_review_performance --repo-path "$REPO_PATH" "$@" 2>&1 | tee "$LOG_FILE"
