@@ -24,6 +24,9 @@ Before forming a verdict on any issue, if you need to understand a type, interfa
 base class, imported symbol, or existing pattern that the diff references but does not
 define, call the read_file tool to inspect the relevant file. You may call it multiple
 times for different files. Only call it when it would materially change your verdict.
+When you call read_file, you MUST provide a "reason" argument explaining why you need
+to read this file — e.g. "checking how AuthService is implemented to verify the diff
+does not break the login flow".
 
 Review all issues in the context of the overall PR changes described above.
 
@@ -122,7 +125,8 @@ def run_file_review(chunk, overview: str, config) -> FileReviewResult:
             for tc in response.tool_calls:
                 if tc.name == "read_file":
                     path = tc.arguments.get("path", "")
-                    print(f"  → read_file: {path}", file=sys.stderr, flush=True)
+                    reason = tc.arguments.get("reason", "")
+                    print(f"  → read_file: {path}  (reason: {reason})", file=sys.stderr, flush=True)
                     result = execute_read_file(
                         path,
                         config.repo_root,

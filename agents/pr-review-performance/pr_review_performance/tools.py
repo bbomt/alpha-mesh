@@ -10,7 +10,8 @@ READ_FILE_TOOL_SCHEMA = {
             "Read the full contents of a file in the repository. Use this to understand "
             "types, interfaces, base classes, imported symbols, or existing patterns that the "
             "diff references but does not fully define. Only call this when the file contents "
-            "would materially change your verdict on a specific issue."
+            "would materially change your verdict on a specific issue. "
+            "You must provide a reason for reading the file."
         ),
         "parameters": {
             "type": "object",
@@ -22,8 +23,15 @@ READ_FILE_TOOL_SCHEMA = {
                         "Example: 'src/auth/token.ts'"
                     ),
                 },
+                "reason": {
+                    "type": "string",
+                    "description": (
+                        "Brief reason why you are reading this file — e.g. 'checking how "
+                        "AuthService is implemented to understand if the diff breaks it'."
+                    ),
+                },
             },
-            "required": ["path"],
+            "required": ["path", "reason"],
         },
     },
 }
