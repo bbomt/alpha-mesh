@@ -204,7 +204,7 @@ Examples:
             all_issues = []
             all_summaries = []
             for chunk in chunks:
-                print(f"Stage 2: reviewing {chunk.file_path}...", file=sys.stderr)
+                print(f"[{i+1}/{len(chunks)}] reviewing {chunk.file_path}...", file=sys.stderr)
                 result = run_file_review(chunk, overview, config)
                 all_issues.extend(result.issues)
                 all_summaries.append((chunk.file_path, result.summary))
