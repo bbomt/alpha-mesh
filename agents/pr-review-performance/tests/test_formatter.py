@@ -106,22 +106,3 @@ def test_file_paths_in_backticks():
     report = render_report("overview", issues, [], config)
     assert "`src/auth.py`" in report
     assert "`" in report
-
-
-def test_per_file_summaries_table():
-    summaries = [
-        ("src/main.py", "Adds routing logic."),
-        ("src/auth.py", "Refactors token validation."),
-    ]
-    config = MockConfig()
-    report = render_report("overview", [], summaries, config)
-    assert "## Per-file Summaries" in report
-    assert "| File | Summary |" in report
-    assert "src/main.py" in report
-    assert "Adds routing logic" in report
-
-
-def test_no_summaries_table_when_empty():
-    config = MockConfig()
-    report = render_report("overview", [], [], config)
-    assert "## Per-file Summaries" not in report

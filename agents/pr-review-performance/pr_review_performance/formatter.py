@@ -17,8 +17,8 @@ SEVERITY_LABEL = {
 def render_report(
     overview: str,
     issues: list,
-    summaries: list[tuple[str, str]],
-    config,
+    summaries: list[tuple[str, str]] | None = None,
+    config=None,
     model: str | None = None,
 ) -> str:
     """Build a Markdown review report.
@@ -30,6 +30,9 @@ def render_report(
         config: Config instance
         model: effective model name (for the header)
     """
+    if summaries is None:
+        summaries = []
+
     lines = []
 
     effective_model = model or config.model
@@ -79,11 +82,5 @@ def render_report(
                 if iss.suggestion:
                     lines.append(f"**Fix:** {iss.suggestion}\n")
                 lines.append("---\n")
-
-    if summaries:
-        lines.append("\n## Per-file Summaries\n")
-        lines.append("\n| File | Summary |\n|---|---|\n")
-        for fp, summary in summaries:
-            lines.append(f"| `{fp}` | {summary} |\n")
 
     return "\n".join(lines)
