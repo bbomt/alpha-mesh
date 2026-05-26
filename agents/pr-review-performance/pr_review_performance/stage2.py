@@ -5,6 +5,7 @@ parses JSON response, returns FileReviewResult.
 """
 
 import json as _json
+import sys
 from dataclasses import dataclass, field
 
 from pr_review_performance.llm import chat, ChatResponse, LLMError
@@ -121,6 +122,7 @@ def run_file_review(chunk, overview: str, config) -> FileReviewResult:
             for tc in response.tool_calls:
                 if tc.name == "read_file":
                     path = tc.arguments.get("path", "")
+                    print(f"  → read_file: {path}", file=sys.stderr, flush=True)
                     result = execute_read_file(
                         path,
                         config.repo_root,
