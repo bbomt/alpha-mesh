@@ -5,6 +5,7 @@ mesh pr-review-performance <pr_url> [flags]
 
 import argparse
 import sys
+import time
 
 from pr_review_performance.chunker import build_chunks
 from pr_review_performance.config import load_config
@@ -159,6 +160,7 @@ Examples:
     _verbose_print(config, f"Model: {config.model}")
     _verbose_print(config, f"API URL: {config.api_url}")
 
+    start_time = time.time()
     original_branch = None
     try:
         # Auto-checkout PR branch if not already on it (skip for dry-run)
@@ -233,7 +235,9 @@ Examples:
             print("Posting to PR...", file=sys.stderr)
             post_comment(report, args.pr_url, config)
 
-        print("PR review complete!", file=sys.stderr)
+        elapsed = time.time() - start_time
+        mins, secs = divmod(int(elapsed), 60)
+        print(f"PR review complete! Reviewed {len(chunks)} file(s) in {mins}m {secs}s.", file=sys.stderr)
         return 0
 
     except Exception as e:
