@@ -13,15 +13,15 @@ import httpx
 
 
 def get_diff(owner: str, repo: str, pr_number: int) -> str:
-    """Fetch the unified diff for a PR via GitHub API using gh cli."""
+    """Fetch the unified diff for a PR via gh pr diff."""
     result = subprocess.run(
-        ["gh", "api", f"repos/{owner}/{repo}/pulls/{pr_number}", "--jq", ".diff"],
+        ["gh", "pr", "diff", str(pr_number), "--repo", f"{owner}/{repo}"],
         capture_output=True,
         text=True,
         timeout=60,
     )
     if result.returncode != 0:
-        raise RuntimeError(f"gh api failed: {result.stderr}")
+        raise RuntimeError(f"gh pr diff failed: {result.stderr}")
     return result.stdout
 
 
@@ -44,7 +44,7 @@ def get_pr_info(owner: str, repo: str, pr_number: int) -> dict:
         [
             "gh", "pr", "view", str(pr_number),
             "--repo", f"{owner}/{repo}",
-            "--json", "headRefName,baseRefName,headSha",
+            "--json", "headRefName,baseRefName,headRefOid",
         ],
         capture_output=True,
         text=True,
