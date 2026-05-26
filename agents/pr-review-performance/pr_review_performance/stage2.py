@@ -126,7 +126,8 @@ def run_file_review(chunk, overview: str, config) -> FileReviewResult:
                 if tc.name == "read_file":
                     path = tc.arguments.get("path", "")
                     reason = tc.arguments.get("reason", "")
-                    print(f"  → read_file: {path}  (reason: {reason})", file=sys.stderr, flush=True)
+                    print(f"  → read_file: {path}", file=sys.stderr, flush=True)
+                    print(f"     reason: {reason}", file=sys.stderr, flush=True)
                     result = execute_read_file(
                         path,
                         config.repo_root,
