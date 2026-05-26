@@ -4,9 +4,9 @@ No vendor SDK — makes raw HTTP calls to /v1/chat/completions.
 Works with OpenRouter, Anthropic compat layer, Ollama, OpenAI, etc.
 """
 
+import json
 import time
 from dataclasses import dataclass
-
 
 import httpx
 
@@ -74,6 +74,23 @@ def chat(
             )
             last_error = f"HTTP {response.status_code}: {response.text[:200]}"
 
+            if response.status_code == 404 and tools:
+                # Some providers doesn't support tools. Retry without them.
+                retry_payload = {k: v for k, v in payload.items() if k != "tools"}
+                retry_payload.pop("tool_choice", None)
+                retry_response = httpx.post(
+                    url,
+                    json=retry_payload,
+                    headers=headers,
+                    timeout=120.0,
+                )
+                last_error = f"404 with tools, retry: {retry_response.status_code}"
+                if retry_response.status_code == 200:
+                    data = retry_response.json()
+                    choice = data["choices"][0]
+                    return ChatResponse(content=choice["message"].get("content"), tool_calls=[])
+                raise LLMError(f"API returned 404 with tools, retry also failed: {last_error}")
+
             if response.status_code in TRANSIENT_ERROR_CODES and attempt < RETRIES - 1:
                 sleep_time = BACKOFF[attempt] if attempt < len(BACKOFF) else BACKOFF[-1]
                 time.sleep(sleep_time)
@@ -91,7 +108,6 @@ def chat(
                 for tc in choice.get("message", {}).get("tool_calls", []):
                     func = tc.get("function", {})
                     arguments_str = func.get("arguments", "{}")
-                    import json
                     args = json.loads(arguments_str)
                     tool_calls.append(ToolCall(
                         id=tc["id"],
