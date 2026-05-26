@@ -25,6 +25,41 @@ def get_diff(owner: str, repo: str, pr_number: int) -> str:
     return result.stdout
 
 
+def get_current_branch(repo_root: str) -> str:
+    """Return the current branch name."""
+    result = subprocess.run(
+        ["git", "branch", "--show-current"],
+        capture_output=True,
+        text=True,
+        cwd=repo_root,
+    )
+    return result.stdout.strip()
+
+
+def checkout_branch(repo_root: str, branch: str) -> None:
+    """Checkout a branch. Raises RuntimeError on failure."""
+    result = subprocess.run(
+        ["git", "checkout", branch],
+        capture_output=True,
+        text=True,
+        cwd=repo_root,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"git checkout failed: {result.stderr}")
+
+
+def pull_latest(repo_root: str, branch: str) -> None:
+    """Pull the latest changes for a branch. Raises RuntimeError on failure."""
+    result = subprocess.run(
+        ["git", "pull", "origin", branch],
+        capture_output=True,
+        text=True,
+        cwd=repo_root,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"git pull failed: {result.stderr}")
+
+
 def get_changed_files(owner: str, repo: str, pr_number: int) -> list[str]:
     """Return list of file paths changed in the PR via GitHub API."""
     result = subprocess.run(

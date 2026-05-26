@@ -41,6 +41,8 @@ class Config:
 
     # Runtime
     repo_root: str = ""
+    verbose: bool = False
+    hide_pr_comment: bool = False
 
     @property
     def effective_overview_model(self) -> str:
@@ -106,4 +108,6 @@ def load_config(args) -> Config:
         output_file=output_file,
         github_repo=github_repo,
         repo_root=repo_root,
+        verbose=getattr(args, "verbose", False),
+        hide_pr_comment=getattr(args, "hide_pr_comment", False),
     )
