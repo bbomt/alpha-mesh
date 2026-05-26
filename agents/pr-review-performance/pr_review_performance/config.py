@@ -33,7 +33,7 @@ class Config:
     api_token: str
     overview_model: str = ""
     base_branch: str = "master"
-    max_tool_calls: int = 10
+    max_tool_calls: int = 20
     max_file_lines: int = 8000
     exclusions: list[str] = field(default_factory=list)
     output_file: str = "review_output.md"

@@ -2,7 +2,7 @@
 overview_model = ""
 
 [limits]
-max_tool_calls = 10
+max_tool_calls = 20
 max_file_lines = 8000
 
 [exclusions]
