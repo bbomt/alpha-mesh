@@ -104,6 +104,8 @@ Examples:
 
     config = load_config(args)
 
+    print(f"Repo path: {config.repo_root}", file=sys.stderr)
+
     if args.dry_run:
         print("=== pr-review-performance [DRY-RUN] ===", flush=True)
 
