@@ -9,7 +9,7 @@ import sys
 from pr_review_performance.chunker import build_chunks
 from pr_review_performance.config import load_config
 from pr_review_performance.formatter import render_report
-from pr_review_performance.git import detect_repo_slug, get_diff, get_pr_description
+from pr_review_performance.git import get_diff, get_pr_description, get_pr_info, parse_pr_url
 from pr_review_performance.github import post_comment
 from pr_review_performance.stage1 import run_overview
 from pr_review_performance.stage2 import run_file_review
@@ -107,16 +107,71 @@ Examples:
     if args.dry_run:
         print("=== pr-review-performance [DRY-RUN] ===", flush=True)
 
+    # Parse PR URL to get owner/repo/pr_number
+    try:
+        owner, repo, pr_number = parse_pr_url(args.pr_url)
+    except Exception as e:
+        print(f"ERROR: could not parse PR URL '{args.pr_url}': {e}", file=sys.stderr)
+        return 1
+
+    # Fetch PR info (branch names) and validate local repo matches
+    pr_info = get_pr_info(owner, repo, pr_number)
+    if not pr_info:
+        print(f"ERROR: could not fetch PR info for {owner}/{repo}/pull/{pr_number}", file=sys.stderr)
+        return 1
+
+    import subprocess as _subprocess
+
+    # Check local repo slug matches PR's repo
+    local_slug_result = _subprocess.run(
+        ["git", "remote", "get-url", "origin"],
+        capture_output=True, text=True, cwd=config.repo_root,
+    )
+    if local_slug_result.returncode == 0:
+        remote_url = local_slug_result.stdout.strip()
+        # Parse owner/repo from remote URL
+        import re
+        ssh_match = re.match(r"git@github\.com:([^/]+)/(.+?)(?:\.git)?$", remote_url)
+        https_match = re.match(r"https://github\.com/([^/]+)/(.+?)(?:\.git)?$", remote_url)
+        if ssh_match:
+            local_slug = f"{ssh_match.group(1)}/{ssh_match.group(2)}"
+        elif https_match:
+            local_slug = f"{https_match.group(1)}/{https_match.group(2)}"
+        else:
+            local_slug = ""
+        expected_slug = f"{owner}/{repo}"
+        if local_slug and local_slug != expected_slug:
+            print(
+                f"ERROR: PR is from {expected_slug} but you are running from {local_slug}.\n"
+                f"Clone {expected_slug} and run from there, or use --repo-path.",
+                file=sys.stderr,
+            )
+            return 1
+
+    # Check local branch matches PR's head branch
+    branch_result = _subprocess.run(
+        ["git", "branch", "--show-current"],
+        capture_output=True, text=True, cwd=config.repo_root,
+    )
+    current_branch = branch_result.stdout.strip()
+    pr_head_branch = pr_info.get("headRefName", "")
+    if current_branch and pr_head_branch and current_branch != pr_head_branch:
+        print(
+            f"ERROR: PR branch is '{pr_head_branch}' but you are on '{current_branch}'.\n"
+            f"Checkout the correct branch before running the review.",
+            file=sys.stderr,
+        )
+        return 1
+
     print("Fetching diff...", flush=True)
     try:
-        diff = get_diff(config.base_branch, config.repo_root)
+        diff = get_diff(owner, repo, pr_number)
     except Exception as e:
         print(f"ERROR: failed to get diff: {e}", file=sys.stderr)
         return 1
 
     pr_desc = ""
     if args.pr_url:
-        import subprocess as _subprocess
         _result = _subprocess.run(["gh", "auth", "token"], capture_output=True, text=True)
         _token = _result.stdout.strip() if _result.returncode == 0 else ""
         pr_desc = get_pr_description(args.pr_url, _token)

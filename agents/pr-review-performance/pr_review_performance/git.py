@@ -12,32 +12,51 @@ from urllib.parse import urlparse
 import httpx
 
 
-def get_diff(base_branch: str, repo_root: str) -> str:
-    """Run git diff origin/<base_branch> and return unified diff text."""
+def get_diff(owner: str, repo: str, pr_number: int) -> str:
+    """Fetch the unified diff for a PR via GitHub API using gh cli."""
     result = subprocess.run(
-        ["git", "diff", f"origin/{base_branch}"],
+        ["gh", "api", f"repos/{owner}/{repo}/pulls/{pr_number}", "--jq", ".diff"],
         capture_output=True,
         text=True,
-        cwd=repo_root,
+        timeout=60,
     )
     if result.returncode != 0:
-        raise RuntimeError(
-            f"git diff failed: {result.stderr}"
-        )
+        raise RuntimeError(f"gh api failed: {result.stderr}")
     return result.stdout
 
 
-def get_changed_files(base_branch: str, repo_root: str) -> list[str]:
-    """Return list of file paths changed vs origin/<base_branch>."""
+def get_changed_files(owner: str, repo: str, pr_number: int) -> list[str]:
+    """Return list of file paths changed in the PR via GitHub API."""
     result = subprocess.run(
-        ["git", "diff", "--name-only", f"origin/{base_branch}"],
+        ["gh", "api", f"repos/{owner}/{repo}/pulls/{pr_number}/files", "--jq", ".[].filename"],
         capture_output=True,
         text=True,
-        cwd=repo_root,
+        timeout=30,
     )
     if result.returncode != 0:
         return []
     return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+
+def get_pr_info(owner: str, repo: str, pr_number: int) -> dict:
+    """Return PR info dict with headRefName and baseRefName via gh pr view."""
+    result = subprocess.run(
+        [
+            "gh", "pr", "view", str(pr_number),
+            "--repo", f"{owner}/{repo}",
+            "--json", "headRefName,baseRefName,headSha",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    import json as _json
+    if result.returncode != 0:
+        return {}
+    try:
+        return _json.loads(result.stdout)
+    except Exception:
+        return {}
 
 
 def parse_pr_url(pr_url: str) -> tuple[str, str, int]:
