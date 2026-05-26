@@ -16,17 +16,42 @@ PER_FILE_PROMPT = """## PR Context
 {overview}
 
 ## Task
-Review this file's diff for real bugs, security issues, and performance problems.
-Do NOT report style issues, formatting, or naming conventions.
-Do NOT guess — if you are uncertain whether something is a bug, do not report it.
+Review this file's diff for real bugs, security issues, performance problems,
+and architectural concerns. Do NOT report style issues, formatting, or naming
+conventions. Do NOT guess — if you are uncertain whether something is a bug, do
+not report it.
 
-Before forming a verdict on any issue, if you need to understand a type, interface,
-base class, imported symbol, or existing pattern that the diff references but does not
-define, call the read_file tool to inspect the relevant file. You may call it multiple
-times for different files. Only call it when it would materially change your verdict.
-When you call read_file, you MUST provide a "reason" argument explaining why you need
-to read this file — e.g. "checking how AuthService is implemented to verify the diff
-does not break the login flow".
+### Specific checks to perform
+
+**Architectural & scalability concerns:**
+- Large bundles or modules loaded eagerly that could be code-split
+- Synchronous operations on the main thread (heavy loops, deep recursion, large
+  serialisations) blocking the event loop
+- Unbounded data structures or caches that grow without limit
+- Missing pagination or streaming where a list endpoint returns all records
+- Tight coupling between layers (e.g. business logic directly in UI components)
+- Missing error boundaries or graceful degradation
+
+**React-specific bugs:**
+- Prop overrides: spreading library props AFTER explicit event handlers, e.g.
+  `<Input onChange={{handleChange}} ...{{{{...props}}}} />` — the spread silently overwrites
+  the handler; always put explicit props before the spread or destructure first
+- Stale state / effect wipes: useEffect hooks with object or array dependencies
+  that re-run on every parent render and clobber user-edited local state; watch
+  for `useEffect(() => {{ setState(somethingFromProps) }}, [props.obj])`
+- Async race conditions: event handlers that `return` or `return new Promise`
+  without awaiting in-flight API calls, causing the handler to fire before the
+  async operation completes; look for `onClick={{handleSubmit}}` where
+  `handleSubmit` calls an API without `await`
+- Missing dependency arrays or incorrect deps in useEffect / useCallback /
+  useMemo causing stale closures
+- State updates derived from props without a proper lifecycle
+
+Before forming a verdict on any issue, if you need to understand a type,
+interface, base class, imported symbol, or existing pattern that the diff
+references but does not define, call the read_file tool to inspect the relevant
+file. Only call it when it would materially change your verdict. You MUST
+provide a "reason" argument explaining why you need to read this file.
 
 Review all issues in the context of the overall PR changes described above.
 
@@ -45,8 +70,8 @@ Respond with valid JSON only, matching this exact schema:
 }}
 
 Rules:
-- "line" must be the actual line number in the file as shown by the '+' column in the
-  diff, NOT the diff hunk header line number (the @@ line).
+- "line" must be the actual line number in the file as shown by the '+' column in
+  the diff, NOT the diff hunk header line number (the @@ line).
 - "severity" must be one of: "high", "medium", "low".
 - "suggestion" is required — always provide a concrete fix.
 - If no issues are found, return: {{"summary": "...", "issues": []}}
