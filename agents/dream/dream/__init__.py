@@ -16,39 +16,30 @@ import time
 from collections import defaultdict, Counter
 from typing import Dict, List, Optional, Any, Tuple
 
-# Claude Code internal tags that indicate system-generated messages (not real user input)
-CLAUDE_CODE_TAGS = (
-    "<command-name", "<command-message", "<command-args",
-    "<local-command-", "<system-reminder",
-    "<local-command-stdout", "<local-command-stderr",
-)
+# Regex: matches any well-formed XML opening tag (e.g. <task-notification>, <command-name>).
+# Harness-injected messages always start with such tags; real user prose never does.
+_XML_TAG_RE = re.compile(r'^<[a-zA-Z][a-zA-Z0-9-]*[\s>/]')
+
+# Extracts the user's original intent from a harness-wrapped message.
+# When a skill is invoked the harness wraps the user's args in <command-args>…</command-args>.
+_COMMAND_ARGS_RE = re.compile(r'<command-args>(.*?)</command-args>', re.DOTALL)
 
 
 def is_real_user_message(text: str) -> bool:
-    """Check if a user message is actual user input vs Claude Code system-generated."""
+    """Return True only for genuine user input — filters harness/system-generated messages."""
 
     if not text:
         return False
 
     stripped = text.lstrip()
 
-    # System-generated messages START with these tags - filter them out
-    # (user messages that QUOTE such tags should NOT be filtered)
-    system_starts = (
-        "<command-name",
-        "<command-message",
-        "<command-args",
-        "<local-command-",
-        "<local-command-stdout",
-        "<local-command-stderr",
-        "<system-reminder",
-        "<local-command-caveat",
-    )
-    for tag in system_starts:
-        if stripped.startswith(tag):
-            return False
+    # Any message starting with an XML tag is harness-injected content, not real user input.
+    # Covers <task-notification>, <command-name>, <local-command-stdout>, <system-reminder>, etc.
+    # Real user prose never starts with a bare XML opening tag.
+    if _XML_TAG_RE.match(stripped):
+        return False
 
-    # Check for system-generated content patterns (must be near the start)
+    # Non-XML system-generated content patterns (must appear near the start of the message)
     system_patterns = (
         "## Context Usage",
         "**Model:**",
@@ -336,11 +327,17 @@ def extract_sessions_from_jsonl(
                             role = msg.get('role', '')
                             content = msg.get('content', '')
 
-                        # Skip user messages that are system-generated (start with command/local tags)
+                        # Skip user messages that are harness-generated XML tags.
+                        # For skill invocations, extract the user's original intent from
+                        # <command-args> before discarding the wrapper.
                         if role == 'user' and isinstance(content, str):
-                            stripped = content.strip()
-                            if stripped.startswith(('<command-', '<local-command-', '<system-reminder>')):
-                                continue
+                            if _XML_TAG_RE.match(content.lstrip()):
+                                args_match = _COMMAND_ARGS_RE.search(content)
+                                if args_match:
+                                    content = args_match.group(1).strip()
+                                    # Fall through: process extracted args as user text below
+                                else:
+                                    continue  # Pure harness message, no user content
 
                         # Process assistant messages only if include_assistant is True
                         if include_assistant and role == 'assistant' and isinstance(content, list):
@@ -357,7 +354,13 @@ def extract_sessions_from_jsonl(
                             elif isinstance(content, list):
                                 for block in content:
                                     if isinstance(block, dict) and block.get('type') == 'text':
-                                        text = block.get('text', '').strip()
+                                        extracted = block.get('text', '').strip()
+                                        # Skill invocation prompts appear as list-content starting
+                                        # with a markdown h1 heading (e.g. "# Feature Development").
+                                        # All 19 such messages found in real sessions were skill
+                                        # templates; no real user list-messages start with "# ".
+                                        if not extracted.startswith('# '):
+                                            text = extracted
                                         break
                             if text and len(text) > 20 and not text.startswith('/') and is_real_user_message(text):
                                 # Truncate for consistency
