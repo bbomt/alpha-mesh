@@ -6,8 +6,9 @@ Provides helpers to:
 - Fetch the unified diff between two commit SHAs
 """
 
+import re
 import sys
-from datetime import datetime, timezone
+from datetime import datetime
 
 import httpx
 
@@ -22,6 +23,50 @@ def _parse_timestamp(ts: str) -> datetime:
     return datetime.fromisoformat(ts.replace("Z", "+00:00"))
 
 
+def _next_page_url(link_header: str) -> str | None:
+    """Extract the 'next' URL from a GitHub Link header, or None if absent."""
+    if not link_header:
+        return None
+    match = re.search(r'<([^>]+)>;\s*rel="next"', link_header)
+    return match.group(1) if match else None
+
+
+def _paginate_get(url: str, headers: dict, params: dict | None = None) -> list | None:
+    """Fetch all pages of a GitHub JSON list endpoint.
+
+    Returns:
+        Combined list from all pages, or None on any HTTP/network error.
+    """
+    items: list = []
+    next_url: str | None = url
+    request_params = dict(params or {})
+
+    while next_url:
+        try:
+            resp = httpx.get(next_url, headers=headers, timeout=30.0, params=request_params)
+        except Exception as e:
+            print(f"WARNING: GitHub API request failed: {e}", file=sys.stderr)
+            return None
+
+        if resp.status_code != 200:
+            print(
+                f"WARNING: GitHub API returned {resp.status_code} for {next_url}",
+                file=sys.stderr,
+            )
+            return None
+
+        page_items = resp.json()
+        if not isinstance(page_items, list):
+            return None
+        items.extend(page_items)
+
+        # Follow pagination via Link header; clear params so the next URL is used as-is
+        next_url = _next_page_url(resp.headers.get("Link", ""))
+        request_params = {}
+
+    return items
+
+
 def find_last_review_comment(
     owner: str,
     repo: str,
@@ -30,8 +75,8 @@ def find_last_review_comment(
 ) -> dict | None:
     """Find the most recent AI review comment on the PR.
 
-    Fetches all issue-level comments and returns the one whose body contains
-    REVIEW_SIGNATURE with the latest created_at timestamp.
+    Fetches all issue-level comments (paginated) and returns the one whose body
+    contains REVIEW_SIGNATURE with the latest created_at timestamp.
 
     Returns:
         Comment dict (with 'created_at', 'body', etc.) or None if not found.
@@ -43,18 +88,8 @@ def find_last_review_comment(
     }
 
     url = f"https://api.github.com/repos/{owner}/{repo}/issues/{pr_number}/comments"
-
-    try:
-        resp = httpx.get(url, headers=headers, timeout=30.0, params={"per_page": 100})
-        if resp.status_code != 200:
-            print(
-                f"WARNING: GitHub API returned {resp.status_code} fetching comments",
-                file=sys.stderr,
-            )
-            return None
-        comments = resp.json()
-    except Exception as e:
-        print(f"WARNING: failed to fetch PR comments: {e}", file=sys.stderr)
+    comments = _paginate_get(url, headers, params={"per_page": 100})
+    if comments is None:
         return None
 
     review_comments = [c for c in comments if REVIEW_SIGNATURE in c.get("body", "")]
@@ -71,14 +106,15 @@ def get_commits_since(
     pr_number: int,
     since_timestamp: str,
     token: str,
-) -> list[dict]:
+) -> list[dict] | None:
     """Return PR commits whose committer date is strictly after since_timestamp.
 
     Args:
         since_timestamp: ISO 8601 string (e.g. "2024-01-15T10:30:00Z")
 
     Returns:
-        List of commit dicts in chronological order (oldest first).
+        List of commit dicts in chronological order (oldest first), or None on
+        API/network error. An empty list means no new commits exist (not an error).
     """
     headers = {
         "Authorization": f"Bearer {token}",
@@ -87,19 +123,9 @@ def get_commits_since(
     }
 
     url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/commits"
-
-    try:
-        resp = httpx.get(url, headers=headers, timeout=30.0, params={"per_page": 100})
-        if resp.status_code != 200:
-            print(
-                f"WARNING: GitHub API returned {resp.status_code} fetching commits",
-                file=sys.stderr,
-            )
-            return []
-        commits = resp.json()
-    except Exception as e:
-        print(f"WARNING: failed to fetch PR commits: {e}", file=sys.stderr)
-        return []
+    commits = _paginate_get(url, headers, params={"per_page": 100})
+    if commits is None:
+        return None
 
     cutoff = _parse_timestamp(since_timestamp)
 

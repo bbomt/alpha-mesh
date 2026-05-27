@@ -13,6 +13,7 @@ from unittest.mock import MagicMock, patch
 from pr_review_performance.constants import REVIEW_SIGNATURE
 from pr_review_performance.incremental import (
     _parse_timestamp,
+    _next_page_url,
     find_last_review_comment,
     get_commits_since,
     build_incremental_diff,
@@ -37,13 +38,38 @@ def _make_commit(sha: str, date: str, parents: list[dict] | None = None) -> dict
     }
 
 
-def _mock_response(json_data, status_code: int = 200):
+def _mock_response(json_data, status_code: int = 200, link: str = ""):
     """Build a mock httpx response."""
     resp = MagicMock()
     resp.status_code = status_code
     resp.json.return_value = json_data
     resp.text = ""
+    resp.headers = {"Link": link} if link else {}
     return resp
+
+
+# ─── _next_page_url ─────────────────────────────────────────────────────────
+
+class TestNextPageUrl:
+    def test_returns_none_when_no_link_header(self):
+        assert _next_page_url("") is None
+        assert _next_page_url(None) is None  # type: ignore[arg-type]
+
+    def test_returns_none_when_no_next_rel(self):
+        link = '<https://api.github.com/repos/o/r/issues/1/comments?page=1>; rel="prev"'
+        assert _next_page_url(link) is None
+
+    def test_extracts_next_url(self):
+        link = (
+            '<https://api.github.com/repos/o/r/issues/1/comments?page=1>; rel="prev", '
+            '<https://api.github.com/repos/o/r/issues/1/comments?page=3>; rel="next"'
+        )
+        result = _next_page_url(link)
+        assert result == "https://api.github.com/repos/o/r/issues/1/comments?page=3"
+
+    def test_extracts_next_when_only_rel(self):
+        link = '<https://api.github.com/page2>; rel="next"'
+        assert _next_page_url(link) == "https://api.github.com/page2"
 
 
 # ─── _parse_timestamp ────────────────────────────────────────────────────────
@@ -130,6 +156,29 @@ class TestFindLastReviewComment:
             result = find_last_review_comment("owner", "repo", 1, "token")
         assert result is None
 
+    def test_paginates_to_find_review_comment(self):
+        """Review comment on page 2 is still found via Link pagination."""
+        page1_comment = _make_comment("No signature here", "2024-01-10T10:00:00Z")
+        page2_comment = _make_comment(f"{REVIEW_SIGNATURE}\nFindings.", "2024-01-15T10:00:00Z")
+
+        page1_resp = MagicMock()
+        page1_resp.status_code = 200
+        page1_resp.json.return_value = [page1_comment]
+        page1_resp.headers = {
+            "Link": '<https://api.github.com/page2>; rel="next"'
+        }
+
+        page2_resp = MagicMock()
+        page2_resp.status_code = 200
+        page2_resp.json.return_value = [page2_comment]
+        page2_resp.headers = {}
+
+        with patch("pr_review_performance.incremental.httpx.get", side_effect=[page1_resp, page2_resp]):
+            result = find_last_review_comment("owner", "repo", 1, "token")
+
+        assert result is not None
+        assert "Findings." in result["body"]
+
 
 # ─── get_commits_since ───────────────────────────────────────────────────────
 
@@ -187,17 +236,18 @@ class TestGetCommitsSince:
             result = get_commits_since("owner", "repo", 1, since, "token")
         assert result == []
 
-    def test_returns_empty_on_api_error(self):
+    def test_returns_none_on_api_error(self):
+        """API error is distinguished from 'no new commits' by returning None."""
         with patch("pr_review_performance.incremental.httpx.get") as mock_get:
             mock_get.return_value = _mock_response({}, status_code=500)
             result = get_commits_since("owner", "repo", 1, "2024-01-01T00:00:00Z", "token")
-        assert result == []
+        assert result is None
 
-    def test_returns_empty_on_network_exception(self):
+    def test_returns_none_on_network_exception(self):
         with patch("pr_review_performance.incremental.httpx.get") as mock_get:
             mock_get.side_effect = Exception("timeout")
             result = get_commits_since("owner", "repo", 1, "2024-01-01T00:00:00Z", "token")
-        assert result == []
+        assert result is None
 
     def test_skips_commits_without_date(self):
         """Commits missing date fields are skipped."""

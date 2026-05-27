@@ -208,7 +208,19 @@ Examples:
             else:
                 review_ts = last_review["created_at"]
                 new_commits = get_commits_since(owner, repo, pr_number, review_ts, _token)
-                if not new_commits:
+                if new_commits is None:
+                    # API error — fall back to full review rather than silently skipping
+                    print(
+                        "WARNING: failed to fetch commits, falling back to full review.",
+                        file=sys.stderr,
+                    )
+                    print("Fetching full diff...", file=sys.stderr)
+                    try:
+                        diff = get_diff(owner, repo, pr_number)
+                    except Exception as e:
+                        print(f"ERROR: failed to get diff: {e}", file=sys.stderr)
+                        return 1
+                elif not new_commits:
                     from datetime import datetime
                     dt = datetime.fromisoformat(review_ts.replace("Z", "+00:00"))
                     formatted = dt.strftime("%Y-%m-%d %H:%M")
@@ -217,34 +229,33 @@ Examples:
                         file=sys.stderr,
                     )
                     return 0
+                else:
+                    # New commits found — build diff from parent of first new commit to head
+                    head_sha = pr_info.get("headRefOid", "")
+                    parents = new_commits[0].get("parents", [])
+                    base_sha = parents[0]["sha"] if parents else new_commits[0]["sha"]
 
-                # Build diff: parent of first new commit → current head
-                head_sha = pr_info.get("headRefOid", "")
-                first_new_sha = new_commits[0]["sha"]
-                parents = new_commits[0].get("parents", [])
-                base_sha = parents[0]["sha"] if parents else first_new_sha
-
-                print(
-                    f"Building incremental diff ({len(new_commits)} new commit(s) "
-                    f"since {review_ts[:10]})...",
-                    file=sys.stderr,
-                )
-                diff = build_incremental_diff(owner, repo, base_sha, head_sha, _token)
-                if not diff:
                     print(
-                        "WARNING: incremental diff is empty, falling back to full review.",
+                        f"Building incremental diff ({len(new_commits)} new commit(s) "
+                        f"since {review_ts[:10]})...",
                         file=sys.stderr,
                     )
-                    try:
-                        diff = get_diff(owner, repo, pr_number)
-                    except Exception as e:
-                        print(f"ERROR: failed to get diff: {e}", file=sys.stderr)
-                        return 1
-                else:
-                    incremental_info = {
-                        "commit_count": len(new_commits),
-                        "since_timestamp": review_ts,
-                    }
+                    diff = build_incremental_diff(owner, repo, base_sha, head_sha, _token)
+                    if not diff:
+                        print(
+                            "WARNING: incremental diff is empty, falling back to full review.",
+                            file=sys.stderr,
+                        )
+                        try:
+                            diff = get_diff(owner, repo, pr_number)
+                        except Exception as e:
+                            print(f"ERROR: failed to get diff: {e}", file=sys.stderr)
+                            return 1
+                    else:
+                        incremental_info = {
+                            "commit_count": len(new_commits),
+                            "since_timestamp": review_ts,
+                        }
         else:
             print("Fetching diff...", file=sys.stderr)
             try:
