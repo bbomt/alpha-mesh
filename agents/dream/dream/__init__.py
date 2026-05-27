@@ -52,6 +52,13 @@ def is_real_user_message(text: str) -> bool:
         "Review target:",
         "medium effort",
         "3 angles × 6 candidates",
+        # Skill instruction blocks stored as string content (e.g. atlassian:search-company-knowledge)
+        "Base directory for this skill:",
+        # Claude Code interruption notices
+        "[Request interrupted by user",
+        # OAuth / localhost callback URLs typed in response to auth prompts
+        "http://localhost:",
+        "https://localhost:",
     )
     for pattern in system_patterns:
         idx = text.find(pattern)

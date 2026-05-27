@@ -915,3 +915,18 @@ Summary:
         text = "I saw this error: <task-notification> appeared in my dream output"
         assert is_real_user_message(text) is True
 
+    def test_skill_instructions_string_content_returns_false(self):
+        """Test that skill instruction blocks (string content, e.g. search-company-knowledge) are filtered."""
+        text = "Base directory for this skill: /home/ec2-user/.claude/plugins/cache/atlassian\n\n# Search Company Knowledge\n\n## Keywords\nfind information, search company knowledge..."
+        assert is_real_user_message(text) is False
+
+    def test_request_interrupted_returns_false(self):
+        """Test that Claude Code interruption notices are filtered out."""
+        assert is_real_user_message("[Request interrupted by user]") is False
+        assert is_real_user_message("[Request interrupted by user for tool use]") is False
+
+    def test_localhost_oauth_callback_returns_false(self):
+        """Test that localhost OAuth callback URLs are filtered out."""
+        text = "http://localhost:60440/callback?code=712020-abc&state=xyz"
+        assert is_real_user_message(text) is False
+
