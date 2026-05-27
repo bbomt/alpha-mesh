@@ -2,6 +2,8 @@
 
 import os
 
+import httpx
+
 READ_FILE_TOOL_SCHEMA = {
     "type": "function",
     "function": {
@@ -37,8 +39,95 @@ READ_FILE_TOOL_SCHEMA = {
 }
 
 
-def execute_read_file(path: str, repo_root: str, max_lines: int) -> str:
+class GitHubFileReader:
+    """Fetch file contents from GitHub API at a specific commit SHA, with in-memory caching.
+
+    Uses the raw content endpoint so the LLM receives plain text, identical to local reads.
+    """
+
+    _GITHUB_API = "https://api.github.com"
+
+    def __init__(self, owner: str, repo: str, head_sha: str, token: str) -> None:
+        self._owner = owner
+        self._repo = repo
+        self._ref = head_sha
+        self._token = token
+        self._cache: dict[str, str] = {}
+
+    def read_file(self, path: str, max_lines: int) -> str:
+        """Fetch file content at the PR head SHA. Returns content or an error string."""
+        if path in self._cache:
+            return self._cache[path]
+
+        url = (
+            f"{self._GITHUB_API}/repos/{self._owner}/{self._repo}"
+            f"/contents/{path}?ref={self._ref}"
+        )
+        headers = {
+            "Authorization": f"Bearer {self._token}",
+            "Accept": "application/vnd.github.raw+json",
+            "User-Agent": "pr-review-performance/1.0",
+        }
+
+        try:
+            response = httpx.get(url, headers=headers, timeout=30.0)
+        except Exception as e:
+            return f"Error: failed to fetch file from GitHub: {e}"
+
+        if response.status_code == 404:
+            return f"Error: file not found: {path}"
+
+        if response.status_code == 429 or (
+            response.status_code == 403
+            and "rate limit" in response.text.lower()
+        ):
+            return "Error: GitHub API rate limit exceeded. Try again later."
+
+        if response.status_code == 403:
+            # GitHub returns 403 for files >1 MB via the contents API
+            try:
+                msg = response.json().get("message", "")
+            except Exception:
+                msg = ""
+            if "too large" in msg.lower() or "blob" in msg.lower():
+                return (
+                    f"Error: file too large to read via GitHub API (>1 MB): {path}. "
+                    "Consider reviewing this file locally."
+                )
+            return f"Error: GitHub API access forbidden for {path}: {msg or response.text[:200]}"
+
+        if response.status_code != 200:
+            return f"Error: GitHub API returned {response.status_code} for {path}"
+
+        # Binary detection — same logic as local reads
+        try:
+            response.content[:8192].decode("utf-8")
+        except UnicodeDecodeError:
+            return "Error: file appears to be binary and cannot be read as text."
+
+        content = response.text
+        lines = content.splitlines(keepends=True)
+        if len(lines) > max_lines:
+            content = "".join(lines[:max_lines])
+            content += (
+                f"\n[TRUNCATED — file exceeds {max_lines} lines. "
+                f"Showing first {max_lines} lines only.]\n"
+            )
+
+        self._cache[path] = content
+        return content
+
+
+def execute_read_file(
+    path: str,
+    repo_root: str,
+    max_lines: int,
+    github_reader: "GitHubFileReader | None" = None,
+) -> str:
     """Read a file with path-traversal guard and optional truncation.
+
+    Tries local filesystem first. Falls back to GitHub API via github_reader when the
+    file is not present locally (e.g. when running from a different directory).
 
     Returns the file contents (possibly truncated) or an error string.
     Never raises — errors are returned as strings so the LLM can see them.
@@ -50,6 +139,8 @@ def execute_read_file(path: str, repo_root: str, max_lines: int) -> str:
         return "Error: access denied — path is outside the repository root."
 
     if not os.path.isfile(target):
+        if github_reader is not None:
+            return github_reader.read_file(path, max_lines)
         return f"Error: file not found: {path}"
 
     try:

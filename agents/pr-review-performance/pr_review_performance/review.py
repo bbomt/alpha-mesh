@@ -27,6 +27,7 @@ from pr_review_performance.incremental import (
 )
 from pr_review_performance.stage1 import run_overview
 from pr_review_performance.stage2 import run_file_review
+from pr_review_performance.tools import GitHubFileReader
 
 
 DRY_RUN_MODEL = "dry-run-model"
@@ -162,13 +163,19 @@ Examples:
 
     pr_head_branch = pr_info.get("headRefName", "")
 
-    # Get PR description
+    # Get GitHub token and PR description
     import subprocess as _subprocess
     _result = _subprocess.run(["gh", "auth", "token"], capture_output=True, text=True)
     _token = _result.stdout.strip() if _result.returncode == 0 else ""
     pr_desc = get_pr_description(args.pr_url, _token)
     if pr_desc:
         print("Fetched PR description.", file=sys.stderr)
+
+    # Wire up remote file reading at the PR head SHA — used as fallback when local file absent
+    head_sha = pr_info.get("headRefOid", "")
+    if head_sha and _token:
+        config.github_reader = GitHubFileReader(owner, repo, head_sha, _token)
+        _verbose_print(config, f"Remote read_file enabled (ref={head_sha[:8]})")
 
     # Print model info if verbose
     _verbose_print(config, f"Model: {config.model}")
@@ -181,7 +188,13 @@ Examples:
         # Auto-checkout PR branch if not already on it (skip for dry-run)
         if not args.dry_run:
             current_branch = get_current_branch(config.repo_root)
-            if current_branch != pr_head_branch:
+            if not current_branch:
+                # Not a git repo — skip checkout and rely on remote reads
+                print(
+                    "Not in a git repo — file context will be fetched from GitHub API.",
+                    file=sys.stderr,
+                )
+            elif current_branch != pr_head_branch:
                 print(f"Checking out PR branch: {pr_head_branch}", file=sys.stderr)
                 _verbose_print(config, f"  original branch: {current_branch}")
                 checkout_branch(config.repo_root, pr_head_branch)

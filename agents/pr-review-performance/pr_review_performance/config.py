@@ -43,6 +43,7 @@ class Config:
     repo_root: str = ""
     verbose: bool = False
     hide_pr_comment: bool = False
+    github_reader: object = None  # GitHubFileReader, set after PR info is fetched
 
     @property
     def effective_overview_model(self) -> str:

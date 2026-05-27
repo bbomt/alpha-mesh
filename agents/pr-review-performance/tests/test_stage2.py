@@ -1,11 +1,12 @@
 """Integration tests for stage2 via dry-run mock."""
 
 import pytest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 from pr_review_performance.chunker import FileChunk
 from pr_review_performance.stage2 import run_file_review, Issue, FileReviewResult
 from pr_review_performance.config import Config
+from pr_review_performance.tools import GitHubFileReader
 
 
 class MockLLMResponse:
@@ -121,3 +122,43 @@ def test_run_file_review_handles_tool_calls():
 
     assert result.tool_calls_made == 1
     assert "Reviewed" in result.summary or "parse" in result.summary.lower()
+
+
+def test_run_file_review_passes_github_reader_to_execute_read_file():
+    """When config.github_reader is set, stage2 passes it to execute_read_file."""
+    chunk = FileChunk(
+        file_path="src/main.py",
+        diff_text="diff --git a/src/main.py b/src/main.py\n+new\n",
+    )
+    from pr_review_performance.llm import ToolCall
+
+    tool_call = ToolCall(
+        id="call_github",
+        name="read_file",
+        arguments={"path": "src/main.py", "reason": "checking imports"},
+    )
+
+    calls = [0]
+
+    def mock_chat(messages, tools, config):
+        calls[0] += 1
+        if calls[0] == 1:
+            return MockLLMResponse(tool_calls=[tool_call])
+        return MockLLMResponse(content='{"summary": "OK", "issues": []}')
+
+    mock_reader = MagicMock(spec=GitHubFileReader)
+
+    config = MockConfig()
+    config.github_reader = mock_reader
+
+    captured_reader = {}
+
+    def capturing_execute(path, repo_root, max_lines, github_reader=None):
+        captured_reader["reader"] = github_reader
+        return "remote content"
+
+    with patch("pr_review_performance.stage2.chat", side_effect=mock_chat):
+        with patch("pr_review_performance.stage2.execute_read_file", side_effect=capturing_execute):
+            run_file_review(chunk, "Overview", config)
+
+    assert captured_reader.get("reader") is mock_reader
