@@ -20,6 +20,11 @@ from pr_review_performance.git import (
     pull_latest,
 )
 from pr_review_performance.github import post_comment
+from pr_review_performance.incremental import (
+    find_last_review_comment,
+    get_commits_since,
+    build_incremental_diff,
+)
 from pr_review_performance.stage1 import run_overview
 from pr_review_performance.stage2 import run_file_review
 
@@ -68,6 +73,7 @@ Examples:
   mesh pr-review-performance https://github.com/org/repo/pull/123 --base main
   mesh pr-review-performance https://github.com/org/repo/pull/123 --dry-run
   mesh pr-review-performance https://github.com/org/repo/pull/123 --no-post-comment
+  mesh pr-review-performance https://github.com/org/repo/pull/123 --since-last-review
 """,
     )
     parser.add_argument(
@@ -123,6 +129,14 @@ Examples:
         default=None,
         help="Override CODE_REVIEW_MODEL from .env",
     )
+    parser.add_argument(
+        "--since-last-review",
+        action="store_true",
+        help=(
+            "Only review changes made since the last AI review comment on this PR. "
+            "Falls back to a full review if no previous review is found."
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -162,6 +176,7 @@ Examples:
 
     start_time = time.time()
     original_branch = None
+    incremental_info = None
     try:
         # Auto-checkout PR branch if not already on it (skip for dry-run)
         if not args.dry_run:
@@ -176,12 +191,78 @@ Examples:
                 _verbose_print(config, f"Already on branch: {pr_head_branch}")
                 original_branch = current_branch
 
-        print("Fetching diff...", file=sys.stderr)
-        try:
-            diff = get_diff(owner, repo, pr_number)
-        except Exception as e:
-            print(f"ERROR: failed to get diff: {e}", file=sys.stderr)
-            return 1
+        # ── Incremental diff (--since-last-review) ──────────────────────────
+        if args.since_last_review and not args.dry_run:
+            last_review = find_last_review_comment(owner, repo, pr_number, _token)
+            if not last_review:
+                print(
+                    "No previous review found — running full review.",
+                    file=sys.stderr,
+                )
+                print("Fetching full diff...", file=sys.stderr)
+                try:
+                    diff = get_diff(owner, repo, pr_number)
+                except Exception as e:
+                    print(f"ERROR: failed to get diff: {e}", file=sys.stderr)
+                    return 1
+            else:
+                review_ts = last_review["created_at"]
+                new_commits = get_commits_since(owner, repo, pr_number, review_ts, _token)
+                if new_commits is None:
+                    # API error — fall back to full review rather than silently skipping
+                    print(
+                        "WARNING: failed to fetch commits, falling back to full review.",
+                        file=sys.stderr,
+                    )
+                    print("Fetching full diff...", file=sys.stderr)
+                    try:
+                        diff = get_diff(owner, repo, pr_number)
+                    except Exception as e:
+                        print(f"ERROR: failed to get diff: {e}", file=sys.stderr)
+                        return 1
+                elif not new_commits:
+                    from datetime import datetime
+                    dt = datetime.fromisoformat(review_ts.replace("Z", "+00:00"))
+                    formatted = dt.strftime("%Y-%m-%d %H:%M")
+                    print(
+                        f"No new commits since last review ({formatted}). Nothing to review.",
+                        file=sys.stderr,
+                    )
+                    return 0
+                else:
+                    # New commits found — build diff from parent of first new commit to head
+                    head_sha = pr_info.get("headRefOid", "")
+                    parents = new_commits[0].get("parents", [])
+                    base_sha = parents[0]["sha"] if parents else new_commits[0]["sha"]
+
+                    print(
+                        f"Building incremental diff ({len(new_commits)} new commit(s) "
+                        f"since {review_ts[:10]})...",
+                        file=sys.stderr,
+                    )
+                    diff = build_incremental_diff(owner, repo, base_sha, head_sha, _token)
+                    if not diff:
+                        print(
+                            "WARNING: incremental diff is empty, falling back to full review.",
+                            file=sys.stderr,
+                        )
+                        try:
+                            diff = get_diff(owner, repo, pr_number)
+                        except Exception as e:
+                            print(f"ERROR: failed to get diff: {e}", file=sys.stderr)
+                            return 1
+                    else:
+                        incremental_info = {
+                            "commit_count": len(new_commits),
+                            "since_timestamp": review_ts,
+                        }
+        else:
+            print("Fetching diff...", file=sys.stderr)
+            try:
+                diff = get_diff(owner, repo, pr_number)
+            except Exception as e:
+                print(f"ERROR: failed to get diff: {e}", file=sys.stderr)
+                return 1
 
         chunks = build_chunks(diff, config.exclusions)
         if not chunks:
@@ -223,6 +304,7 @@ Examples:
             summaries=all_summaries,
             config=config,
             model=model,
+            incremental_info=incremental_info,
         )
 
         # stdout: hide_pr_comment means print body to stdout only if NOT hiding
