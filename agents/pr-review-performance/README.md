@@ -28,6 +28,22 @@ cp .env.example .env
 # edit .env with your API credentials
 ```
 
+## Remote Mode — run from any directory
+
+By default the tool uses the local checkout for `read_file` calls. When the local file is not present (because you are running from a different directory, or the target repo is not cloned), it automatically falls back to fetching the file from the GitHub API at the PR's exact head commit SHA.
+
+This means you can run:
+
+```bash
+# From any directory — no local clone needed
+cd ~
+mesh pr-review-performance https://github.com/org/repo/pull/123
+```
+
+**How it works:** after fetching PR info, the tool creates a `GitHubFileReader` authenticated with `gh`'s stored token. When the LLM asks for a file that is not present locally, the reader fetches it via the GitHub raw content API at `?ref=<head-sha>`, caches the result in memory, and returns it exactly as a local read would.
+
+**Rate limits:** the GitHub API allows 5,000 authenticated requests/hour. Results are cached per run so each unique path is fetched at most once.
+
 ## How It Works
 
 ### Stage 1 — Overview
@@ -39,7 +55,7 @@ The full PR diff is sent to the LLM to produce a high-level narrative of what th
 Each changed file is reviewed individually. The LLM receives:
 - The file's diff chunk
 - The Stage 1 overview as context
-- The ability to call `read_file` to inspect other files for cross-reference
+- The ability to call `read_file` to inspect other files for cross-reference (local or remote)
 
 Issues are classified as `high`, `medium`, or `low` severity.
 
