@@ -461,6 +461,147 @@ class TestExtractSessionsFromJsonl:
         assert "<command-name>" not in content
         assert "<system-reminder>" not in content
 
+    def test_filters_task_notification_messages(self, tmp_path):
+        """Test that <task-notification> harness messages are filtered out."""
+        projects_dir = tmp_path / "projects"
+        projects_dir.mkdir()
+
+        session_file = projects_dir / "test-session" / "session.jsonl"
+        session_file.parent.mkdir()
+
+        with session_file.open(mode="w") as f:
+            # task-notification harness message - should be filtered
+            f.write(json.dumps({
+                "cwd": "/home/user/repos/test",
+                "message": {
+                    "role": "user",
+                    "content": (
+                        "<task-notification>\n"
+                        "<task-id>bawb2702u</task-id>\n"
+                        "<status>killed</status>\n"
+                        "</task-notification>"
+                    )
+                }
+            }) + "\n")
+            # Real user message - should be kept
+            f.write(json.dumps({
+                "cwd": "/home/user/repos/test",
+                "message": {
+                    "role": "user",
+                    "content": "This is a real user message that should be kept"
+                }
+            }) + "\n")
+
+        import time
+        os.utime(session_file, (time.time(), time.time()))
+        cutoff = datetime.now().strftime("%Y-%m-%d")
+
+        result = extract_sessions_from_jsonl(
+            projects_dir=str(projects_dir),
+            cutoff=cutoff,
+            target_repo=None,
+        )
+
+        assert len(result) == 1
+        content = result[list(result.keys())[0]]["content"]
+        assert "real user message that should be kept" in content
+        assert "task-notification" not in content
+
+    def test_extracts_command_args_from_skill_invocation(self, tmp_path):
+        """Test that user intent is extracted from <command-args> when a skill is invoked."""
+        projects_dir = tmp_path / "projects"
+        projects_dir.mkdir()
+
+        session_file = projects_dir / "test-session" / "session.jsonl"
+        session_file.parent.mkdir()
+
+        with session_file.open(mode="w") as f:
+            # Skill invocation: harness wrapper containing user's actual args
+            f.write(json.dumps({
+                "cwd": "/home/user/repos/test",
+                "message": {
+                    "role": "user",
+                    "content": (
+                        "<command-message>feature-dev:feature-dev</command-message>\n"
+                        "<command-name>/feature-dev:feature-dev</command-name>\n"
+                        "<command-args>We need to implement the new PMAT-999 feature for filtering dream output</command-args>\n"
+                        "\n# Feature Development\n\nYou are helping a developer implement a new feature..."
+                    )
+                }
+            }) + "\n")
+
+        import time
+        os.utime(session_file, (time.time(), time.time()))
+        cutoff = datetime.now().strftime("%Y-%m-%d")
+
+        result = extract_sessions_from_jsonl(
+            projects_dir=str(projects_dir),
+            cutoff=cutoff,
+            target_repo=None,
+        )
+
+        assert len(result) == 1
+        content = result[list(result.keys())[0]]["content"]
+        # User's original intent should be preserved
+        assert "PMAT-999 feature for filtering dream output" in content
+        # Harness wrapper tags should NOT appear
+        assert "<command-message>" not in content
+        assert "<command-name>" not in content
+
+    def test_filters_skill_template_list_content(self, tmp_path):
+        """Test that skill template messages (list-content starting with # heading) are filtered."""
+        projects_dir = tmp_path / "projects"
+        projects_dir.mkdir()
+
+        session_file = projects_dir / "test-session" / "session.jsonl"
+        session_file.parent.mkdir()
+
+        with session_file.open(mode="w") as f:
+            # Skill template injected as list-content - should be filtered
+            f.write(json.dumps({
+                "cwd": "/home/user/repos/test",
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": (
+                                "# Feature Development\n\n"
+                                "You are helping a developer implement a new feature. "
+                                "Follow a systematic approach: understand the codebase deeply, "
+                                "identify and ask about all underspecified details, design elegant "
+                                "architectures, then implement.\n\n## Core Principles\n..."
+                            )
+                        }
+                    ]
+                }
+            }) + "\n")
+            # Real user message (string content) - should be kept
+            f.write(json.dumps({
+                "cwd": "/home/user/repos/test",
+                "message": {
+                    "role": "user",
+                    "content": "Please implement the PMAT-999 feature as described"
+                }
+            }) + "\n")
+
+        import time
+        os.utime(session_file, (time.time(), time.time()))
+        cutoff = datetime.now().strftime("%Y-%m-%d")
+
+        result = extract_sessions_from_jsonl(
+            projects_dir=str(projects_dir),
+            cutoff=cutoff,
+            target_repo=None,
+        )
+
+        assert len(result) == 1
+        content = result[list(result.keys())[0]]["content"]
+        # Real user message should be present
+        assert "Please implement the PMAT-999 feature" in content
+        # Skill template boilerplate should NOT appear
+        assert "# Feature Development" not in content
+        assert "You are helping a developer implement" not in content
 
 
 class TestSynthesizeMemory:
@@ -745,5 +886,47 @@ class TestIsRealUserMessage:
 Summary:
 1. Primary Request and Intent:
    The user reported a bug..."""
+        assert is_real_user_message(text) is False
+
+    def test_task_notification_returns_false(self):
+        """Test that <task-notification> harness messages are filtered out."""
+        text = (
+            "<task-notification>\n"
+            "<task-id>bawb2702u</task-id>\n"
+            "<tool-use-id>call_function_5j3o338jd48m_1</tool-use-id>\n"
+            "<output-file>/tmp/claude-1000/tasks/bawb2702u.output</output-file>\n"
+            "<status>killed</status>\n"
+            "</task-notification>"
+        )
+        assert is_real_user_message(text) is False
+
+    def test_any_xml_tag_start_returns_false(self):
+        """Test that any message starting with a well-formed XML tag is filtered."""
+        assert is_real_user_message("<unknown-harness-tag>content</unknown-harness-tag>") is False
+        assert is_real_user_message("<foo>bar</foo>") is False
+
+    def test_non_xml_angle_brackets_not_filtered(self):
+        """Test that <3 and <-- (not XML tags) are NOT filtered."""
+        assert is_real_user_message("<3 this is a real message") is True
+        assert is_real_user_message("<-- comment style message here") is True
+
+    def test_user_message_mentioning_xml_not_filtered(self):
+        """Test that a real message that CONTAINS (but doesn't start with) an XML tag is kept."""
+        text = "I saw this error: <task-notification> appeared in my dream output"
+        assert is_real_user_message(text) is True
+
+    def test_skill_instructions_string_content_returns_false(self):
+        """Test that skill instruction blocks (string content, e.g. search-company-knowledge) are filtered."""
+        text = "Base directory for this skill: /home/ec2-user/.claude/plugins/cache/atlassian\n\n# Search Company Knowledge\n\n## Keywords\nfind information, search company knowledge..."
+        assert is_real_user_message(text) is False
+
+    def test_request_interrupted_returns_false(self):
+        """Test that Claude Code interruption notices are filtered out."""
+        assert is_real_user_message("[Request interrupted by user]") is False
+        assert is_real_user_message("[Request interrupted by user for tool use]") is False
+
+    def test_localhost_oauth_callback_returns_false(self):
+        """Test that localhost OAuth callback URLs are filtered out."""
+        text = "http://localhost:60440/callback?code=712020-abc&state=xyz"
         assert is_real_user_message(text) is False
 
