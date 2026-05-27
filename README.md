@@ -201,3 +201,33 @@ mesh pr-review https://github.com/org/repo/pull/123 --dry-run --verbose
 | `3` | Atlassian MCP auth not available |
 | `4` | Claude Code subprocess failed |
 | `5` | Git error |
+
+## PR Review Performance Agent
+
+`mesh pr-review-performance` runs LLM-powered code review using a fast inference API. It reviews each changed file in two stages (overview + per-file analysis) and posts findings as a PR comment.
+
+### Quick Start
+
+```bash
+# Full review — all changed files
+mesh pr-review-performance https://github.com/org/repo/pull/123
+
+# Incremental review — only changes since the last AI review
+mesh pr-review-performance https://github.com/org/repo/pull/123 --since-last-review
+
+# Dry run (mocked LLM, no PR comment posted)
+mesh pr-review-performance https://github.com/org/repo/pull/123 --dry-run
+```
+
+### --since-last-review flag
+
+When iterating on a PR, use `--since-last-review` to review only the new commits pushed since the last AI review comment. This is faster and avoids re-flagging issues you already fixed.
+
+| Condition | Behaviour |
+|-----------|-----------|
+| No previous review found | Falls back to full review |
+| No new commits | Exits with `No new commits since last review`. Nothing to review. |
+
+### Documentation
+
+Full documentation: `agents/pr-review-performance/README.md`
