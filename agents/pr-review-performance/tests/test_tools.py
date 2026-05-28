@@ -205,7 +205,7 @@ class TestGitHubFileReader:
         assert "raw" in client_kwargs["headers"]["Accept"]
 
 
-class TestExecuteReadFileWithGitHubFallback:
+class TestExecuteReadFileWithGitHubReader:
     def test_always_uses_reader_when_set(self, tmp_path):
         """When github_reader is provided, it is always used — even if file exists locally."""
         (tmp_path / "local.py").write_text("local content\n")
