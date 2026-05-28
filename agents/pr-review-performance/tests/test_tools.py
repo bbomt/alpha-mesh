@@ -83,24 +83,24 @@ class TestGitHubFileReader:
     def _reader(self):
         return GitHubFileReader("owner", "repo", "abc123sha", "token123")
 
-    @patch("pr_review_performance.tools.httpx.get")
-    def test_fetches_file_content(self, mock_get):
+    @patch("pr_review_performance.tools.httpx.Client")
+    def test_fetches_file_content(self, MockClient):
         content = "def hello():\n    return 1\n"
-        mock_get.return_value = _make_http_response(200, text=content)
+        MockClient.return_value.get.return_value = _make_http_response(200, text=content)
 
         reader = self._reader()
         result = reader.read_file("src/hello.py", max_lines=8000)
 
         assert result == content
-        mock_get.assert_called_once()
-        call_url = mock_get.call_args[0][0]
+        MockClient.return_value.get.assert_called_once()
+        call_url = MockClient.return_value.get.call_args[0][0]
         assert "owner/repo/contents/src/hello.py" in call_url
         assert "ref=abc123sha" in call_url
 
-    @patch("pr_review_performance.tools.httpx.get")
-    def test_caches_response(self, mock_get):
+    @patch("pr_review_performance.tools.httpx.Client")
+    def test_caches_response(self, MockClient):
         content = "cached content"
-        mock_get.return_value = _make_http_response(200, text=content)
+        MockClient.return_value.get.return_value = _make_http_response(200, text=content)
 
         reader = self._reader()
         result1 = reader.read_file("src/foo.py", max_lines=8000)
@@ -109,11 +109,11 @@ class TestGitHubFileReader:
         assert result1 == content
         assert result2 == content
         # Should only make one HTTP request
-        assert mock_get.call_count == 1
+        assert MockClient.return_value.get.call_count == 1
 
-    @patch("pr_review_performance.tools.httpx.get")
-    def test_returns_error_on_404(self, mock_get):
-        mock_get.return_value = _make_http_response(404)
+    @patch("pr_review_performance.tools.httpx.Client")
+    def test_returns_error_on_404(self, MockClient):
+        MockClient.return_value.get.return_value = _make_http_response(404)
 
         reader = self._reader()
         result = reader.read_file("missing.py", max_lines=8000)
@@ -121,9 +121,9 @@ class TestGitHubFileReader:
         assert "file not found" in result
         assert "Error" in result
 
-    @patch("pr_review_performance.tools.httpx.get")
-    def test_returns_error_on_rate_limit_429(self, mock_get):
-        mock_get.return_value = _make_http_response(429)
+    @patch("pr_review_performance.tools.httpx.Client")
+    def test_returns_error_on_rate_limit_429(self, MockClient):
+        MockClient.return_value.get.return_value = _make_http_response(429)
 
         reader = self._reader()
         result = reader.read_file("any.py", max_lines=8000)
@@ -131,21 +131,21 @@ class TestGitHubFileReader:
         assert "rate limit" in result.lower()
         assert "Error" in result
 
-    @patch("pr_review_performance.tools.httpx.get")
-    def test_returns_error_on_rate_limit_403_message(self, mock_get):
+    @patch("pr_review_performance.tools.httpx.Client")
+    def test_returns_error_on_rate_limit_403_message(self, MockClient):
         resp = _make_http_response(403, text="API rate limit exceeded for this resource")
-        mock_get.return_value = resp
+        MockClient.return_value.get.return_value = resp
 
         reader = self._reader()
         result = reader.read_file("any.py", max_lines=8000)
 
         assert "rate limit" in result.lower()
 
-    @patch("pr_review_performance.tools.httpx.get")
-    def test_returns_error_for_too_large_file(self, mock_get):
+    @patch("pr_review_performance.tools.httpx.Client")
+    def test_returns_error_for_too_large_file(self, MockClient):
         resp = _make_http_response(403, text="This file is too large to display")
         resp.json.return_value = {"message": "This file is too large to display. View it on GitHub"}
-        mock_get.return_value = resp
+        MockClient.return_value.get.return_value = resp
 
         reader = self._reader()
         result = reader.read_file("big.py", max_lines=8000)
@@ -153,12 +153,12 @@ class TestGitHubFileReader:
         assert "too large" in result.lower()
         assert "Error" in result
 
-    @patch("pr_review_performance.tools.httpx.get")
-    def test_returns_error_for_binary_content(self, mock_get):
+    @patch("pr_review_performance.tools.httpx.Client")
+    def test_returns_error_for_binary_content(self, MockClient):
         binary_bytes = b"\x00\xff\xfe\x81" * 100
         resp = _make_http_response(200, content=binary_bytes)
         resp.text = binary_bytes.decode("latin-1")
-        mock_get.return_value = resp
+        MockClient.return_value.get.return_value = resp
 
         reader = self._reader()
         result = reader.read_file("image.png", max_lines=8000)
@@ -166,11 +166,11 @@ class TestGitHubFileReader:
         assert "binary" in result.lower()
         assert "Error" in result
 
-    @patch("pr_review_performance.tools.httpx.get")
-    def test_truncates_long_files(self, mock_get):
+    @patch("pr_review_performance.tools.httpx.Client")
+    def test_truncates_long_files(self, MockClient):
         lines = [f"line {i}\n" for i in range(200)]
         content = "".join(lines)
-        mock_get.return_value = _make_http_response(200, text=content)
+        MockClient.return_value.get.return_value = _make_http_response(200, text=content)
 
         reader = self._reader()
         result = reader.read_file("long.py", max_lines=10)
@@ -181,10 +181,10 @@ class TestGitHubFileReader:
         assert "line 0" in result
         assert "line 11" not in result
 
-    @patch("pr_review_performance.tools.httpx.get")
-    def test_returns_error_on_network_failure(self, mock_get):
+    @patch("pr_review_performance.tools.httpx.Client")
+    def test_returns_error_on_network_failure(self, MockClient):
         import httpx as _httpx
-        mock_get.side_effect = _httpx.TimeoutException("timeout")
+        MockClient.return_value.get.side_effect = _httpx.TimeoutException("timeout")
 
         reader = self._reader()
         result = reader.read_file("any.py", max_lines=8000)
@@ -192,30 +192,31 @@ class TestGitHubFileReader:
         assert "Error" in result
         assert "GitHub" in result
 
-    @patch("pr_review_performance.tools.httpx.get")
-    def test_passes_auth_header(self, mock_get):
-        mock_get.return_value = _make_http_response(200, text="content")
+    @patch("pr_review_performance.tools.httpx.Client")
+    def test_passes_auth_header(self, MockClient):
+        MockClient.return_value.get.return_value = _make_http_response(200, text="content")
 
         reader = GitHubFileReader("o", "r", "sha1", "mytoken")
         reader.read_file("file.py", max_lines=8000)
 
-        headers = mock_get.call_args[1]["headers"]
-        assert headers["Authorization"] == "Bearer mytoken"
-        assert "raw" in headers["Accept"]
+        # Headers are passed to the Client constructor, not per-call
+        client_kwargs = MockClient.call_args[1]
+        assert client_kwargs["headers"]["Authorization"] == "Bearer mytoken"
+        assert "raw" in client_kwargs["headers"]["Accept"]
 
 
 class TestExecuteReadFileWithGitHubFallback:
-    @patch("pr_review_performance.tools.httpx.get")
-    def test_falls_back_to_github_when_file_not_local(self, mock_get, tmp_path):
+    @patch("pr_review_performance.tools.httpx.Client")
+    def test_falls_back_to_github_when_file_not_local(self, MockClient, tmp_path):
         """When the file is absent locally, remote reader is used."""
         remote_content = "remote file content\n"
-        mock_get.return_value = _make_http_response(200, text=remote_content)
+        MockClient.return_value.get.return_value = _make_http_response(200, text=remote_content)
 
         reader = GitHubFileReader("owner", "repo", "sha123", "token")
         result = execute_read_file("src/nonexistent.py", str(tmp_path), 8000, reader)
 
         assert result == remote_content
-        mock_get.assert_called_once()
+        MockClient.return_value.get.assert_called_once()
 
     def test_always_uses_reader_when_set(self, tmp_path):
         """When github_reader is provided, it is always used — even if file exists locally."""
@@ -242,10 +243,10 @@ class TestExecuteReadFileWithGitHubFallback:
         assert "access denied" in result
         reader.read_file.assert_not_called()
 
-    @patch("pr_review_performance.tools.httpx.get")
-    def test_github_error_propagated_to_llm(self, mock_get, tmp_path):
+    @patch("pr_review_performance.tools.httpx.Client")
+    def test_github_error_propagated_to_llm(self, MockClient, tmp_path):
         """GitHub API errors are returned as strings (not raised)."""
-        mock_get.return_value = _make_http_response(500)
+        MockClient.return_value.get.return_value = _make_http_response(500)
 
         reader = GitHubFileReader("owner", "repo", "sha", "tok")
         result = execute_read_file("src/foo.py", str(tmp_path), 8000, reader)

@@ -140,8 +140,6 @@ Examples:
 
     config = load_config(args)
 
-    print(f"Repo path: {config.repo_root}", file=sys.stderr)
-
     # Parse PR URL to get owner/repo/pr_number
     try:
         owner, repo, pr_number = parse_pr_url(args.pr_url)
@@ -149,14 +147,17 @@ Examples:
         print(f"ERROR: could not parse PR URL '{args.pr_url}': {e}", file=sys.stderr)
         return 1
 
-    print(f"PR: {owner}/{repo}#{pr_number}", file=sys.stderr)
+    print(f"Reviewing {owner}/{repo} PR #{pr_number}", file=sys.stderr)
     print("Fetching PR data from GitHub...", file=sys.stderr)
 
-    # Fetch PR info (branch names, title)
+    # Fetch PR info (branch names, head SHA)
     pr_info = get_pr_info(owner, repo, pr_number)
     if not pr_info:
         print(f"ERROR: could not fetch PR info for {owner}/{repo}/pull/{pr_number}", file=sys.stderr)
         return 1
+
+    pr_head_branch = pr_info.get("headRefName", "")
+    print(f"Branch: {pr_head_branch}", file=sys.stderr)
 
     # Get GitHub token and PR description
     import subprocess as _subprocess

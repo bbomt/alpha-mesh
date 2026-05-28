@@ -1,6 +1,7 @@
 """The read_file tool — gives the LLM full codebase access with safety guards."""
 
 import os
+from urllib.parse import quote
 
 import httpx
 
@@ -51,7 +52,12 @@ class GitHubFileReader:
         self._owner = owner
         self._repo = repo
         self._ref = head_sha
-        self._token = token
+        self._headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github.raw+json",
+            "User-Agent": "pr-review-performance/1.0",
+        }
+        self._client = httpx.Client(headers=self._headers, timeout=30.0)
         self._cache: dict[tuple[str, int], str] = {}
 
     def read_file(self, path: str, max_lines: int) -> str:
@@ -60,18 +66,14 @@ class GitHubFileReader:
         if cache_key in self._cache:
             return self._cache[cache_key]
 
+        encoded_path = quote(path, safe="/")
         url = (
             f"{self._GITHUB_API}/repos/{self._owner}/{self._repo}"
-            f"/contents/{path}?ref={self._ref}"
+            f"/contents/{encoded_path}?ref={self._ref}"
         )
-        headers = {
-            "Authorization": f"Bearer {self._token}",
-            "Accept": "application/vnd.github.raw+json",
-            "User-Agent": "pr-review-performance/1.0",
-        }
 
         try:
-            response = httpx.get(url, headers=headers, timeout=30.0)
+            response = self._client.get(url)
         except Exception as e:
             return f"Error: failed to fetch file from GitHub: {e}"
 
