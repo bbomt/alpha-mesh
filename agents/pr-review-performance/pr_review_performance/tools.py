@@ -52,12 +52,13 @@ class GitHubFileReader:
         self._repo = repo
         self._ref = head_sha
         self._token = token
-        self._cache: dict[str, str] = {}
+        self._cache: dict[tuple[str, int], str] = {}
 
     def read_file(self, path: str, max_lines: int) -> str:
         """Fetch file content at the PR head SHA. Returns content or an error string."""
-        if path in self._cache:
-            return self._cache[path]
+        cache_key = (path, max_lines)
+        if cache_key in self._cache:
+            return self._cache[cache_key]
 
         url = (
             f"{self._GITHUB_API}/repos/{self._owner}/{self._repo}"
@@ -118,7 +119,7 @@ class GitHubFileReader:
                 f"Showing first {max_lines} lines only.]\n"
             )
 
-        self._cache[path] = content
+        self._cache[cache_key] = content
         return content
 
 
