@@ -217,15 +217,16 @@ class TestExecuteReadFileWithGitHubFallback:
         assert result == remote_content
         mock_get.assert_called_once()
 
-    def test_uses_local_when_file_exists(self, tmp_path):
-        """Local file takes priority over remote reader."""
+    def test_always_uses_reader_when_set(self, tmp_path):
+        """When github_reader is provided, it is always used — even if file exists locally."""
         (tmp_path / "local.py").write_text("local content\n")
 
         reader = MagicMock(spec=GitHubFileReader)
+        reader.read_file.return_value = "remote content\n"
         result = execute_read_file("local.py", str(tmp_path), 8000, reader)
 
-        assert result == "local content\n"
-        reader.read_file.assert_not_called()
+        assert result == "remote content\n"
+        reader.read_file.assert_called_once_with("local.py", 8000)
 
     def test_no_fallback_when_reader_is_none(self, tmp_path):
         """Without a reader, missing file returns the original error."""

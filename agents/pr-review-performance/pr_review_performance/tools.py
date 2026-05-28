@@ -131,8 +131,8 @@ def execute_read_file(
 ) -> str:
     """Read a file with path-traversal guard and optional truncation.
 
-    Tries local filesystem first. Falls back to GitHub API via github_reader when the
-    file is not present locally (e.g. when running from a different directory).
+    When github_reader is provided, always reads via GitHub API (remote-always mode).
+    Without a reader, reads from the local filesystem.
 
     Returns the file contents (possibly truncated) or an error string.
     Never raises — errors are returned as strings so the LLM can see them.
@@ -143,9 +143,10 @@ def execute_read_file(
     if not target.startswith(real_repo):
         return "Error: access denied — path is outside the repository root."
 
+    if github_reader is not None:
+        return github_reader.read_file(path, max_lines)
+
     if not os.path.isfile(target):
-        if github_reader is not None:
-            return github_reader.read_file(path, max_lines)
         return f"Error: file not found: {path}"
 
     try:
