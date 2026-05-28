@@ -77,9 +77,13 @@ class GitHubFileReader:
         if response.status_code == 404:
             return f"Error: file not found: {path}"
 
+        _rate_limit_phrases = ("rate limit", "secondary rate limit", "you have exceeded")
         if response.status_code == 429 or (
             response.status_code == 403
-            and "rate limit" in response.text.lower()
+            and (
+                any(p in response.text.lower() for p in _rate_limit_phrases)
+                or response.headers.get("x-ratelimit-remaining") == "0"
+            )
         ):
             return "Error: GitHub API rate limit exceeded. Try again later."
 
