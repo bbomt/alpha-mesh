@@ -206,18 +206,6 @@ class TestGitHubFileReader:
 
 
 class TestExecuteReadFileWithGitHubFallback:
-    @patch("pr_review_performance.tools.httpx.Client")
-    def test_falls_back_to_github_when_file_not_local(self, MockClient, tmp_path):
-        """When the file is absent locally, remote reader is used."""
-        remote_content = "remote file content\n"
-        MockClient.return_value.get.return_value = _make_http_response(200, text=remote_content)
-
-        reader = GitHubFileReader("owner", "repo", "sha123", "token")
-        result = execute_read_file("src/nonexistent.py", str(tmp_path), 8000, reader)
-
-        assert result == remote_content
-        MockClient.return_value.get.assert_called_once()
-
     def test_always_uses_reader_when_set(self, tmp_path):
         """When github_reader is provided, it is always used — even if file exists locally."""
         (tmp_path / "local.py").write_text("local content\n")
