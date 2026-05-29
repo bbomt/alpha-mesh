@@ -3,12 +3,18 @@
 Loads .env + review_config.toml into a Config dataclass.
 """
 
+from __future__ import annotations
+
 import os
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from dotenv import load_dotenv
+
+if TYPE_CHECKING:
+    from pr_review_performance.tools import GitHubFileReader
 
 
 REQUIRED_ENV_VARS = ["CODE_REVIEW_URL", "CODE_REVIEW_TOKEN", "CODE_REVIEW_MODEL"]
@@ -43,6 +49,7 @@ class Config:
     repo_root: str = ""
     verbose: bool = False
     hide_pr_comment: bool = False
+    github_reader: GitHubFileReader | None = None
 
     @property
     def effective_overview_model(self) -> str:

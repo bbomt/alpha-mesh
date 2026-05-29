@@ -153,6 +153,7 @@ def run_file_review(chunk, overview: str, config) -> FileReviewResult:
                         path,
                         config.repo_root,
                         config.max_file_lines,
+                        getattr(config, "github_reader", None),
                     )
                     messages.append({
                         "role": "assistant",

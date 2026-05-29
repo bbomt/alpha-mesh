@@ -11,13 +11,10 @@ from pr_review_performance.chunker import build_chunks
 from pr_review_performance.config import load_config
 from pr_review_performance.formatter import render_report
 from pr_review_performance.git import (
-    checkout_branch,
-    get_current_branch,
     get_diff,
     get_pr_description,
     get_pr_info,
     parse_pr_url,
-    pull_latest,
 )
 from pr_review_performance.github import post_comment
 from pr_review_performance.incremental import (
@@ -27,6 +24,7 @@ from pr_review_performance.incremental import (
 )
 from pr_review_performance.stage1 import run_overview
 from pr_review_performance.stage2 import run_file_review
+from pr_review_performance.tools import GitHubFileReader
 
 
 DRY_RUN_MODEL = "dry-run-model"
@@ -142,8 +140,6 @@ Examples:
 
     config = load_config(args)
 
-    print(f"Repo path: {config.repo_root}", file=sys.stderr)
-
     # Parse PR URL to get owner/repo/pr_number
     try:
         owner, repo, pr_number = parse_pr_url(args.pr_url)
@@ -151,18 +147,19 @@ Examples:
         print(f"ERROR: could not parse PR URL '{args.pr_url}': {e}", file=sys.stderr)
         return 1
 
-    print(f"PR: {owner}/{repo}#{pr_number}", file=sys.stderr)
+    print(f"Reviewing {owner}/{repo} PR #{pr_number}", file=sys.stderr)
     print("Fetching PR data from GitHub...", file=sys.stderr)
 
-    # Fetch PR info (branch names, title)
+    # Fetch PR info (branch names, head SHA)
     pr_info = get_pr_info(owner, repo, pr_number)
     if not pr_info:
         print(f"ERROR: could not fetch PR info for {owner}/{repo}/pull/{pr_number}", file=sys.stderr)
         return 1
 
     pr_head_branch = pr_info.get("headRefName", "")
+    print(f"Branch: {pr_head_branch}", file=sys.stderr)
 
-    # Get PR description
+    # Get GitHub token and PR description
     import subprocess as _subprocess
     _result = _subprocess.run(["gh", "auth", "token"], capture_output=True, text=True)
     _token = _result.stdout.strip() if _result.returncode == 0 else ""
@@ -170,27 +167,30 @@ Examples:
     if pr_desc:
         print("Fetched PR description.", file=sys.stderr)
 
+    # Always read files via GitHub API at the PR head SHA
+    head_sha = pr_info.get("headRefOid", "")
+    if not _token:
+        print(
+            "ERROR: no GitHub token found. Run 'gh auth login' and try again.",
+            file=sys.stderr,
+        )
+        return 1
+    if not head_sha:
+        print(
+            "ERROR: could not determine PR head SHA from GitHub API response.",
+            file=sys.stderr,
+        )
+        return 1
+    config.github_reader = GitHubFileReader(owner, repo, head_sha, _token)
+    _verbose_print(config, f"read_file: GitHub API (ref={head_sha[:8]})")
+
     # Print model info if verbose
     _verbose_print(config, f"Model: {config.model}")
     _verbose_print(config, f"API URL: {config.api_url}")
 
     start_time = time.time()
-    original_branch = None
     incremental_info = None
     try:
-        # Auto-checkout PR branch if not already on it (skip for dry-run)
-        if not args.dry_run:
-            current_branch = get_current_branch(config.repo_root)
-            if current_branch != pr_head_branch:
-                print(f"Checking out PR branch: {pr_head_branch}", file=sys.stderr)
-                _verbose_print(config, f"  original branch: {current_branch}")
-                checkout_branch(config.repo_root, pr_head_branch)
-                pull_latest(config.repo_root, pr_head_branch)
-                original_branch = current_branch
-            else:
-                _verbose_print(config, f"Already on branch: {pr_head_branch}")
-                original_branch = current_branch
-
         # ── Incremental diff (--since-last-review) ──────────────────────────
         if args.since_last_review and not args.dry_run:
             last_review = find_last_review_comment(owner, repo, pr_number, _token)
@@ -327,13 +327,8 @@ Examples:
         return 1
 
     finally:
-        # Restore original branch
-        if original_branch and not args.dry_run:
-            try:
-                checkout_branch(config.repo_root, original_branch)
-                _verbose_print(config, f"Restored original branch: {original_branch}")
-            except Exception as ex:
-                print(f"Warning: Could not restore original branch '{original_branch}': {ex}", file=sys.stderr)
+        if config.github_reader is not None:
+            config.github_reader.close()
 
 
 if __name__ == "__main__":

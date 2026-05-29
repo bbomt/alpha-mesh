@@ -28,6 +28,20 @@ cp .env.example .env
 # edit .env with your API credentials
 ```
 
+## Run from any directory — no local clone needed
+
+All `read_file` calls go directly to the GitHub API at the PR's exact head commit SHA. No local checkout of the target repo is required.
+
+```bash
+# From any directory
+cd ~
+mesh pr-review-performance https://github.com/org/repo/pull/123
+```
+
+**How it works:** after fetching PR info, the tool creates a `GitHubFileReader` authenticated with `gh`'s stored token. When the LLM calls `read_file`, it fetches the file via the GitHub raw content API at `?ref=<head-sha>` and caches the result in memory for the duration of the run.
+
+**Rate limits:** the GitHub API allows 5,000 authenticated requests/hour. Results are cached per run so each unique path+truncation pair is fetched at most once.
+
 ## How It Works
 
 ### Stage 1 — Overview
@@ -39,7 +53,7 @@ The full PR diff is sent to the LLM to produce a high-level narrative of what th
 Each changed file is reviewed individually. The LLM receives:
 - The file's diff chunk
 - The Stage 1 overview as context
-- The ability to call `read_file` to inspect other files for cross-reference
+- The ability to call `read_file` to inspect other files for cross-reference (local or remote)
 
 Issues are classified as `high`, `medium`, or `low` severity.
 
