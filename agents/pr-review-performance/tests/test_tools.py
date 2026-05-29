@@ -217,6 +217,17 @@ class TestGitHubFileReader:
         MockClient.return_value.close.assert_called_once()
 
     @patch("pr_review_performance.tools.httpx.Client")
+    def test_context_manager_closes_client(self, MockClient):
+        with GitHubFileReader("o", "r", "sha", "tok") as reader:
+            pass
+        MockClient.return_value.close.assert_called_once()
+
+    @patch("pr_review_performance.tools.httpx.Client")
+    def test_context_manager_returns_reader(self, MockClient):
+        with GitHubFileReader("o", "r", "sha", "tok") as reader:
+            assert isinstance(reader, GitHubFileReader)
+
+    @patch("pr_review_performance.tools.httpx.Client")
     def test_cache_evicts_oldest_when_full(self, MockClient):
         MockClient.return_value.get.return_value = _make_http_response(200, text="x")
         reader = self._reader()

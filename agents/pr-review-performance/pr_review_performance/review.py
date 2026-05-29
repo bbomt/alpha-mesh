@@ -327,7 +327,8 @@ Examples:
         return 1
 
     finally:
-        pass
+        if config.github_reader is not None:
+            config.github_reader.close()
 
 
 if __name__ == "__main__":
