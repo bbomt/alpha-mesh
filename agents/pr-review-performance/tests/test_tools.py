@@ -204,6 +204,18 @@ class TestGitHubFileReader:
         assert client_kwargs["headers"]["Authorization"] == "Bearer mytoken"
         assert "raw" in client_kwargs["headers"]["Accept"]
 
+    @patch("pr_review_performance.tools.httpx.Client")
+    def test_close_calls_client_close(self, MockClient):
+        reader = GitHubFileReader("o", "r", "sha", "tok")
+        reader.close()
+        MockClient.return_value.close.assert_called_once()
+
+    @patch("pr_review_performance.tools.httpx.Client")
+    def test_del_calls_client_close(self, MockClient):
+        reader = GitHubFileReader("o", "r", "sha", "tok")
+        reader.__del__()
+        MockClient.return_value.close.assert_called_once()
+
 
 class TestExecuteReadFileWithGitHubReader:
     def test_always_uses_reader_when_set(self, tmp_path):

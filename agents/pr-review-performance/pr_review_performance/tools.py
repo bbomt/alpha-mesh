@@ -60,6 +60,15 @@ class GitHubFileReader:
         self._client = httpx.Client(headers=self._headers, timeout=30.0)
         self._cache: dict[tuple[str, int], str] = {}
 
+    def close(self) -> None:
+        self._client.close()
+
+    def __del__(self) -> None:
+        try:
+            self._client.close()
+        except Exception:
+            pass
+
     def read_file(self, path: str, max_lines: int) -> str:
         """Fetch file content at the PR head SHA. Returns content or an error string."""
         cache_key = (path, max_lines)
