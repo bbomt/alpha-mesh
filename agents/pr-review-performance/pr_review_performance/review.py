@@ -172,6 +172,12 @@ Examples:
     if head_sha and _token:
         config.github_reader = GitHubFileReader(owner, repo, head_sha, _token)
         _verbose_print(config, f"read_file: GitHub API (ref={head_sha[:8]})")
+    else:
+        print(
+            "WARNING: no GitHub token available — file reads will use the local filesystem. "
+            "Ensure your local checkout is on the PR branch before continuing.",
+            file=sys.stderr,
+        )
 
     # Print model info if verbose
     _verbose_print(config, f"Model: {config.model}")

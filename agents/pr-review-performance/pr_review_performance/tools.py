@@ -54,7 +54,7 @@ class GitHubFileReader:
         self._ref = head_sha
         self._headers = {
             "Authorization": f"Bearer {token}",
-            "Accept": "application/vnd.github.raw+json",
+            "Accept": "application/vnd.github.raw",
             "User-Agent": "pr-review-performance/1.0",
         }
         self._client = httpx.Client(headers=self._headers, timeout=30.0)
