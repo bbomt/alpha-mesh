@@ -169,15 +169,20 @@ Examples:
 
     # Always read files via GitHub API at the PR head SHA
     head_sha = pr_info.get("headRefOid", "")
-    if head_sha and _token:
-        config.github_reader = GitHubFileReader(owner, repo, head_sha, _token)
-        _verbose_print(config, f"read_file: GitHub API (ref={head_sha[:8]})")
-    else:
+    if not _token:
         print(
-            "WARNING: no GitHub token available — file reads will use the local filesystem. "
-            "Ensure your local checkout is on the PR branch before continuing.",
+            "ERROR: no GitHub token found. Run 'gh auth login' and try again.",
             file=sys.stderr,
         )
+        return 1
+    if not head_sha:
+        print(
+            "ERROR: could not determine PR head SHA from GitHub API response.",
+            file=sys.stderr,
+        )
+        return 1
+    config.github_reader = GitHubFileReader(owner, repo, head_sha, _token)
+    _verbose_print(config, f"read_file: GitHub API (ref={head_sha[:8]})")
 
     # Print model info if verbose
     _verbose_print(config, f"Model: {config.model}")
