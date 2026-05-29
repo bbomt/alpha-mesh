@@ -47,6 +47,7 @@ class GitHubFileReader:
     """
 
     _GITHUB_API = "https://api.github.com"
+    _MAX_CACHE = 256
 
     def __init__(self, owner: str, repo: str, head_sha: str, token: str) -> None:
         self._owner = owner
@@ -130,6 +131,8 @@ class GitHubFileReader:
                 f"Showing first {max_lines} lines only.]\n"
             )
 
+        if len(self._cache) >= self._MAX_CACHE:
+            self._cache.pop(next(iter(self._cache)))
         self._cache[cache_key] = content
         return content
 

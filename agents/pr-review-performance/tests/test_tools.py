@@ -216,6 +216,22 @@ class TestGitHubFileReader:
         reader.__del__()
         MockClient.return_value.close.assert_called_once()
 
+    @patch("pr_review_performance.tools.httpx.Client")
+    def test_cache_evicts_oldest_when_full(self, MockClient):
+        MockClient.return_value.get.return_value = _make_http_response(200, text="x")
+        reader = self._reader()
+        # Fill cache to the limit
+        for i in range(GitHubFileReader._MAX_CACHE):
+            reader._cache[(f"file{i}.py", 8000)] = f"content{i}"
+        # Seed first entry so we can check it's evicted
+        first_key = next(iter(reader._cache))
+        assert first_key in reader._cache
+
+        reader.read_file("new_file.py", 8000)
+
+        assert first_key not in reader._cache
+        assert len(reader._cache) == GitHubFileReader._MAX_CACHE
+
 
 class TestExecuteReadFileWithGitHubReader:
     def test_always_uses_reader_when_set(self, tmp_path):
