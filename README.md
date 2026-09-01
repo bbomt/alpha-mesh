@@ -10,17 +10,20 @@ alpha-mesh/
 │   ├── mesh                 # Unified CLI entry point (wraps all commands)
 │   ├── model                # Switch/check model config
 │   ├── dream                # End-of-session memory consolidation (delegates to agents/dream/)
+│   ├── pr-review-performance # PR review agent (delegates to agents/pr-review-performance/)
 │   ├── bootstrap-memory     # One-time: extract from existing Claude Code logs
 │   ├── install              # One-time setup
 │   └── lib/repo             # Shared bash functions: find_repo_root, get_active_model
 ├── agents/
-│   └── dream/               # Dream agent (mirrors pr-review pattern)
-│       ├── dream/           # Python package
-│       │   ├── __init__.py  # All dream logic: session extraction, LLM calls, memory synthesis
-│       │   ├── __main__.py  # Entry point for: python3 -m dream
-│       │   └── bin/dream    # Shell entry point
-│       └── tests/
-│           └── test_dream_core.py  # Python tests for dream module
+│   ├── dream/               # Dream agent
+│   │   ├── dream/           # Python package
+│   │   │   ├── __init__.py  # All dream logic: session extraction, LLM calls, memory synthesis
+│   │   │   ├── __main__.py  # Entry point for: python3 -m dream
+│   │   │   └── bin/dream    # Shell entry point
+│   │   └── tests/
+│   │       └── test_dream_core.py  # Python tests for dream module
+│   ├── pr-review-performance/ # PR review agent — LLM-powered, two-stage review (see below)
+│   └── agent_runner/        # Shared Claude-plugin agent framework (PMAT-188/189); no current consumer, kept for future agents
 ├── config/
 │   └── models.json          # All model profiles
 ├── memory/
@@ -155,52 +158,6 @@ Dream does not touch CLAUDE.md — this is a manual step.
 - No sessions today: prints message, exits 0
 - LLM unreachable: writes raw extracted content as fallback, exits 0
 - Model not configured: exits with error (run `mesh model use` first)
-
-## PR Review Agent
-
-`mesh pr-review` runs AI-powered code reviews using Claude Code with full repository context.
-
-### Quick Start
-
-```bash
-# Review a PR (from any directory)
-mesh pr-review https://github.com/org/repo/pull/123
-
-# Auto-fix mode (apply fixes and push)
-mesh pr-review https://github.com/org/repo/pull/123 --auto-fix
-
-# Dry run (see what would be posted)
-mesh pr-review https://github.com/org/repo/pull/123 --dry-run --verbose
-```
-
-### Prerequisites
-
-1. **Claude Code CLI** - Must be installed and authenticated
-2. **GitHub CLI (`gh`)** - For GitHub API authentication
-   ```bash
-   gh auth login
-   ```
-3. **Atlassian MCP Plugin** - For JIRA ticket lookups (optional)
-   - Run `claude` in your terminal
-   - Activate the Atlassian plugin
-   - Complete the OAuth flow
-
-### Documentation
-
-- Full documentation: `agents/pr-review/README.md`
-- Implementation notes: `agents/pr-review/NOTES.md`
-- Unit tests: `agents/pr-review/tests/`
-
-### Exit Codes
-
-| Code | Meaning |
-|------|----------|
-| `0` | Review completed successfully |
-| `1` | General error |
-| `2` | GitHub API error |
-| `3` | Atlassian MCP auth not available |
-| `4` | Claude Code subprocess failed |
-| `5` | Git error |
 
 ## PR Review Performance Agent
 

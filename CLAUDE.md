@@ -21,10 +21,11 @@ alpha-mesh/
 │   │   └── repo              # find_repo_root, get_active_model_from_settings
 │   └── install              # One-time setup (run after clone)
 ├── agents/
-│   ├── dream/               # Dream agent (mirrors pr-review pattern)
+│   ├── dream/               # Dream agent
 │   │   ├── dream/           # Python package with dream logic
 │   │   └── tests/           # Dream tests
-│   └── pr-review/          # PR review agent
+│   ├── pr-review-performance/ # PR review agent — LLM-powered, two-stage review
+│   └── agent_runner/       # Shared Claude-plugin agent framework (no current consumer)
 ├── test/
 │   ├── run-all              # Runs all test suites
 │   └── test-*               # Individual test suites
