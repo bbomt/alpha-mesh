@@ -3,6 +3,7 @@
 from review_pull_request.constants import REVIEW_SIGNATURE
 
 
+MAX_LISTED_FILES = 50
 SEVERITY_ORDER = ["high", "medium", "low"]
 SEVERITY_EMOJI = {
     "high": "🔴",
@@ -24,6 +25,7 @@ def render_report(
     model: str | None = None,
     incremental_info: dict | None = None,
     incomplete: list[str] | None = None,
+    excluded: list[str] | None = None,
 ) -> str:
     """Build a Markdown review report.
 
@@ -37,6 +39,8 @@ def render_report(
             reviews; if None, this is a full review.
         incomplete: files whose review did not complete; they are listed and the
             all-clear is withheld.
+        excluded: changed files skipped by exclusion patterns; listed so the report
+            does not imply coverage it does not have.
     """
     if summaries is None:
         summaries = []
@@ -51,14 +55,17 @@ def render_report(
     else:
         lines.append(f"{REVIEW_SIGNATURE}\n")
 
-    files_reviewed = len(summaries)
+    files_reviewed = len(summaries) - len(incomplete or [])
+    files_reviewed_text = (
+        f"{files_reviewed} of {len(summaries)}" if incomplete else str(files_reviewed)
+    )
     lines.append(
         f"> **Models:** per-file=`{effective_model}` · "
         f"overview=`{config.effective_overview_model}`"
     )
     lines.append(
         f"> **Base branch:** `{config.base_branch}` · "
-        f"**Files reviewed:** {files_reviewed}"
+        f"**Files reviewed:** {files_reviewed_text}"
     )
     lines.append("\n---\n\n## Overview\n\n" + (overview or "Overview not available.") + "\n")
 
@@ -104,6 +111,17 @@ def render_report(
             "**not** covered by the result above:\n"
         )
         lines.extend(f"- `{path}`" for path in incomplete)
+        lines.append("")
+
+    if excluded:
+        shown = excluded[:MAX_LISTED_FILES]
+        lines.append("\n## Excluded from review\n")
+        lines.append(
+            "These changed files matched an exclusion pattern and were **not** reviewed:\n"
+        )
+        lines.extend(f"- `{path}`" for path in shown)
+        if len(excluded) > len(shown):
+            lines.append(f"- … and {len(excluded) - len(shown)} more")
         lines.append("")
 
     lines.append(

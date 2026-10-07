@@ -294,3 +294,23 @@ class TestSiblingDirectoryTraversal:
 
         assert "access denied" in result
         assert "SECRET" not in result
+
+
+class TestReadErrorType:
+    def test_errors_are_read_error_instances(self, tmp_path):
+        from review_pull_request.tools import ReadError
+
+        result = execute_read_file("missing.py", str(tmp_path), 100)
+
+        assert isinstance(result, ReadError)
+        assert result.startswith("Error:")
+
+    def test_content_that_starts_with_error_is_plain_content(self, tmp_path):
+        from review_pull_request.tools import ReadError
+
+        (tmp_path / "log.txt").write_text("Error: something happened\n")
+
+        result = execute_read_file("log.txt", str(tmp_path), 100)
+
+        assert not isinstance(result, ReadError)
+        assert result == "Error: something happened\n"

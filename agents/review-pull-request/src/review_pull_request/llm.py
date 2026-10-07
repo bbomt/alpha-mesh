@@ -55,6 +55,18 @@ def _parse_chat_response(response) -> ChatResponse:
         raise LLMError(f"Malformed API response ({type(e).__name__}: {e})") from e
 
 
+def _parse_or_retry(response, attempt: int) -> "ChatResponse | None":
+    """Parse a 200 body. A malformed body can be a one-off provider glitch: sleep and
+    return None to retry, until the last attempt, where the LLMError is raised."""
+    try:
+        return _parse_chat_response(response)
+    except LLMError:
+        if attempt >= RETRIES - 1:
+            raise
+        time.sleep(BACKOFF[attempt] if attempt < len(BACKOFF) else BACKOFF[-1])
+        return None
+
+
 def chat(
     messages: list[dict],
     tools: list[dict] | None,
@@ -108,7 +120,10 @@ def chat(
                 )
                 last_error = f"404 with tools, retry: {retry_response.status_code}"
                 if retry_response.status_code == 200:
-                    return _parse_chat_response(retry_response)
+                    parsed = _parse_or_retry(retry_response, attempt)
+                    if parsed is not None:
+                        return parsed
+                    continue
                 raise LLMError(f"API returned 404 with tools, retry also failed: {last_error}")
 
             if response.status_code in TRANSIENT_ERROR_CODES and attempt < RETRIES - 1:
@@ -119,14 +134,10 @@ def chat(
             if response.status_code != 200:
                 raise LLMError(f"API returned {response.status_code}: {response.text[:200]}")
 
-            try:
-                return _parse_chat_response(response)
-            except LLMError as e:  # a malformed 200 body can be a one-off provider glitch
-                last_error = str(e)
-                if attempt < RETRIES - 1:
-                    time.sleep(BACKOFF[attempt] if attempt < len(BACKOFF) else BACKOFF[-1])
-                    continue
-                raise
+            parsed = _parse_or_retry(response, attempt)
+            if parsed is not None:
+                return parsed
+            continue
 
         except httpx.TimeoutException:
             last_error = "Request timed out"

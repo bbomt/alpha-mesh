@@ -112,6 +112,9 @@ While reviewing a file the model can call `read_file` to look at other files. Re
 
 - If the model gives no usable answer for a file (unparseable reply, tool-call limit reached), that file is listed in the report under "Not fully reviewed", the "No issues found ✅" all-clear is withheld, and the run exits non-zero (the report is still posted).
 - If every changed file matches an exclusion pattern, the agent says so on stderr and posts a short comment stating that the PR was **not** reviewed, instead of exiting silently. Nothing is posted with `--no-post-comment` or `--dry-run`.
+- If the review (or the "not reviewed" notice) could not be posted to the PR, the run exits non-zero instead of reporting success.
+- A mixed PR's report lists the changed files that were skipped by exclusion patterns under "Excluded from review", so the all-clear never implies coverage it lacks. The "not reviewed" notice does not carry the `# AI Code Review` marker, so `--since-last-review` never mistakes it for a completed review.
+- An unreadable `.pr-review-ignore` aborts the run (it would otherwise send files you meant to exclude).
 - Severities other than high/medium/low from the model (`error`, `critical`, `warning`, anything else) are mapped to high/medium/low so no finding is dropped from the report.
 
 ## Failure behaviour

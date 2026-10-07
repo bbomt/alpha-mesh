@@ -61,3 +61,15 @@ def test_one_malformed_200_body_is_retried_before_giving_up():
 
     assert result.content == "ok"
     assert post.call_count == 2
+
+
+def test_malformed_body_on_the_no_tools_fallback_is_retried_too():
+    not_found = MagicMock(status_code=404, text="no tools")
+    bad = _response({})
+    good = _response({"choices": [{"finish_reason": "stop", "message": {"content": "ok"}}]})
+    tools = [{"type": "function", "function": {"name": "read_file"}}]
+    # attempt 1: 404 with tools -> fallback without tools -> malformed; attempt 2: 404 -> fallback -> good
+    with patch("review_pull_request.llm.httpx.post", side_effect=[not_found, bad, not_found, good]):
+        result = chat([{"role": "user", "content": "hi"}], tools, _Config())
+
+    assert result.content == "ok"

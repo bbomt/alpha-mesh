@@ -1,6 +1,8 @@
 """Tests for the global .pr-review-ignore file (PMAT-229)."""
 
 from pathlib import Path
+
+import pytest
 from types import SimpleNamespace
 
 from review_pull_request import config as config_module
@@ -72,11 +74,14 @@ def test_load_ignore_patterns_tolerates_a_utf8_bom(tmp_path):
     assert load_ignore_patterns(f) == ["CLAUDE.md", ".mesh/*"]
 
 
-def test_load_ignore_patterns_unreadable_file_warns_and_returns_empty(tmp_path, capsys):
+def test_unreadable_ignore_file_aborts_instead_of_reviewing_more_files(tmp_path, capsys):
     f = tmp_path / ".pr-review-ignore"
     f.write_bytes(b"\xff\xfe\x00bad")
 
-    assert load_ignore_patterns(f) == []
+    with pytest.raises(SystemExit) as exc:
+        load_ignore_patterns(f)
+
+    assert exc.value.code != 0
     assert "pr-review-ignore" in capsys.readouterr().err
 
 

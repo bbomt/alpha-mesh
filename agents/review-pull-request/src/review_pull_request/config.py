@@ -33,8 +33,12 @@ def load_ignore_patterns(path: Path) -> list[str]:
     try:
         text = path.read_text(encoding="utf-8-sig")
     except (OSError, UnicodeDecodeError) as e:
-        print(f"WARNING: could not read {path.name} ({e}); no global exclusions applied.", file=sys.stderr)
-        return []
+        print(
+            f"ERROR: could not read {path.name} ({e}). Aborting rather than reviewing "
+            "files you meant to exclude; fix or remove the file.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     lines = (line.strip() for line in text.splitlines())
     return [line for line in lines if line and not line.startswith("#")]
 

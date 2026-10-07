@@ -6,7 +6,7 @@ from unittest.mock import patch, MagicMock
 from review_pull_request.chunker import FileChunk
 from review_pull_request.stage2 import run_file_review, Issue, FileReviewResult
 from review_pull_request.config import Config
-from review_pull_request.tools import GitHubFileReader
+from review_pull_request.tools import GitHubFileReader, ReadError
 
 
 class MockLLMResponse:
@@ -236,10 +236,20 @@ def test_error_results_are_not_cached():
     config = MockConfig()
     config.read_cache = {}
     with patch("review_pull_request.stage2.chat", side_effect=_scripted_chat([_tool_call("1", "missing.py")])), \
-         patch("review_pull_request.stage2.execute_read_file", return_value="Error: file not found: missing.py"):
+         patch("review_pull_request.stage2.execute_read_file", return_value=ReadError("Error: file not found: missing.py")):
         run_file_review(_chunk(), "o", config)
 
     assert config.read_cache == {}
+
+
+def test_file_whose_content_starts_with_error_is_still_cached():
+    config = MockConfig()
+    config.read_cache = {}
+    with patch("review_pull_request.stage2.chat", side_effect=_scripted_chat([_tool_call("1", "TROUBLESHOOTING.md")])), \
+         patch("review_pull_request.stage2.execute_read_file", return_value="Error: connection refused\nfix: restart"):
+        run_file_review(_chunk(), "o", config)
+
+    assert config.read_cache == {"TROUBLESHOOTING.md": "Error: connection refused\nfix: restart"}
 
 
 def test_read_cache_stops_storing_once_the_size_cap_is_reached():
@@ -280,7 +290,7 @@ def test_failed_read_can_be_retried_within_the_same_review():
         seen.append([m["content"] for m in messages if m.get("role") == "tool"])
         return scripted(messages, tools, config)
 
-    outcomes = iter(["Error: GitHub API rate limit exceeded.", "FILE BODY"])
+    outcomes = iter([ReadError("Error: GitHub API rate limit exceeded."), "FILE BODY"])
     with patch("review_pull_request.stage2.chat", side_effect=capturing), \
          patch("review_pull_request.stage2.execute_read_file", side_effect=lambda *a: next(outcomes)) as ex:
         run_file_review(_chunk(), "o", MockConfig())

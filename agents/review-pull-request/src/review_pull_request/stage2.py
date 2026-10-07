@@ -9,7 +9,7 @@ import sys
 from dataclasses import dataclass, field
 
 from review_pull_request.llm import chat, ChatResponse
-from review_pull_request.tools import READ_FILE_TOOL_SCHEMA, execute_read_file
+from review_pull_request.tools import READ_FILE_TOOL_SCHEMA, execute_read_file, ReadError
 
 
 PER_FILE_PROMPT = """## Task
@@ -182,13 +182,13 @@ def run_file_review(chunk, overview: str, config) -> FileReviewResult:
                             config.max_file_lines,
                             getattr(config, "github_reader", None),
                         )
-                        if read_cache is not None and not result.startswith("Error:"):
+                        if read_cache is not None and not isinstance(result, ReadError):
                             cap = getattr(config, "read_cache_max_bytes", DEFAULT_READ_CACHE_MAX_BYTES)
                             size = len(result.encode())
                             if getattr(config, "read_cache_bytes", 0) + size <= cap:
                                 read_cache[path] = result
                                 config.read_cache_bytes = getattr(config, "read_cache_bytes", 0) + size
-                    if not result.startswith("Error:"):
+                    if not isinstance(result, ReadError):
                         paths_read.add(path)  # failed reads stay retryable
                     messages.append({
                         "role": "assistant",

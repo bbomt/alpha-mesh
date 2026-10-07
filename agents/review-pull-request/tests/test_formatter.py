@@ -118,3 +118,24 @@ def test_incomplete_files_suppress_the_all_clear_and_are_listed():
     assert "No issues found. ✅" not in body
     assert "not fully reviewed" in body.lower()
     assert "b.py" in body and "c.py" in body
+
+
+def test_header_counts_only_files_that_were_actually_reviewed():
+    from review_pull_request.config import Config
+
+    cfg = Config(model="m", api_url="http://x", api_token="t")
+    body = render_report("ov", [], summaries=[("a.py", "s"), ("b.py", "s"), ("c.py", "s")],
+                         config=cfg, model="m", incomplete=["c.py"])
+
+    assert "Files reviewed:** 2 of 3" in body
+
+
+def test_excluded_files_are_listed_so_the_report_does_not_imply_full_coverage():
+    from review_pull_request.config import Config
+
+    cfg = Config(model="m", api_url="http://x", api_token="t")
+    body = render_report("ov", [], summaries=[("a.py", "s")], config=cfg, model="m",
+                         excluded=["README.md", "CLAUDE.md"])
+
+    assert "Excluded from review" in body
+    assert "README.md" in body and "CLAUDE.md" in body

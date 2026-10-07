@@ -9,7 +9,6 @@ import time
 from urllib.parse import urlparse
 
 from review_pull_request.chunker import build_chunks
-from review_pull_request.constants import REVIEW_SIGNATURE
 from review_pull_request.config import load_config
 from review_pull_request.formatter import render_report
 from review_pull_request.git import (
@@ -46,6 +45,30 @@ def _safe_url(url: str) -> str:
     except ValueError:  # malformed port in a hand-edited .env
         return "(invalid URL)"
     return f"{p.scheme}://{p.hostname}{port}{p.path}"
+
+
+MAX_LISTED_FILES = 50
+
+
+def _excluded_notice(paths: list[str]) -> str:
+    """PR comment for a PR whose every changed file was excluded.
+
+    Deliberately does not contain REVIEW_SIGNATURE, so --since-last-review never
+    mistakes it for a completed review.
+    """
+    shown = paths[:MAX_LISTED_FILES]
+    lines = [
+        "# Pull request not reviewed",
+        "",
+        f"No files were reviewed: all {len(paths)} changed file(s) were excluded "
+        "by the exclusion patterns (`.pr-review-ignore` / `review_config.toml`), so this "
+        "pull request has **not** been reviewed.",
+        "",
+    ]
+    lines.extend(f"- `{p}`" for p in shown)
+    if len(paths) > len(shown):
+        lines.append(f"- … and {len(paths) - len(shown)} more")
+    return "\n".join(lines)
 
 
 def _mock_llm_config(config):
@@ -293,22 +316,22 @@ Examples:
             if not all_paths:
                 print("No files to review (diff is empty).", file=sys.stderr)
                 return 0
-            notice = (
-                f"{REVIEW_SIGNATURE}\n\n"
-                f"No files were reviewed: all {len(all_paths)} changed file(s) were excluded "
-                "by the exclusion patterns (`.pr-review-ignore` / `review_config.toml`), so this "
-                "pull request has **not** been reviewed.\n\n"
-                + "\n".join(f"- `{p}`" for p in all_paths)
-            )
+            notice = _excluded_notice(all_paths)
             print(
                 f"No files to review: all {len(all_paths)} changed file(s) were excluded "
                 "by exclusion patterns.",
                 file=sys.stderr,
             )
             if not args.dry_run and not args.no_post_comment and args.pr_url:
-                post_comment(notice, args.pr_url, config)
+                if not post_comment(notice, args.pr_url, config):
+                    print("ERROR: could not post the 'not reviewed' notice to the PR.", file=sys.stderr)
+                    return 1
             return 0
 
+        reviewed_paths = {c.file_path for c in chunks}
+        excluded_files = [
+            c.file_path for c in build_chunks(diff, []) if c.file_path not in reviewed_paths
+        ]
         print(f"Diff: {len(chunks)} file chunk(s) to review", file=sys.stderr)
 
         if args.dry_run:
@@ -350,6 +373,7 @@ Examples:
             model=model,
             incremental_info=incremental_info,
             incomplete=incomplete_files,
+            excluded=excluded_files,
         )
 
         # stdout: hide_pr_comment means print body to stdout only if NOT hiding
@@ -360,7 +384,9 @@ Examples:
 
         if post_to_pr:
             print("Posting to PR...", file=sys.stderr)
-            post_comment(report, args.pr_url, config)
+            if not post_comment(report, args.pr_url, config):
+                print("ERROR: could not post the review to the PR (see warning above).", file=sys.stderr)
+                return 1
 
         elapsed = time.time() - start_time
         mins, secs = divmod(int(elapsed), 60)

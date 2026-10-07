@@ -15,6 +15,7 @@ def _get_github_token() -> str | None:
             ["gh", "auth", "token"],
             capture_output=True,
             text=True,
+            timeout=10,
         )
     except (OSError, subprocess.SubprocessError):  # gh not installed
         result = None
@@ -23,21 +24,21 @@ def _get_github_token() -> str | None:
     return os.environ.get("GITHUB_TOKEN") or None
 
 
-def post_comment(body: str, pr_url: str, config) -> None:
+def post_comment(body: str, pr_url: str, config) -> bool:
     """Post body as a comment on the GitHub PR at pr_url.
 
-    Silently continues on failure (never raises).
+    Never raises. Returns True if the comment was posted, False otherwise.
     """
     github_token = _get_github_token()
     if not github_token:
         print("WARNING: GitHub token not available ( gh auth token | GITHUB_TOKEN ), skipping PR comment.", flush=True)
-        return
+        return False
 
     try:
         owner, repo, pr_number = parse_pr_url(pr_url)
     except Exception as e:
         print(f"WARNING: could not parse PR URL '{pr_url}': {e}", flush=True)
-        return
+        return False
 
     headers = {
         "Authorization": f"Bearer {github_token}",
@@ -58,6 +59,7 @@ def post_comment(body: str, pr_url: str, config) -> None:
         if response.status_code in (200, 201):
             data = response.json()
             print(f"PR comment posted: {data.get('html_url', api_url)}", flush=True)
+            return True
         else:
             print(
                 f"WARNING: GitHub API returned {response.status_code}: "
@@ -66,3 +68,4 @@ def post_comment(body: str, pr_url: str, config) -> None:
             )
     except Exception as e:
         print(f"WARNING: failed to post PR comment: {e}", flush=True)
+    return False

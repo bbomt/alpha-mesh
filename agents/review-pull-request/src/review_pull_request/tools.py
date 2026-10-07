@@ -5,6 +5,10 @@ from urllib.parse import quote
 
 import httpx
 
+
+class ReadError(str):
+    """A failed read, as text for the model. Content that merely starts with 'Error:' is not one."""
+
 READ_FILE_TOOL_SCHEMA = {
     "type": "function",
     "function": {
@@ -91,10 +95,10 @@ class GitHubFileReader:
         try:
             response = self._client.get(url)
         except Exception as e:
-            return f"Error: failed to fetch file from GitHub: {e}"
+            return ReadError(f"Error: failed to fetch file from GitHub: {e}")
 
         if response.status_code == 404:
-            return f"Error: file not found: {path}"
+            return ReadError(f"Error: file not found: {path}")
 
         _rate_limit_phrases = ("rate limit", "secondary rate limit", "you have exceeded")
         if response.status_code == 429 or (
@@ -104,7 +108,7 @@ class GitHubFileReader:
                 or response.headers.get("x-ratelimit-remaining") == "0"
             )
         ):
-            return "Error: GitHub API rate limit exceeded. Try again later."
+            return ReadError("Error: GitHub API rate limit exceeded. Try again later.")
 
         if response.status_code == 403:
             # GitHub returns 403 for files >1 MB via the contents API
@@ -113,20 +117,20 @@ class GitHubFileReader:
             except Exception:
                 msg = ""
             if "too large" in msg.lower() or "blob" in msg.lower():
-                return (
+                return ReadError(
                     f"Error: file too large to read via GitHub API (>1 MB): {path}. "
                     "Consider reviewing this file locally."
                 )
-            return f"Error: GitHub API access forbidden for {path}: {msg or response.text[:200]}"
+            return ReadError(f"Error: GitHub API access forbidden for {path}: {msg or response.text[:200]}")
 
         if response.status_code != 200:
-            return f"Error: GitHub API returned {response.status_code} for {path}"
+            return ReadError(f"Error: GitHub API returned {response.status_code} for {path}")
 
         # Binary detection — same logic as local reads
         try:
             response.content[:8192].decode("utf-8")
         except UnicodeDecodeError:
-            return "Error: file appears to be binary and cannot be read as text."
+            return ReadError("Error: file appears to be binary and cannot be read as text.")
 
         content = response.text
         lines = content.splitlines(keepends=True)
@@ -161,26 +165,26 @@ def execute_read_file(
     target = os.path.realpath(os.path.join(repo_root, path))
 
     if target != real_repo and not target.startswith(real_repo + os.sep):
-        return "Error: access denied — path is outside the repository root."
+        return ReadError("Error: access denied — path is outside the repository root.")
 
     if github_reader is not None:
         return github_reader.read_file(path, max_lines)
 
     if not os.path.isfile(target):
-        return f"Error: file not found: {path}"
+        return ReadError(f"Error: file not found: {path}")
 
     try:
         with open(target, "rb") as f:
             raw = f.read(8192)
         raw.decode("utf-8")
     except UnicodeDecodeError:
-        return "Error: file appears to be binary and cannot be read as text."
+        return ReadError("Error: file appears to be binary and cannot be read as text.")
 
     try:
         with open(target, "r", encoding="utf-8") as f:
             lines = f.readlines()
     except Exception as e:
-        return f"Error: could not read file: {e}"
+        return ReadError(f"Error: could not read file: {e}")
 
     if len(lines) > max_lines:
         truncated = "".join(lines[:max_lines])

@@ -311,3 +311,61 @@ def test_overview_failure_names_the_overview_model(capsys):
 
     err = capsys.readouterr().err
     assert "model: overview-model" in err
+
+
+def test_failed_post_of_the_excluded_notice_fails_the_run(capsys):
+    cfg = Config(model="m", api_url="http://x", api_token=SECRET, exclusions=["**/README.md"])
+    with patch("review_pull_request.review.load_config", return_value=cfg), \
+         patch("review_pull_request.review.parse_pr_url", return_value=("owner", "repo", 42)), \
+         patch("review_pull_request.review.get_pr_info", return_value=_mock_pr_info()), \
+         patch("review_pull_request.review.get_pr_description", return_value=""), \
+         patch("review_pull_request.review.get_diff", return_value=README_DIFF), \
+         patch("review_pull_request.review.post_comment", return_value=False), \
+         patch("subprocess.run", return_value=MagicMock(returncode=0, stdout="ghtoken")):
+        sys.argv = ["review", "https://github.com/owner/repo/pull/42"]
+        rc = main()
+
+    assert rc != 0
+    assert "could not post" in capsys.readouterr().err.lower()
+
+
+def test_failed_post_of_a_normal_report_fails_the_run(capsys):
+    cfg = Config(model="m", api_url="http://x", api_token=SECRET)
+    from review_pull_request.stage2 import FileReviewResult
+
+    with patch("review_pull_request.review.load_config", return_value=cfg), \
+         patch("review_pull_request.review.parse_pr_url", return_value=("owner", "repo", 42)), \
+         patch("review_pull_request.review.get_pr_info", return_value=_mock_pr_info()), \
+         patch("review_pull_request.review.get_pr_description", return_value=""), \
+         patch("review_pull_request.review.get_diff", return_value=DIFF), \
+         patch("review_pull_request.review.run_overview", return_value="ov"), \
+         patch("review_pull_request.review.run_file_review",
+               side_effect=lambda c, o, cfg: FileReviewResult(c.file_path, "s", [], 0)), \
+         patch("review_pull_request.review.post_comment", return_value=False), \
+         patch("subprocess.run", return_value=MagicMock(returncode=0, stdout="ghtoken")):
+        sys.argv = ["review", "https://github.com/owner/repo/pull/42"]
+        rc = main()
+
+    assert rc != 0
+
+
+def test_excluded_notice_caps_a_very_long_file_list():
+    from review_pull_request.review import _excluded_notice
+
+    notice = _excluded_notice([f"vendor/f{i}.py" for i in range(500)])
+
+    assert "and 450 more" in notice
+    assert len(notice) < 10_000
+
+
+def test_mixed_pr_report_lists_the_excluded_files():
+    from review_pull_request.stage2 import FileReviewResult
+
+    def review(chunk, overview, config):
+        return FileReviewResult(chunk.file_path, "s", [], 0)
+
+    rc, mock_post = _run_main_with_results(review, README_DIFF + DIFF, exclusions=["**/README.md"])
+
+    body = mock_post.call_args[0][0]
+    assert "Excluded from review" in body
+    assert "README.md" in body

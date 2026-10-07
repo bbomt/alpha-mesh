@@ -334,3 +334,11 @@ class TestFormatterIncrementalHeader:
         report = render_report("overview", [], [], MockConfig())
         assert "mesh review-pull-request" in report
         assert "test-model" in report
+
+
+def test_not_reviewed_notice_is_not_mistaken_for_a_review():
+    from review_pull_request.review import _excluded_notice
+
+    notice = _excluded_notice(["README.md"])
+
+    assert REVIEW_SIGNATURE not in notice
