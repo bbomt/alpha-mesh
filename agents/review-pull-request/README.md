@@ -108,10 +108,6 @@ CLAUDE.md
 
 While reviewing a file the model can call `read_file` to look at other files. Results are cached for the run: a file read once is served from memory to later file reviews (logged as `(cached)`), and a repeat request inside the same file review gets a short "already read" note instead of the content. Error results are never cached. Total cached content is capped at 50 MB; once full, files are still served but no longer stored. The cache is cleared when the run exits, so nothing persists between runs.
 
-## Files that are not reviewed per file
-
-Besides the `.pr-review-ignore` and `[exclusions]` patterns, two kinds of changed file are not sent to the per-file review because they hold no code to review: **deleted files** and **renames with no content change** (100% similarity). The run logs how many were skipped. The overview pass still sees the whole diff, including deletions and renames.
-
 ## Failure behaviour
 
 If an LLM API call fails (for example a `404` because the model in `CODE_REVIEW_MODEL` is not available), the review **aborts**. The agent never continues with partial results and never posts a "No issues found" comment for files it could not review.

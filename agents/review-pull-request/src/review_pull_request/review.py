@@ -281,16 +281,7 @@ Examples:
                 print(f"ERROR: failed to get diff: {e}", file=sys.stderr)
                 return 1
 
-        skipped: list[tuple[str, str]] = []
-        chunks = build_chunks(diff, config.exclusions, skipped=skipped)
-        if skipped:
-            n_deleted = sum(1 for _, r in skipped if r == "deleted")
-            print(
-                f"Skipped {len(skipped)} file(s) with no code to review "
-                f"({n_deleted} deleted, {len(skipped) - n_deleted} renamed without changes); "
-                "the overview pass still sees them.",
-                file=sys.stderr,
-            )
+        chunks = build_chunks(diff, config.exclusions)
         if not chunks:
             print("No files to review (diff empty or all files excluded).", file=sys.stderr)
             return 0
