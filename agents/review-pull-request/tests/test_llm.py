@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from pr_review_performance.llm import LLMError, chat
+from review_pull_request.llm import LLMError, chat
 
 
 class _Config:
@@ -25,13 +25,13 @@ def _response(json_value=None, json_error=None):
 
 def test_non_json_200_body_raises_llm_error():
     resp = _response(json_error=json.JSONDecodeError("bad", "doc", 0))
-    with patch("pr_review_performance.llm.httpx.post", return_value=resp):
+    with patch("review_pull_request.llm.httpx.post", return_value=resp):
         with pytest.raises(LLMError):
             chat([{"role": "user", "content": "hi"}], None, _Config())
 
 
 @pytest.mark.parametrize("payload", [{}, {"choices": []}, {"choices": [{}]}])
 def test_200_body_without_choices_raises_llm_error(payload):
-    with patch("pr_review_performance.llm.httpx.post", return_value=_response(payload)):
+    with patch("review_pull_request.llm.httpx.post", return_value=_response(payload)):
         with pytest.raises(LLMError):
             chat([{"role": "user", "content": "hi"}], None, _Config())

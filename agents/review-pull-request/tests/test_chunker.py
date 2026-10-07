@@ -1,7 +1,7 @@
 """Tests for chunker.py — build_chunks."""
 import pytest
 
-from pr_review_performance.chunker import build_chunks, chunk_exists, FileChunk
+from review_pull_request.chunker import build_chunks, chunk_exists, FileChunk
 
 
 class TestBuildChunks:

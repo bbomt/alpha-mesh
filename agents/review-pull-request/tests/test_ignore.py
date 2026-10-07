@@ -3,9 +3,9 @@
 from pathlib import Path
 from types import SimpleNamespace
 
-from pr_review_performance import config as config_module
-from pr_review_performance.chunker import build_chunks
-from pr_review_performance.config import IGNORE_FILE, load_config, load_ignore_patterns
+from review_pull_request import config as config_module
+from review_pull_request.chunker import build_chunks
+from review_pull_request.config import IGNORE_FILE, load_config, load_ignore_patterns
 
 
 def _diff(*paths):

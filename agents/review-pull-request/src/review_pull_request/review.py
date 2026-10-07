@@ -1,6 +1,6 @@
-"""review.py — CLI entry point and orchestration for pr-review-performance.
+"""review.py — CLI entry point and orchestration for review-pull-request.
 
-mesh pr-review-performance <pr_url> [flags]
+mesh review-pull-request <pr_url> [flags]
 """
 
 import argparse
@@ -8,25 +8,25 @@ import sys
 import time
 from urllib.parse import urlparse
 
-from pr_review_performance.chunker import build_chunks
-from pr_review_performance.config import load_config
-from pr_review_performance.formatter import render_report
-from pr_review_performance.git import (
+from review_pull_request.chunker import build_chunks
+from review_pull_request.config import load_config
+from review_pull_request.formatter import render_report
+from review_pull_request.git import (
     get_diff,
     get_pr_description,
     get_pr_info,
     parse_pr_url,
 )
-from pr_review_performance.github import post_comment
-from pr_review_performance.llm import LLMError
-from pr_review_performance.incremental import (
+from review_pull_request.github import post_comment
+from review_pull_request.llm import LLMError
+from review_pull_request.incremental import (
     find_last_review_comment,
     get_commits_since,
     build_incremental_diff,
 )
-from pr_review_performance.stage1 import run_overview
-from pr_review_performance.stage2 import run_file_review
-from pr_review_performance.tools import GitHubFileReader
+from review_pull_request.stage1 import run_overview
+from review_pull_request.stage2 import run_file_review
+from review_pull_request.tools import GitHubFileReader
 
 
 DRY_RUN_MODEL = "dry-run-model"
@@ -74,15 +74,15 @@ def _verbose_print(config, *args, **kwargs):
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="pr-review-performance — LLM-powered code review with full codebase context",
+        description="review-pull-request — LLM-powered code review with full codebase context",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  mesh pr-review-performance https://github.com/org/repo/pull/123
-  mesh pr-review-performance https://github.com/org/repo/pull/123 --base main
-  mesh pr-review-performance https://github.com/org/repo/pull/123 --dry-run
-  mesh pr-review-performance https://github.com/org/repo/pull/123 --no-post-comment
-  mesh pr-review-performance https://github.com/org/repo/pull/123 --since-last-review
+  mesh review-pull-request https://github.com/org/repo/pull/123
+  mesh review-pull-request https://github.com/org/repo/pull/123 --base main
+  mesh review-pull-request https://github.com/org/repo/pull/123 --dry-run
+  mesh review-pull-request https://github.com/org/repo/pull/123 --no-post-comment
+  mesh review-pull-request https://github.com/org/repo/pull/123 --since-last-review
 """,
     )
     parser.add_argument(
@@ -289,7 +289,7 @@ Examples:
         print(f"Diff: {len(chunks)} file chunk(s) to review", file=sys.stderr)
 
         if args.dry_run:
-            print("=== pr-review-performance [DRY-RUN] ===", file=sys.stderr)
+            print("=== review-pull-request [DRY-RUN] ===", file=sys.stderr)
             overview = MOCK_OVERVIEW
             all_issues = []
             all_summaries = []

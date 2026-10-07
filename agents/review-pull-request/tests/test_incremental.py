@@ -10,15 +10,15 @@ Covers:
 import pytest
 from unittest.mock import MagicMock, patch
 
-from pr_review_performance.constants import REVIEW_SIGNATURE
-from pr_review_performance.incremental import (
+from review_pull_request.constants import REVIEW_SIGNATURE
+from review_pull_request.incremental import (
     _parse_timestamp,
     _next_page_url,
     find_last_review_comment,
     get_commits_since,
     build_incremental_diff,
 )
-from pr_review_performance.formatter import render_report
+from review_pull_request.formatter import render_report
 
 
 # ─── Helpers ────────────────────────────────────────────────────────────────
@@ -97,7 +97,7 @@ class TestParseTimestamp:
 
 class TestFindLastReviewComment:
     def test_returns_none_when_no_comments(self):
-        with patch("pr_review_performance.incremental.httpx.get") as mock_get:
+        with patch("review_pull_request.incremental.httpx.get") as mock_get:
             mock_get.return_value = _mock_response([])
             result = find_last_review_comment("owner", "repo", 1, "token")
         assert result is None
@@ -107,7 +107,7 @@ class TestFindLastReviewComment:
             _make_comment("Just a regular comment", "2024-01-01T10:00:00Z"),
             _make_comment("Another comment without signature", "2024-01-02T10:00:00Z"),
         ]
-        with patch("pr_review_performance.incremental.httpx.get") as mock_get:
+        with patch("review_pull_request.incremental.httpx.get") as mock_get:
             mock_get.return_value = _mock_response(comments)
             result = find_last_review_comment("owner", "repo", 1, "token")
         assert result is None
@@ -116,7 +116,7 @@ class TestFindLastReviewComment:
         comments = [
             _make_comment(f"{REVIEW_SIGNATURE}\nSome findings.", "2024-01-15T10:00:00Z"),
         ]
-        with patch("pr_review_performance.incremental.httpx.get") as mock_get:
+        with patch("review_pull_request.incremental.httpx.get") as mock_get:
             mock_get.return_value = _mock_response(comments)
             result = find_last_review_comment("owner", "repo", 1, "token")
         assert result is not None
@@ -128,7 +128,7 @@ class TestFindLastReviewComment:
             _make_comment("Not a review comment.", "2024-01-12T09:00:00Z"),
             _make_comment(f"{REVIEW_SIGNATURE}\nNewer review.", "2024-01-15T10:00:00Z"),
         ]
-        with patch("pr_review_performance.incremental.httpx.get") as mock_get:
+        with patch("review_pull_request.incremental.httpx.get") as mock_get:
             mock_get.return_value = _mock_response(comments)
             result = find_last_review_comment("owner", "repo", 1, "token")
         assert result is not None
@@ -139,19 +139,19 @@ class TestFindLastReviewComment:
         """Incremental review headers should also be detected as review comments."""
         body = f"{REVIEW_SIGNATURE} (incremental — 3 commit(s) since last review)\nFindings."
         comments = [_make_comment(body, "2024-02-01T08:00:00Z")]
-        with patch("pr_review_performance.incremental.httpx.get") as mock_get:
+        with patch("review_pull_request.incremental.httpx.get") as mock_get:
             mock_get.return_value = _mock_response(comments)
             result = find_last_review_comment("owner", "repo", 1, "token")
         assert result is not None
 
     def test_returns_none_on_api_error(self):
-        with patch("pr_review_performance.incremental.httpx.get") as mock_get:
+        with patch("review_pull_request.incremental.httpx.get") as mock_get:
             mock_get.return_value = _mock_response({}, status_code=403)
             result = find_last_review_comment("owner", "repo", 1, "token")
         assert result is None
 
     def test_returns_none_on_network_exception(self):
-        with patch("pr_review_performance.incremental.httpx.get") as mock_get:
+        with patch("review_pull_request.incremental.httpx.get") as mock_get:
             mock_get.side_effect = Exception("connection refused")
             result = find_last_review_comment("owner", "repo", 1, "token")
         assert result is None
@@ -173,7 +173,7 @@ class TestFindLastReviewComment:
         page2_resp.json.return_value = [page2_comment]
         page2_resp.headers = {}
 
-        with patch("pr_review_performance.incremental.httpx.get", side_effect=[page1_resp, page2_resp]):
+        with patch("review_pull_request.incremental.httpx.get", side_effect=[page1_resp, page2_resp]):
             result = find_last_review_comment("owner", "repo", 1, "token")
 
         assert result is not None
@@ -184,7 +184,7 @@ class TestFindLastReviewComment:
 
 class TestGetCommitsSince:
     def test_returns_empty_when_no_commits(self):
-        with patch("pr_review_performance.incremental.httpx.get") as mock_get:
+        with patch("review_pull_request.incremental.httpx.get") as mock_get:
             mock_get.return_value = _mock_response([])
             result = get_commits_since("owner", "repo", 1, "2024-01-01T00:00:00Z", "token")
         assert result == []
@@ -195,7 +195,7 @@ class TestGetCommitsSince:
             _make_commit("abc2", "2024-01-12T08:00:00Z"),
         ]
         since = "2024-01-15T00:00:00Z"
-        with patch("pr_review_performance.incremental.httpx.get") as mock_get:
+        with patch("review_pull_request.incremental.httpx.get") as mock_get:
             mock_get.return_value = _mock_response(commits)
             result = get_commits_since("owner", "repo", 1, since, "token")
         assert result == []
@@ -207,7 +207,7 @@ class TestGetCommitsSince:
             _make_commit("new2", "2024-01-21T08:00:00Z"),
         ]
         since = "2024-01-15T00:00:00Z"
-        with patch("pr_review_performance.incremental.httpx.get") as mock_get:
+        with patch("review_pull_request.incremental.httpx.get") as mock_get:
             mock_get.return_value = _mock_response(commits)
             result = get_commits_since("owner", "repo", 1, since, "token")
         assert len(result) == 2
@@ -222,7 +222,7 @@ class TestGetCommitsSince:
             _make_commit("c2", "2024-01-20T08:00:00Z"),
         ]
         since = "2024-01-15T00:00:00Z"
-        with patch("pr_review_performance.incremental.httpx.get") as mock_get:
+        with patch("review_pull_request.incremental.httpx.get") as mock_get:
             mock_get.return_value = _mock_response(commits)
             result = get_commits_since("owner", "repo", 1, since, "token")
         assert [c["sha"] for c in result] == ["c1", "c2", "c3"]
@@ -231,20 +231,20 @@ class TestGetCommitsSince:
         """Commit at exactly the cutoff timestamp is NOT included (strictly after)."""
         commits = [_make_commit("sha1", "2024-01-15T10:00:00Z")]
         since = "2024-01-15T10:00:00Z"
-        with patch("pr_review_performance.incremental.httpx.get") as mock_get:
+        with patch("review_pull_request.incremental.httpx.get") as mock_get:
             mock_get.return_value = _mock_response(commits)
             result = get_commits_since("owner", "repo", 1, since, "token")
         assert result == []
 
     def test_returns_none_on_api_error(self):
         """API error is distinguished from 'no new commits' by returning None."""
-        with patch("pr_review_performance.incremental.httpx.get") as mock_get:
+        with patch("review_pull_request.incremental.httpx.get") as mock_get:
             mock_get.return_value = _mock_response({}, status_code=500)
             result = get_commits_since("owner", "repo", 1, "2024-01-01T00:00:00Z", "token")
         assert result is None
 
     def test_returns_none_on_network_exception(self):
-        with patch("pr_review_performance.incremental.httpx.get") as mock_get:
+        with patch("review_pull_request.incremental.httpx.get") as mock_get:
             mock_get.side_effect = Exception("timeout")
             result = get_commits_since("owner", "repo", 1, "2024-01-01T00:00:00Z", "token")
         assert result is None
@@ -256,7 +256,7 @@ class TestGetCommitsSince:
             _make_commit("with_date", "2024-01-20T08:00:00Z"),
         ]
         since = "2024-01-15T00:00:00Z"
-        with patch("pr_review_performance.incremental.httpx.get") as mock_get:
+        with patch("review_pull_request.incremental.httpx.get") as mock_get:
             mock_get.return_value = _mock_response(commits)
             result = get_commits_since("owner", "repo", 1, since, "token")
         assert len(result) == 1
@@ -271,7 +271,7 @@ class TestBuildIncrementalDiff:
         resp = MagicMock()
         resp.status_code = 200
         resp.text = sample_diff
-        with patch("pr_review_performance.incremental.httpx.get", return_value=resp):
+        with patch("review_pull_request.incremental.httpx.get", return_value=resp):
             result = build_incremental_diff("owner", "repo", "base_sha", "head_sha", "token")
         assert result == sample_diff
 
@@ -279,12 +279,12 @@ class TestBuildIncrementalDiff:
         resp = MagicMock()
         resp.status_code = 404
         resp.text = ""
-        with patch("pr_review_performance.incremental.httpx.get", return_value=resp):
+        with patch("review_pull_request.incremental.httpx.get", return_value=resp):
             result = build_incremental_diff("owner", "repo", "base", "head", "token")
         assert result == ""
 
     def test_returns_empty_string_on_exception(self):
-        with patch("pr_review_performance.incremental.httpx.get", side_effect=Exception("timeout")):
+        with patch("review_pull_request.incremental.httpx.get", side_effect=Exception("timeout")):
             result = build_incremental_diff("owner", "repo", "base", "head", "token")
         assert result == ""
 
@@ -292,7 +292,7 @@ class TestBuildIncrementalDiff:
         resp = MagicMock()
         resp.status_code = 200
         resp.text = "diff"
-        with patch("pr_review_performance.incremental.httpx.get", return_value=resp) as mock_get:
+        with patch("review_pull_request.incremental.httpx.get", return_value=resp) as mock_get:
             build_incremental_diff("owner", "repo", "abc123", "def456", "token")
         call_url = mock_get.call_args[0][0]
         assert "abc123...def456" in call_url
@@ -332,5 +332,5 @@ class TestFormatterIncrementalHeader:
 
     def test_attribution_footer_present(self):
         report = render_report("overview", [], [], MockConfig())
-        assert "mesh pr-review-performance" in report
+        assert "mesh review-pull-request" in report
         assert "test-model" in report

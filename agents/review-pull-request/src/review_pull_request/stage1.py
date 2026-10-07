@@ -5,7 +5,7 @@ Returns a 3-6 sentence plain-text summary of the PR's intent.
 
 import copy
 
-from pr_review_performance.llm import chat
+from review_pull_request.llm import chat
 
 
 OVERVIEW_PROMPT = """You are a senior engineer reviewing a pull request.

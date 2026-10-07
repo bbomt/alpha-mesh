@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# agents/pr-review-performance/bin/pr-review-performance
+# agents/review-pull-request/bin/review-pull-request
 # Actual bash runner — loads .env, tee logs, calls Python.
 
 set -euo pipefail
@@ -38,9 +38,9 @@ fi
 
 # Tee all output to the log file
 LOG_DIR="${HOME}/environment/logs/ai/claude"
-LOG_FILE="${LOG_DIR}/alpha-mesh-pr-review-performance-$(date +%Y-%m-%d).log"
+LOG_FILE="${LOG_DIR}/alpha-mesh-review-pull-request-$(date +%Y-%m-%d).log"
 mkdir -p "$LOG_DIR"
 
 cd "$AGENT_DIR"
 
-exec uv run python -m pr_review_performance --repo-path "$REPO_PATH" "$@" 2>&1 | tee "$LOG_FILE"
+exec uv run python -m review_pull_request --repo-path "$REPO_PATH" "$@" 2>&1 | tee "$LOG_FILE"

@@ -10,7 +10,7 @@ alpha-mesh/
 │   ├── mesh                 # Unified CLI entry point (wraps all commands)
 │   ├── model                # Switch/check model config
 │   ├── dream                # End-of-session memory consolidation (delegates to agents/dream/)
-│   ├── pr-review-performance # PR review agent (delegates to agents/pr-review-performance/)
+│   ├── review-pull-request # PR review agent (delegates to agents/review-pull-request/)
 │   ├── bootstrap-memory     # One-time: extract from existing Claude Code logs
 │   ├── install              # One-time setup
 │   └── lib/repo             # Shared bash functions: find_repo_root, get_active_model
@@ -22,7 +22,7 @@ alpha-mesh/
 │   │   │   └── bin/dream    # Shell entry point
 │   │   └── tests/
 │   │       └── test_dream_core.py  # Python tests for dream module
-│   └── pr-review-performance/ # PR review agent — LLM-powered, two-stage review (see below)
+│   └── review-pull-request/ # PR review agent — LLM-powered, two-stage review (see below)
 ├── config/
 │   └── models.json          # All model profiles
 ├── memory/
@@ -158,21 +158,21 @@ Dream does not touch CLAUDE.md — this is a manual step.
 - LLM unreachable: writes raw extracted content as fallback, exits 0
 - Model not configured: exits with error (run `mesh model use` first)
 
-## PR Review Performance Agent
+## Review Pull Request Agent
 
-`mesh pr-review-performance` runs LLM-powered code review using a fast inference API. It reviews each changed file in two stages (overview + per-file analysis) and posts findings as a PR comment.
+`mesh review-pull-request` runs LLM-powered code review using a fast inference API. It reviews each changed file in two stages (overview + per-file analysis) and posts findings as a PR comment.
 
 ### Quick Start
 
 ```bash
 # Full review — all changed files
-mesh pr-review-performance https://github.com/org/repo/pull/123
+mesh review-pull-request https://github.com/org/repo/pull/123
 
 # Incremental review — only changes since the last AI review
-mesh pr-review-performance https://github.com/org/repo/pull/123 --since-last-review
+mesh review-pull-request https://github.com/org/repo/pull/123 --since-last-review
 
 # Dry run (mocked LLM, no PR comment posted)
-mesh pr-review-performance https://github.com/org/repo/pull/123 --dry-run
+mesh review-pull-request https://github.com/org/repo/pull/123 --dry-run
 ```
 
 ### --since-last-review flag
@@ -186,4 +186,4 @@ When iterating on a PR, use `--since-last-review` to review only the new commits
 
 ### Documentation
 
-Full documentation: `agents/pr-review-performance/README.md`
+Full documentation: `agents/review-pull-request/README.md`

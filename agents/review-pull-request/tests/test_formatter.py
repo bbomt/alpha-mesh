@@ -1,8 +1,8 @@
 """Tests for formatter.py — render_report."""
 import pytest
 
-from pr_review_performance.formatter import render_report, SEVERITY_EMOJI
-from pr_review_performance.stage2 import Issue
+from review_pull_request.formatter import render_report, SEVERITY_EMOJI
+from review_pull_request.stage2 import Issue
 
 
 class MockConfig:

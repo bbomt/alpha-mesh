@@ -13,21 +13,21 @@ SCRIPTS_DIR="$(cd "$(dirname "$SCRIPT_REALPATH")" && pwd)"
 cmd="${1:-}"
 if [[ -z "$cmd" ]]; then
   echo "Usage: mesh <command> [args]" >&2
-  echo "Commands: model | dream | pr-review-performance | test" >&2
+  echo "Commands: model | dream | review-pull-request | test" >&2
   exit 1
 fi
 
 case "$cmd" in
   model|model_use)       shift; exec "$SCRIPTS_DIR/model" "$@" ;;
   dream)                 shift; exec "$SCRIPTS_DIR/dream" "$@" ;;
-  pr-review-performance) shift; exec "$SCRIPTS_DIR/pr-review-performance" "$@" ;;
+  review-pull-request) shift; exec "$SCRIPTS_DIR/review-pull-request" "$@" ;;
   test)                  shift; exec "$SCRIPTS_DIR/../test/run-all" "$@" ;;
   help|--help|-h)        echo "Usage: mesh <command> [args]" >&2
-                         echo "Commands: model | dream | pr-review-performance | test" >&2
+                         echo "Commands: model | dream | review-pull-request | test" >&2
                          exit 0 ;;
   *)
     echo "ERROR: unknown command '$cmd'" >&2
-    echo "Commands: model | dream | pr-review-performance | test" >&2
+    echo "Commands: model | dream | review-pull-request | test" >&2
     exit 1
     ;;
 esac

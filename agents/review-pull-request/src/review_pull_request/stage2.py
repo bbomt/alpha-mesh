@@ -8,8 +8,8 @@ import json as _json
 import sys
 from dataclasses import dataclass, field
 
-from pr_review_performance.llm import chat, ChatResponse
-from pr_review_performance.tools import READ_FILE_TOOL_SCHEMA, execute_read_file
+from review_pull_request.llm import chat, ChatResponse
+from review_pull_request.tools import READ_FILE_TOOL_SCHEMA, execute_read_file
 
 
 PER_FILE_PROMPT = """## Task

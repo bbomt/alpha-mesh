@@ -56,7 +56,7 @@ class GitHubFileReader:
         self._headers = {
             "Authorization": f"Bearer {token}",
             "Accept": "application/vnd.github.raw",
-            "User-Agent": "pr-review-performance/1.0",
+            "User-Agent": "review-pull-request/1.0",
         }
         self._client = httpx.Client(headers=self._headers, timeout=30.0)
         self._cache: dict[tuple[str, int], str] = {}

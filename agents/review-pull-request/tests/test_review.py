@@ -2,8 +2,8 @@
 import sys
 from unittest.mock import MagicMock, patch
 
-from pr_review_performance.config import Config
-from pr_review_performance.review import main
+from review_pull_request.config import Config
+from review_pull_request.review import main
 
 
 def _stub_config():
@@ -14,9 +14,9 @@ def _mock_pr_info(head_sha="abc123sha", branch="feature/test"):
     return {"headRefName": branch, "headRefOid": head_sha}
 
 
-@patch("pr_review_performance.review.load_config", return_value=_stub_config())
-@patch("pr_review_performance.review.get_pr_info")
-@patch("pr_review_performance.review.parse_pr_url", return_value=("owner", "repo", 42))
+@patch("review_pull_request.review.load_config", return_value=_stub_config())
+@patch("review_pull_request.review.get_pr_info")
+@patch("review_pull_request.review.parse_pr_url", return_value=("owner", "repo", 42))
 @patch("subprocess.run")
 def test_exits_with_error_when_no_github_token(mock_subproc, mock_parse, mock_pr_info, mock_cfg, capsys):
     mock_pr_info.return_value = _mock_pr_info()
@@ -31,10 +31,10 @@ def test_exits_with_error_when_no_github_token(mock_subproc, mock_parse, mock_pr
     assert "gh auth login" in err
 
 
-@patch("pr_review_performance.review.load_config", return_value=_stub_config())
-@patch("pr_review_performance.review.get_pr_description", return_value="")
-@patch("pr_review_performance.review.get_pr_info")
-@patch("pr_review_performance.review.parse_pr_url", return_value=("owner", "repo", 42))
+@patch("review_pull_request.review.load_config", return_value=_stub_config())
+@patch("review_pull_request.review.get_pr_description", return_value="")
+@patch("review_pull_request.review.get_pr_info")
+@patch("review_pull_request.review.parse_pr_url", return_value=("owner", "repo", 42))
 @patch("subprocess.run")
 def test_exits_with_error_when_no_head_sha(mock_subproc, mock_parse, mock_pr_info, mock_desc, mock_cfg, capsys):
     mock_pr_info.return_value = {"headRefName": "feature/test", "headRefOid": ""}
@@ -59,19 +59,19 @@ DIFF = (
 
 def _run_main_with_llm_error(capsys, argv_extra=(), overview_ok=False):
     """Run main() against a PR whose every LLM call raises LLMError(404)."""
-    from pr_review_performance.llm import LLMError
+    from review_pull_request.llm import LLMError
 
     config = Config(model="bad/model", api_url="https://llm.example.com", api_token=SECRET)
     err = LLMError("API returned 404 with tools, retry also failed: 404 with tools, retry: 404")
-    with patch("pr_review_performance.review.load_config", return_value=config), \
-         patch("pr_review_performance.review.parse_pr_url", return_value=("owner", "repo", 42)), \
-         patch("pr_review_performance.review.get_pr_info", return_value=_mock_pr_info()), \
-         patch("pr_review_performance.review.get_pr_description", return_value=""), \
-         patch("pr_review_performance.review.get_diff", return_value=DIFF), \
-         patch("pr_review_performance.stage1.chat",
+    with patch("review_pull_request.review.load_config", return_value=config), \
+         patch("review_pull_request.review.parse_pr_url", return_value=("owner", "repo", 42)), \
+         patch("review_pull_request.review.get_pr_info", return_value=_mock_pr_info()), \
+         patch("review_pull_request.review.get_pr_description", return_value=""), \
+         patch("review_pull_request.review.get_diff", return_value=DIFF), \
+         patch("review_pull_request.stage1.chat",
                **({"return_value": MagicMock(content="An overview.", tool_calls=[])} if overview_ok else {"side_effect": err})), \
-         patch("pr_review_performance.stage2.chat", side_effect=err) as mock_stage2, \
-         patch("pr_review_performance.review.post_comment") as mock_post, \
+         patch("review_pull_request.stage2.chat", side_effect=err) as mock_stage2, \
+         patch("review_pull_request.review.post_comment") as mock_post, \
          patch("subprocess.run", return_value=MagicMock(returncode=0, stdout="ghtoken")):
         sys.argv = ["review", "https://github.com/owner/repo/pull/42", *argv_extra]
         rc = main()
@@ -121,9 +121,9 @@ def test_file_review_failure_after_good_overview_aborts_and_does_not_post(capsys
 
 # --- startup logging of model and URL ---
 
-@patch("pr_review_performance.review.load_config")
-@patch("pr_review_performance.review.get_pr_info")
-@patch("pr_review_performance.review.parse_pr_url", return_value=("owner", "repo", 42))
+@patch("review_pull_request.review.load_config")
+@patch("review_pull_request.review.get_pr_info")
+@patch("review_pull_request.review.parse_pr_url", return_value=("owner", "repo", 42))
 @patch("subprocess.run")
 def test_logs_model_and_url_at_startup_without_token(mock_subproc, mock_parse, mock_pr_info, mock_cfg, capsys):
     mock_cfg.return_value = Config(model="my/model", api_url="https://llm.example.com/api", api_token=SECRET)
@@ -140,16 +140,16 @@ def test_logs_model_and_url_at_startup_without_token(mock_subproc, mock_parse, m
 
 
 def test_startup_banner_and_error_never_print_url_credentials(capsys):
-    from pr_review_performance.llm import LLMError
+    from review_pull_request.llm import LLMError
 
     url = "https://user:pw123@llm.example.com:8443/api?key=abc999"
     cfg = Config(model="m", api_url=url, api_token=SECRET)
-    with patch("pr_review_performance.review.load_config", return_value=cfg), \
-         patch("pr_review_performance.review.parse_pr_url", return_value=("owner", "repo", 42)), \
-         patch("pr_review_performance.review.get_pr_info", return_value=_mock_pr_info()), \
-         patch("pr_review_performance.review.get_pr_description", return_value=""), \
-         patch("pr_review_performance.review.get_diff", return_value=DIFF), \
-         patch("pr_review_performance.stage1.chat", side_effect=LLMError("API returned 404")), \
+    with patch("review_pull_request.review.load_config", return_value=cfg), \
+         patch("review_pull_request.review.parse_pr_url", return_value=("owner", "repo", 42)), \
+         patch("review_pull_request.review.get_pr_info", return_value=_mock_pr_info()), \
+         patch("review_pull_request.review.get_pr_description", return_value=""), \
+         patch("review_pull_request.review.get_diff", return_value=DIFF), \
+         patch("review_pull_request.stage1.chat", side_effect=LLMError("API returned 404")), \
          patch("subprocess.run", return_value=MagicMock(returncode=0, stdout="ghtoken")):
         sys.argv = ["review", "https://github.com/owner/repo/pull/42"]
         main()
@@ -161,16 +161,16 @@ def test_startup_banner_and_error_never_print_url_credentials(capsys):
 
 
 def test_read_cache_is_cleared_when_main_exits(capsys):
-    from pr_review_performance.llm import LLMError
+    from review_pull_request.llm import LLMError
 
     cfg = Config(model="m", api_url="http://x", api_token=SECRET)
     cfg.read_cache["pyproject.toml"] = "FILE BODY"
-    with patch("pr_review_performance.review.load_config", return_value=cfg), \
-         patch("pr_review_performance.review.parse_pr_url", return_value=("owner", "repo", 42)), \
-         patch("pr_review_performance.review.get_pr_info", return_value=_mock_pr_info()), \
-         patch("pr_review_performance.review.get_pr_description", return_value=""), \
-         patch("pr_review_performance.review.get_diff", return_value=DIFF), \
-         patch("pr_review_performance.stage1.chat", side_effect=LLMError("API returned 404")), \
+    with patch("review_pull_request.review.load_config", return_value=cfg), \
+         patch("review_pull_request.review.parse_pr_url", return_value=("owner", "repo", 42)), \
+         patch("review_pull_request.review.get_pr_info", return_value=_mock_pr_info()), \
+         patch("review_pull_request.review.get_pr_description", return_value=""), \
+         patch("review_pull_request.review.get_diff", return_value=DIFF), \
+         patch("review_pull_request.stage1.chat", side_effect=LLMError("API returned 404")), \
          patch("subprocess.run", return_value=MagicMock(returncode=0, stdout="ghtoken")):
         sys.argv = ["review", "https://github.com/owner/repo/pull/42"]
         main()

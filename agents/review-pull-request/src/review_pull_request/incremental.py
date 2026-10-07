@@ -12,7 +12,7 @@ from datetime import datetime
 
 import httpx
 
-from pr_review_performance.constants import REVIEW_SIGNATURE
+from review_pull_request.constants import REVIEW_SIGNATURE
 
 
 def _parse_timestamp(ts: str) -> datetime:
@@ -84,7 +84,7 @@ def find_last_review_comment(
     headers = {
         "Authorization": f"Bearer {token}",
         "Accept": "application/vnd.github.v3+json",
-        "User-Agent": "pr-review-performance/1.0",
+        "User-Agent": "review-pull-request/1.0",
     }
 
     url = f"https://api.github.com/repos/{owner}/{repo}/issues/{pr_number}/comments"
@@ -119,7 +119,7 @@ def get_commits_since(
     headers = {
         "Authorization": f"Bearer {token}",
         "Accept": "application/vnd.github.v3+json",
-        "User-Agent": "pr-review-performance/1.0",
+        "User-Agent": "review-pull-request/1.0",
     }
 
     url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/commits"
@@ -169,7 +169,7 @@ def build_incremental_diff(
     headers = {
         "Authorization": f"Bearer {token}",
         "Accept": "application/vnd.github.v3.diff",
-        "User-Agent": "pr-review-performance/1.0",
+        "User-Agent": "review-pull-request/1.0",
     }
 
     url = f"https://api.github.com/repos/{owner}/{repo}/compare/{base_sha}...{head_sha}"

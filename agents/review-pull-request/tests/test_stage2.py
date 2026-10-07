@@ -3,10 +3,10 @@
 import pytest
 from unittest.mock import patch, MagicMock
 
-from pr_review_performance.chunker import FileChunk
-from pr_review_performance.stage2 import run_file_review, Issue, FileReviewResult
-from pr_review_performance.config import Config
-from pr_review_performance.tools import GitHubFileReader
+from review_pull_request.chunker import FileChunk
+from review_pull_request.stage2 import run_file_review, Issue, FileReviewResult
+from review_pull_request.config import Config
+from review_pull_request.tools import GitHubFileReader
 
 
 class MockLLMResponse:
@@ -43,7 +43,7 @@ def test_run_file_review_parses_valid_json():
         content='{"summary": "Adds new helper function.", "issues": []}'
     )
     config = MockConfig()
-    with patch("pr_review_performance.stage2.chat", return_value=mock_response):
+    with patch("review_pull_request.stage2.chat", return_value=mock_response):
         result = run_file_review(chunk, "Overview text", config)
 
     assert result.file_path == "src/main.py"
@@ -60,7 +60,7 @@ def test_run_file_review_extracts_issues():
         content='{"summary": "Token validation.", "issues": [{"file": "src/auth.py", "line": 42, "severity": "high", "comment": "Timing issue", "suggestion": "Use hmac.compare_digest."}]}'
     )
     config = MockConfig()
-    with patch("pr_review_performance.stage2.chat", return_value=mock_response):
+    with patch("review_pull_request.stage2.chat", return_value=mock_response):
         result = run_file_review(chunk, "Overview", config)
 
     assert len(result.issues) == 1
@@ -85,7 +85,7 @@ def test_run_file_review_retry_on_invalid_json():
             return MockLLMResponse(content='{"summary": "Recovered.", "issues": []}')
 
     config = MockConfig()
-    with patch("pr_review_performance.stage2.chat", side_effect=mock_chat):
+    with patch("review_pull_request.stage2.chat", side_effect=mock_chat):
         result = run_file_review(chunk, "Overview", config)
 
     assert "Recovered" in result.summary or "parse" in result.summary.lower()
@@ -96,7 +96,7 @@ def test_run_file_review_handles_tool_calls():
         file_path="src/main.py",
         diff_text="diff --git a/src/main.py b/src/main.py\n+new\n",
     )
-    from pr_review_performance.llm import ToolCall
+    from review_pull_request.llm import ToolCall
 
     tool_call = ToolCall(
         id="call_001",
@@ -116,8 +116,8 @@ def test_run_file_review_handles_tool_calls():
             )
 
     config = MockConfig()
-    with patch("pr_review_performance.stage2.chat", side_effect=mock_chat):
-        with patch("pr_review_performance.stage2.execute_read_file", return_value="def main():\n    pass\n"):
+    with patch("review_pull_request.stage2.chat", side_effect=mock_chat):
+        with patch("review_pull_request.stage2.execute_read_file", return_value="def main():\n    pass\n"):
             result = run_file_review(chunk, "Overview", config)
 
     assert result.tool_calls_made == 1
@@ -130,7 +130,7 @@ def test_run_file_review_passes_github_reader_to_execute_read_file():
         file_path="src/main.py",
         diff_text="diff --git a/src/main.py b/src/main.py\n+new\n",
     )
-    from pr_review_performance.llm import ToolCall
+    from review_pull_request.llm import ToolCall
 
     tool_call = ToolCall(
         id="call_github",
@@ -157,8 +157,8 @@ def test_run_file_review_passes_github_reader_to_execute_read_file():
         captured_reader["reader"] = github_reader
         return "remote content"
 
-    with patch("pr_review_performance.stage2.chat", side_effect=mock_chat):
-        with patch("pr_review_performance.stage2.execute_read_file", side_effect=capturing_execute):
+    with patch("review_pull_request.stage2.chat", side_effect=mock_chat):
+        with patch("review_pull_request.stage2.execute_read_file", side_effect=capturing_execute):
             run_file_review(chunk, "Overview", config)
 
     assert captured_reader.get("reader") is mock_reader
@@ -166,10 +166,10 @@ def test_run_file_review_passes_github_reader_to_execute_read_file():
 
 def test_run_file_review_raises_on_llm_error():
     """A failed LLM call must propagate, not return an empty 'LLM call failed.' result."""
-    from pr_review_performance.llm import LLMError
+    from review_pull_request.llm import LLMError
 
     chunk = FileChunk(file_path="src/main.py", diff_text="diff --git a/src/main.py b/src/main.py\n+x\n")
-    with patch("pr_review_performance.stage2.chat", side_effect=LLMError("API returned 404")):
+    with patch("review_pull_request.stage2.chat", side_effect=LLMError("API returned 404")):
         with pytest.raises(LLMError):
             run_file_review(chunk, "Overview text", MockConfig())
 
@@ -205,8 +205,8 @@ def test_repeated_read_in_one_review_hits_the_file_once_and_tells_the_model():
         seen_messages.append(list(messages))
         return scripted(messages, tools, config)
 
-    with patch("pr_review_performance.stage2.chat", side_effect=capturing), \
-         patch("pr_review_performance.stage2.execute_read_file", return_value="FILE BODY") as ex:
+    with patch("review_pull_request.stage2.chat", side_effect=capturing), \
+         patch("review_pull_request.stage2.execute_read_file", return_value="FILE BODY") as ex:
         result = run_file_review(_chunk(), "overview", MockConfig())
 
     assert ex.call_count == 1
@@ -219,11 +219,11 @@ def test_repeated_read_in_one_review_hits_the_file_once_and_tells_the_model():
 def test_read_cache_is_shared_across_file_reviews_in_one_run():
     config = MockConfig()
     config.read_cache = {}
-    with patch("pr_review_performance.stage2.chat", side_effect=_scripted_chat([_tool_call("1", "pyproject.toml")])), \
-         patch("pr_review_performance.stage2.execute_read_file", return_value="FILE BODY") as first:
+    with patch("review_pull_request.stage2.chat", side_effect=_scripted_chat([_tool_call("1", "pyproject.toml")])), \
+         patch("review_pull_request.stage2.execute_read_file", return_value="FILE BODY") as first:
         run_file_review(_chunk("a.py"), "o", config)
-    with patch("pr_review_performance.stage2.chat", side_effect=_scripted_chat([_tool_call("2", "pyproject.toml")])), \
-         patch("pr_review_performance.stage2.execute_read_file", return_value="FILE BODY") as second:
+    with patch("review_pull_request.stage2.chat", side_effect=_scripted_chat([_tool_call("2", "pyproject.toml")])), \
+         patch("review_pull_request.stage2.execute_read_file", return_value="FILE BODY") as second:
         run_file_review(_chunk("b.py"), "o", config)
 
     assert first.call_count == 1
@@ -234,8 +234,8 @@ def test_read_cache_is_shared_across_file_reviews_in_one_run():
 def test_error_results_are_not_cached():
     config = MockConfig()
     config.read_cache = {}
-    with patch("pr_review_performance.stage2.chat", side_effect=_scripted_chat([_tool_call("1", "missing.py")])), \
-         patch("pr_review_performance.stage2.execute_read_file", return_value="Error: file not found: missing.py"):
+    with patch("review_pull_request.stage2.chat", side_effect=_scripted_chat([_tool_call("1", "missing.py")])), \
+         patch("review_pull_request.stage2.execute_read_file", return_value="Error: file not found: missing.py"):
         run_file_review(_chunk(), "o", config)
 
     assert config.read_cache == {}
@@ -253,8 +253,8 @@ def test_read_cache_stops_storing_once_the_size_cap_is_reached():
         seen_tool_messages[:] = [m["content"] for m in messages if m.get("role") == "tool"]
         return chat_stub(messages, tools, config)
 
-    with patch("pr_review_performance.stage2.chat", side_effect=capturing), \
-         patch("pr_review_performance.stage2.execute_read_file", side_effect=lambda p, *a: bodies[p]):
+    with patch("review_pull_request.stage2.chat", side_effect=capturing), \
+         patch("review_pull_request.stage2.execute_read_file", side_effect=lambda p, *a: bodies[p]):
         run_file_review(_chunk(), "o", config)
 
     assert seen_tool_messages == ["x" * 8, "y" * 8]  # both still served to the model

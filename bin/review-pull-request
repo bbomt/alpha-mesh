@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# alpha-mesh/bin/pr-review-performance
+# alpha-mesh/bin/review-pull-request
 # Thin proxy → inner bash entry point.
 
 set -euo pipefail
 
 SCRIPT_REALPATH="$(readlink -f "${BASH_SOURCE[0]}")"
 MESH_DIR="$(cd "$(dirname "$SCRIPT_REALPATH")/.." && pwd)"
-INNER_BIN="$MESH_DIR/agents/pr-review-performance/bin/pr-review-performance"
+INNER_BIN="$MESH_DIR/agents/review-pull-request/bin/review-pull-request"
 
 exec bash "$INNER_BIN" "$@"

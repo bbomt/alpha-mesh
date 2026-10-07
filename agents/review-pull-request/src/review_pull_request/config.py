@@ -1,4 +1,4 @@
-"""Configuration loading for pr-review-performance.
+"""Configuration loading for review-pull-request.
 
 Loads .env + review_config.toml into a Config dataclass.
 """
@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 from dotenv import load_dotenv
 
 if TYPE_CHECKING:
-    from pr_review_performance.tools import GitHubFileReader
+    from review_pull_request.tools import GitHubFileReader
 
 
 REQUIRED_ENV_VARS = ["CODE_REVIEW_URL", "CODE_REVIEW_TOKEN", "CODE_REVIEW_MODEL"]

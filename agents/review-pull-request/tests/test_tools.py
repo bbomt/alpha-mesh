@@ -3,7 +3,7 @@ import os
 from unittest.mock import MagicMock, patch
 import pytest
 
-from pr_review_performance.tools import execute_read_file, GitHubFileReader, READ_FILE_TOOL_SCHEMA
+from review_pull_request.tools import execute_read_file, GitHubFileReader, READ_FILE_TOOL_SCHEMA
 
 
 class TestExecuteReadFile:
@@ -83,7 +83,7 @@ class TestGitHubFileReader:
     def _reader(self):
         return GitHubFileReader("owner", "repo", "abc123sha", "token123")
 
-    @patch("pr_review_performance.tools.httpx.Client")
+    @patch("review_pull_request.tools.httpx.Client")
     def test_fetches_file_content(self, MockClient):
         content = "def hello():\n    return 1\n"
         MockClient.return_value.get.return_value = _make_http_response(200, text=content)
@@ -97,7 +97,7 @@ class TestGitHubFileReader:
         assert "owner/repo/contents/src/hello.py" in call_url
         assert "ref=abc123sha" in call_url
 
-    @patch("pr_review_performance.tools.httpx.Client")
+    @patch("review_pull_request.tools.httpx.Client")
     def test_caches_response(self, MockClient):
         content = "cached content"
         MockClient.return_value.get.return_value = _make_http_response(200, text=content)
@@ -111,7 +111,7 @@ class TestGitHubFileReader:
         # Should only make one HTTP request
         assert MockClient.return_value.get.call_count == 1
 
-    @patch("pr_review_performance.tools.httpx.Client")
+    @patch("review_pull_request.tools.httpx.Client")
     def test_returns_error_on_404(self, MockClient):
         MockClient.return_value.get.return_value = _make_http_response(404)
 
@@ -121,7 +121,7 @@ class TestGitHubFileReader:
         assert "file not found" in result
         assert "Error" in result
 
-    @patch("pr_review_performance.tools.httpx.Client")
+    @patch("review_pull_request.tools.httpx.Client")
     def test_returns_error_on_rate_limit_429(self, MockClient):
         MockClient.return_value.get.return_value = _make_http_response(429)
 
@@ -131,7 +131,7 @@ class TestGitHubFileReader:
         assert "rate limit" in result.lower()
         assert "Error" in result
 
-    @patch("pr_review_performance.tools.httpx.Client")
+    @patch("review_pull_request.tools.httpx.Client")
     def test_returns_error_on_rate_limit_403_message(self, MockClient):
         resp = _make_http_response(403, text="API rate limit exceeded for this resource")
         MockClient.return_value.get.return_value = resp
@@ -141,7 +141,7 @@ class TestGitHubFileReader:
 
         assert "rate limit" in result.lower()
 
-    @patch("pr_review_performance.tools.httpx.Client")
+    @patch("review_pull_request.tools.httpx.Client")
     def test_returns_error_for_too_large_file(self, MockClient):
         resp = _make_http_response(403, text="This file is too large to display")
         resp.json.return_value = {"message": "This file is too large to display. View it on GitHub"}
@@ -153,7 +153,7 @@ class TestGitHubFileReader:
         assert "too large" in result.lower()
         assert "Error" in result
 
-    @patch("pr_review_performance.tools.httpx.Client")
+    @patch("review_pull_request.tools.httpx.Client")
     def test_returns_error_for_binary_content(self, MockClient):
         binary_bytes = b"\x00\xff\xfe\x81" * 100
         resp = _make_http_response(200, content=binary_bytes)
@@ -166,7 +166,7 @@ class TestGitHubFileReader:
         assert "binary" in result.lower()
         assert "Error" in result
 
-    @patch("pr_review_performance.tools.httpx.Client")
+    @patch("review_pull_request.tools.httpx.Client")
     def test_truncates_long_files(self, MockClient):
         lines = [f"line {i}\n" for i in range(200)]
         content = "".join(lines)
@@ -181,7 +181,7 @@ class TestGitHubFileReader:
         assert "line 0" in result
         assert "line 11" not in result
 
-    @patch("pr_review_performance.tools.httpx.Client")
+    @patch("review_pull_request.tools.httpx.Client")
     def test_returns_error_on_network_failure(self, MockClient):
         import httpx as _httpx
         MockClient.return_value.get.side_effect = _httpx.TimeoutException("timeout")
@@ -192,7 +192,7 @@ class TestGitHubFileReader:
         assert "Error" in result
         assert "GitHub" in result
 
-    @patch("pr_review_performance.tools.httpx.Client")
+    @patch("review_pull_request.tools.httpx.Client")
     def test_passes_auth_header(self, MockClient):
         MockClient.return_value.get.return_value = _make_http_response(200, text="content")
 
@@ -204,30 +204,30 @@ class TestGitHubFileReader:
         assert client_kwargs["headers"]["Authorization"] == "Bearer mytoken"
         assert "raw" in client_kwargs["headers"]["Accept"]
 
-    @patch("pr_review_performance.tools.httpx.Client")
+    @patch("review_pull_request.tools.httpx.Client")
     def test_close_calls_client_close(self, MockClient):
         reader = GitHubFileReader("o", "r", "sha", "tok")
         reader.close()
         MockClient.return_value.close.assert_called_once()
 
-    @patch("pr_review_performance.tools.httpx.Client")
+    @patch("review_pull_request.tools.httpx.Client")
     def test_del_calls_client_close(self, MockClient):
         reader = GitHubFileReader("o", "r", "sha", "tok")
         reader.__del__()
         MockClient.return_value.close.assert_called_once()
 
-    @patch("pr_review_performance.tools.httpx.Client")
+    @patch("review_pull_request.tools.httpx.Client")
     def test_context_manager_closes_client(self, MockClient):
         with GitHubFileReader("o", "r", "sha", "tok") as reader:
             pass
         MockClient.return_value.close.assert_called_once()
 
-    @patch("pr_review_performance.tools.httpx.Client")
+    @patch("review_pull_request.tools.httpx.Client")
     def test_context_manager_returns_reader(self, MockClient):
         with GitHubFileReader("o", "r", "sha", "tok") as reader:
             assert isinstance(reader, GitHubFileReader)
 
-    @patch("pr_review_performance.tools.httpx.Client")
+    @patch("review_pull_request.tools.httpx.Client")
     def test_cache_evicts_oldest_when_full(self, MockClient):
         MockClient.return_value.get.return_value = _make_http_response(200, text="x")
         reader = self._reader()
@@ -270,7 +270,7 @@ class TestExecuteReadFileWithGitHubReader:
         assert "access denied" in result
         reader.read_file.assert_not_called()
 
-    @patch("pr_review_performance.tools.httpx.Client")
+    @patch("review_pull_request.tools.httpx.Client")
     def test_github_error_propagated_to_llm(self, MockClient, tmp_path):
         """GitHub API errors are returned as strings (not raised)."""
         MockClient.return_value.get.return_value = _make_http_response(500)

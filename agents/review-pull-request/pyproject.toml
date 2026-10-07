@@ -1,7 +1,7 @@
 [project]
-name = "pr-review-performance"
+name = "review-pull-request"
 version = "0.1.0"
-description = "pr-review-performance agent — LLM-powered code review with full codebase context"
+description = "review-pull-request agent — LLM-powered code review with full codebase context"
 requires-python = ">=3.11"
 dependencies = [
     "httpx>=0.27.0",
@@ -20,7 +20,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/pr_review_performance"]
+packages = ["src/review_pull_request"]
 
 [tool.hatch.metadata]
 allow-direct-references = true

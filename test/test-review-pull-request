@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# alpha-mesh/test/test-review-pull-request
+# Runs the review-pull-request pytest suite and checks the mesh entry point.
+
+set -euo pipefail
+
+MESH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+AGENT_DIR="$MESH_DIR/agents/review-pull-request"
+
+echo "=== review-pull-request tests ==="
+echo ""
+
+echo "[1/2] pytest suite..."
+if (cd "$AGENT_DIR" && uv run pytest -q); then
+  echo "  PASS"
+else
+  echo "  FAIL: pytest suite failed"
+  exit 1
+fi
+
+echo "[2/2] mesh review-pull-request --help runs via the wrapper..."
+if "$MESH_DIR/bin/mesh" review-pull-request --help 2>&1 | grep -q "usage:"; then
+  echo "  PASS"
+else
+  echo "  FAIL: mesh review-pull-request --help did not print usage"
+  exit 1
+fi
+
+echo ""
+echo "=== ALL REVIEW-PULL-REQUEST TESTS PASSED ==="

@@ -1,4 +1,4 @@
-"""Git operations for pr-review-performance.
+"""Git operations for review-pull-request.
 
 get_diff: run git diff against origin/base_branch
 get_pr_description: fetch PR body via GitHub REST API
@@ -120,7 +120,7 @@ def get_pr_description(pr_url: str, token: str) -> str:
     headers = {
         "Authorization": f"Bearer {token}",
         "Accept": "application/vnd.github.v3+json",
-        "User-Agent": "pr-review-performance/1.0",
+        "User-Agent": "review-pull-request/1.0",
     }
 
     try:

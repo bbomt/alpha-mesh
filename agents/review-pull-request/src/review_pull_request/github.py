@@ -4,7 +4,7 @@ import subprocess
 
 import httpx
 
-from pr_review_performance.git import parse_pr_url
+from review_pull_request.git import parse_pr_url
 
 
 def _get_github_token() -> str | None:
@@ -38,7 +38,7 @@ def post_comment(body: str, pr_url: str, config) -> None:
     headers = {
         "Authorization": f"Bearer {github_token}",
         "Accept": "application/vnd.github.v3+json",
-        "User-Agent": "pr-review-performance/1.0",
+        "User-Agent": "review-pull-request/1.0",
         "Content-Type": "application/json",
     }
 
