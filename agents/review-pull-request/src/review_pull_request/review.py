@@ -17,7 +17,7 @@ from review_pull_request.git import (
     get_pr_info,
     parse_pr_url,
 )
-from review_pull_request.github import post_comment
+from review_pull_request.github import _get_github_token, post_comment
 from review_pull_request.llm import LLMError
 from review_pull_request.incremental import (
     find_last_review_comment,
@@ -37,7 +37,10 @@ def _safe_url(url: str) -> str:
     p = urlparse(url)
     if not p.hostname:
         return "(invalid URL)"
-    port = f":{p.port}" if p.port else ""
+    try:
+        port = f":{p.port}" if p.port else ""
+    except ValueError:  # malformed port in a hand-edited .env
+        return "(invalid URL)"
     return f"{p.scheme}://{p.hostname}{port}{p.path}"
 
 
@@ -176,9 +179,7 @@ Examples:
     print(f"Branch: {pr_head_branch}", file=sys.stderr)
 
     # Get GitHub token and PR description
-    import subprocess as _subprocess
-    _result = _subprocess.run(["gh", "auth", "token"], capture_output=True, text=True)
-    _token = _result.stdout.strip() if _result.returncode == 0 else ""
+    _token = _get_github_token() or ""
     pr_desc = get_pr_description(args.pr_url, _token)
     if pr_desc:
         print("Fetched PR description.", file=sys.stderr)
@@ -187,7 +188,7 @@ Examples:
     head_sha = pr_info.get("headRefOid", "")
     if not _token:
         print(
-            "ERROR: no GitHub token found. Run 'gh auth login' and try again.",
+            "ERROR: no GitHub token found. Run 'gh auth login' (or set GITHUB_TOKEN) and try again.",
             file=sys.stderr,
         )
         return 1
@@ -202,7 +203,7 @@ Examples:
 
     # Print model info if verbose
     _verbose_print(config, f"Model: {config.model}")
-    _verbose_print(config, f"API URL: {config.api_url}")
+    _verbose_print(config, f"API URL: {_safe_url(config.api_url)}")
 
     start_time = time.time()
     incremental_info = None
@@ -359,6 +360,7 @@ Examples:
 
     finally:
         config.read_cache.clear()
+        config.read_cache_bytes = 0
         if config.github_reader is not None:
             config.github_reader.close()
 

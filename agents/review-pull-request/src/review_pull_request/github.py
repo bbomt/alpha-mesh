@@ -1,5 +1,6 @@
 """Post a comment to a GitHub PR via REST API using httpx."""
 
+import os
 import subprocess
 
 import httpx
@@ -16,7 +17,7 @@ def _get_github_token() -> str | None:
     )
     if result.returncode == 0 and result.stdout.strip():
         return result.stdout.strip()
-    return None
+    return os.environ.get("GITHUB_TOKEN") or None
 
 
 def post_comment(body: str, pr_url: str, config) -> None:

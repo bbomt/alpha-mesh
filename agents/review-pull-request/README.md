@@ -20,7 +20,7 @@ mesh review-pull-request https://github.com/org/repo/pull/123 --no-post-comment
 
 ## Prerequisites
 
-- `gh` CLI installed and authenticated (`gh auth login`)
+- `gh` CLI installed and authenticated (`gh auth login`), or a `GITHUB_TOKEN` environment variable
 - `.env` file populated with `CODE_REVIEW_URL`, `CODE_REVIEW_TOKEN`, `CODE_REVIEW_MODEL`
 
 ```bash
@@ -99,7 +99,7 @@ Files matching the patterns in `alpha-mesh/.pr-review-ignore` are not reviewed. 
 Default list:
 
 ```
-CLAUDE.md
+**/CLAUDE.md
 .mesh/*
 **/README.md
 ```

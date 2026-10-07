@@ -53,6 +53,11 @@ fi
 # ─── test: install keeps .claude/ and .mesh/ ignored ───────────────────────────
 # bin/install rewrites .gitignore; it must not drop the runtime-dir entries.
 echo "[4/5] .gitignore still ignores .claude/ and .mesh/ after install..."
+# The assertions are only meaningful if install got as far as writing .gitignore.
+if ! echo "$output" | grep -q ".gitignore written"; then
+  echo "  FAIL: install did not reach the .gitignore step (output above is from test 3)"
+  FAILED=1
+fi
 for d in .claude .mesh; do
   if git -C "$MESH_DIR" check-ignore -q "$d/x"; then
     echo "  PASS: $d/ ignored"

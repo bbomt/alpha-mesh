@@ -6,6 +6,16 @@ from review_pull_request.config import Config
 from review_pull_request.review import main
 
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _restore_argv():
+    saved = sys.argv[:]
+    yield
+    sys.argv = saved
+
+
 def _stub_config():
     return Config(model="m", api_url="http://x", api_token="t")
 
@@ -15,10 +25,12 @@ def _mock_pr_info(head_sha="abc123sha", branch="feature/test"):
 
 
 @patch("review_pull_request.review.load_config", return_value=_stub_config())
+@patch("review_pull_request.review.get_pr_description", return_value="")
 @patch("review_pull_request.review.get_pr_info")
 @patch("review_pull_request.review.parse_pr_url", return_value=("owner", "repo", 42))
 @patch("subprocess.run")
-def test_exits_with_error_when_no_github_token(mock_subproc, mock_parse, mock_pr_info, mock_cfg, capsys):
+def test_exits_with_error_when_no_github_token(mock_subproc, mock_parse, mock_pr_info, mock_desc, mock_cfg, capsys, monkeypatch):
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
     mock_pr_info.return_value = _mock_pr_info()
     mock_subproc.return_value = MagicMock(returncode=1, stdout="")
 
@@ -122,10 +134,12 @@ def test_file_review_failure_after_good_overview_aborts_and_does_not_post(capsys
 # --- startup logging of model and URL ---
 
 @patch("review_pull_request.review.load_config")
+@patch("review_pull_request.review.get_pr_description", return_value="")
 @patch("review_pull_request.review.get_pr_info")
 @patch("review_pull_request.review.parse_pr_url", return_value=("owner", "repo", 42))
 @patch("subprocess.run")
-def test_logs_model_and_url_at_startup_without_token(mock_subproc, mock_parse, mock_pr_info, mock_cfg, capsys):
+def test_logs_model_and_url_at_startup_without_token(mock_subproc, mock_parse, mock_pr_info, mock_desc, mock_cfg, capsys, monkeypatch):
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
     mock_cfg.return_value = Config(model="my/model", api_url="https://llm.example.com/api", api_token=SECRET)
     mock_pr_info.return_value = _mock_pr_info()
     mock_subproc.return_value = MagicMock(returncode=1, stdout="")
@@ -176,3 +190,43 @@ def test_read_cache_is_cleared_when_main_exits(capsys):
         main()
 
     assert cfg.read_cache == {}
+
+
+def test_safe_url_survives_a_malformed_port():
+    from review_pull_request.review import _safe_url
+
+    assert "abc" not in _safe_url("https://host:abc/v1") or _safe_url("https://host:abc/v1") == "(invalid URL)"
+    assert _safe_url("https://host:99999/v1") in ("(invalid URL)", "https://host/v1")
+
+
+def test_verbose_output_never_prints_url_credentials(capsys):
+    from review_pull_request.llm import LLMError
+
+    cfg = Config(model="m", api_url="https://user:pw123@llm.example.com/api?key=abc999",
+                 api_token=SECRET, verbose=True)
+    with patch("review_pull_request.review.load_config", return_value=cfg), \
+         patch("review_pull_request.review.parse_pr_url", return_value=("owner", "repo", 42)), \
+         patch("review_pull_request.review.get_pr_info", return_value=_mock_pr_info()), \
+         patch("review_pull_request.review.get_pr_description", return_value=""), \
+         patch("review_pull_request.review.get_diff", return_value=DIFF), \
+         patch("review_pull_request.stage1.chat", side_effect=LLMError("API returned 404")), \
+         patch("subprocess.run", return_value=MagicMock(returncode=0, stdout="ghtoken")):
+        sys.argv = ["review", "https://github.com/owner/repo/pull/42", "--verbose"]
+        main()
+
+    err = capsys.readouterr().err
+    assert "pw123" not in err
+    assert "abc999" not in err
+
+
+def test_github_token_env_var_is_accepted_when_gh_has_no_token(capsys, monkeypatch):
+    monkeypatch.setenv("GITHUB_TOKEN", "env-token")
+    with patch("review_pull_request.review.load_config", return_value=_stub_config()), \
+         patch("review_pull_request.review.parse_pr_url", return_value=("owner", "repo", 42)), \
+         patch("review_pull_request.review.get_pr_info", return_value={"headRefName": "b", "headRefOid": ""}), \
+         patch("review_pull_request.review.get_pr_description", return_value=""), \
+         patch("subprocess.run", return_value=MagicMock(returncode=1, stdout="")):
+        sys.argv = ["review", "https://github.com/owner/repo/pull/42"]
+        main()
+
+    assert "no GitHub token" not in capsys.readouterr().err  # got past the token check (fails later on head SHA)

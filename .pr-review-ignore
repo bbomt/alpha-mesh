@@ -1,4 +1,4 @@
 # Files excluded from mesh review-pull-request (one pattern per line)
-CLAUDE.md
+**/CLAUDE.md
 .mesh/*
 **/README.md

@@ -160,7 +160,7 @@ def execute_read_file(
     real_repo = os.path.realpath(repo_root)
     target = os.path.realpath(os.path.join(repo_root, path))
 
-    if not target.startswith(real_repo):
+    if target != real_repo and not target.startswith(real_repo + os.sep):
         return "Error: access denied — path is outside the repository root."
 
     if github_reader is not None:

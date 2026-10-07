@@ -88,7 +88,8 @@ def test_run_file_review_retry_on_invalid_json():
     with patch("review_pull_request.stage2.chat", side_effect=mock_chat):
         result = run_file_review(chunk, "Overview", config)
 
-    assert "Recovered" in result.summary or "parse" in result.summary.lower()
+    assert result.summary == "Recovered."
+    assert call_count[0] == 2
 
 
 def test_run_file_review_handles_tool_calls():
@@ -121,7 +122,7 @@ def test_run_file_review_handles_tool_calls():
             result = run_file_review(chunk, "Overview", config)
 
     assert result.tool_calls_made == 1
-    assert "Reviewed" in result.summary or "parse" in result.summary.lower()
+    assert result.summary == "Reviewed."
 
 
 def test_run_file_review_passes_github_reader_to_execute_read_file():
@@ -269,3 +270,31 @@ def test_read_file_log_line_names_the_file_under_review(capsys):
     err = capsys.readouterr().err
     assert "read_file: pyproject.toml" in err
     assert "reviewing src/a.py" in err.split("read_file: pyproject.toml")[1].splitlines()[0]
+
+
+def test_failed_read_can_be_retried_within_the_same_review():
+    scripted = _scripted_chat([_tool_call("1", "pyproject.toml")], [_tool_call("2", "pyproject.toml")])
+    seen = []
+
+    def capturing(messages, tools, config):
+        seen.append([m["content"] for m in messages if m.get("role") == "tool"])
+        return scripted(messages, tools, config)
+
+    outcomes = iter(["Error: GitHub API rate limit exceeded.", "FILE BODY"])
+    with patch("review_pull_request.stage2.chat", side_effect=capturing), \
+         patch("review_pull_request.stage2.execute_read_file", side_effect=lambda *a: next(outcomes)) as ex:
+        run_file_review(_chunk(), "o", MockConfig())
+
+    assert ex.call_count == 2  # the failed read was not treated as "already read"
+    assert seen[-1] == ["Error: GitHub API rate limit exceeded.", "FILE BODY"]
+
+
+def test_read_cache_bytes_counter_tracks_stored_content():
+    config = MockConfig()
+    config.read_cache = {}
+    config.read_cache_bytes = 0
+    with patch("review_pull_request.stage2.chat", side_effect=_scripted_chat([_tool_call("1", "a.py"), _tool_call("2", "b.py")])), \
+         patch("review_pull_request.stage2.execute_read_file", side_effect=lambda p, *a: {"a.py": "xxx", "b.py": "yy\u00e9"}[p]):
+        run_file_review(_chunk(), "o", config)
+
+    assert config.read_cache_bytes == len("xxx".encode()) + len("yy\u00e9".encode())

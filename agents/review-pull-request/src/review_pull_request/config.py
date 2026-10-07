@@ -30,7 +30,12 @@ def load_ignore_patterns(path: Path) -> list[str]:
     """
     if not path.exists():
         return []
-    lines = (line.strip() for line in path.read_text().splitlines())
+    try:
+        text = path.read_text(encoding="utf-8-sig")
+    except (OSError, UnicodeDecodeError) as e:
+        print(f"WARNING: could not read {path.name} ({e}); no global exclusions applied.", file=sys.stderr)
+        return []
+    lines = (line.strip() for line in text.splitlines())
     return [line for line in lines if line and not line.startswith("#")]
 
 
@@ -67,6 +72,7 @@ class Config:
     # read_file results shared by every file review in one run; cleared when main() exits.
     read_cache: dict[str, str] = field(default_factory=dict)
     read_cache_max_bytes: int = 50 * 1024 * 1024
+    read_cache_bytes: int = 0  # running total of read_cache contents
 
     @property
     def effective_overview_model(self) -> str:

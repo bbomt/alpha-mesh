@@ -280,3 +280,17 @@ class TestExecuteReadFileWithGitHubReader:
 
         assert "Error" in result
         assert "500" in result
+
+
+class TestSiblingDirectoryTraversal:
+    def test_sibling_with_same_prefix_is_rejected(self, tmp_path):
+        repo = tmp_path / "proj"
+        sibling = tmp_path / "proj-secrets"
+        repo.mkdir()
+        sibling.mkdir()
+        (sibling / "key.txt").write_text("SECRET")
+
+        result = execute_read_file("../proj-secrets/key.txt", str(repo), 100)
+
+        assert "access denied" in result
+        assert "SECRET" not in result

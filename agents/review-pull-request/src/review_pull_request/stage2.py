@@ -165,10 +165,12 @@ def run_file_review(chunk, overview: str, config) -> FileReviewResult:
                         )
                         if read_cache is not None and not result.startswith("Error:"):
                             cap = getattr(config, "read_cache_max_bytes", DEFAULT_READ_CACHE_MAX_BYTES)
-                            used = sum(len(v.encode()) for v in read_cache.values())
-                            if used + len(result.encode()) <= cap:
+                            size = len(result.encode())
+                            if getattr(config, "read_cache_bytes", 0) + size <= cap:
                                 read_cache[path] = result
-                    paths_read.add(path)
+                                config.read_cache_bytes = getattr(config, "read_cache_bytes", 0) + size
+                    if not result.startswith("Error:"):
+                        paths_read.add(path)  # failed reads stay retryable
                     messages.append({
                         "role": "assistant",
                         "content": None,

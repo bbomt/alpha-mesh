@@ -52,6 +52,7 @@ def test_load_config_merges_ignore_file_with_toml_exclusions(tmp_path, monkeypat
     toml_file = tmp_path / "review_config.toml"
     toml_file.write_text('[exclusions]\npatterns = ["*.lock"]\n')
     monkeypatch.setattr(config_module, "IGNORE_FILE", ignore)
+    monkeypatch.setattr(config_module, "load_dotenv", lambda *a, **k: None)  # never read a real .env
     for var, val in [("CODE_REVIEW_URL", "http://x"), ("CODE_REVIEW_TOKEN", "t"), ("CODE_REVIEW_MODEL", "m")]:
         monkeypatch.setenv(var, val)
     args = SimpleNamespace(config=str(toml_file), model=None, base=None, repo_path=None,
@@ -61,3 +62,25 @@ def test_load_config_merges_ignore_file_with_toml_exclusions(tmp_path, monkeypat
 
     assert "*.lock" in cfg.exclusions
     assert "CLAUDE.md" in cfg.exclusions
+
+
+def test_load_ignore_patterns_tolerates_a_utf8_bom(tmp_path):
+    f = tmp_path / ".pr-review-ignore"
+    f.write_bytes(b"\xef\xbb\xbfCLAUDE.md\n.mesh/*\n")
+
+    assert load_ignore_patterns(f) == ["CLAUDE.md", ".mesh/*"]
+
+
+def test_load_ignore_patterns_unreadable_file_warns_and_returns_empty(tmp_path, capsys):
+    f = tmp_path / ".pr-review-ignore"
+    f.write_bytes(b"\xff\xfe\x00bad")
+
+    assert load_ignore_patterns(f) == []
+    assert "pr-review-ignore" in capsys.readouterr().err
+
+
+def test_shipped_ignore_file_excludes_nested_claude_md_and_readmes():
+    patterns = load_ignore_patterns(IGNORE_FILE)
+    diff = _diff("CLAUDE.md", "packages/foo/CLAUDE.md", "docs/README.md", "src/a.py")
+
+    assert [c.file_path for c in build_chunks(diff, patterns)] == ["src/a.py"]
