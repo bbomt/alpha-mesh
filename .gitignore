@@ -22,5 +22,6 @@ uv.lock
 *.swp
 .env
 
-# Claude Code runtime dir (holds tokens in settings.json; never track)
+# Claude Code and alpha-mesh runtime dirs (settings.json can hold tokens; MEMORY.md holds session text)
 .claude/
+.mesh/

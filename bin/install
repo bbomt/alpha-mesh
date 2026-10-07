@@ -71,6 +71,10 @@ uv.lock
 .DS_Store
 *.swp
 .env
+
+# Claude Code and alpha-mesh runtime dirs (settings.json can hold tokens; MEMORY.md holds session text)
+.claude/
+.mesh/
 EOF
 echo "  ✓ .gitignore written"
 echo ""
