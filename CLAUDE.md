@@ -59,6 +59,10 @@ mesh bootstrap-memory --dry-run
 # Validation
 mesh test-alpha-mesh  # broken into test/test/run-all
 ```
+## Jira Items
+
+- When creating a new Jira item in this project add label `ALPHA-MESH`
+
 
 ## Model Configuration
 
