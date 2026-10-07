@@ -117,3 +117,23 @@ def test_file_review_failure_after_good_overview_aborts_and_does_not_post(capsys
     mock_post.assert_not_called()
     assert "No issues found" not in out.out
     assert "src/a.py" in out.err
+
+
+# --- startup logging of model and URL ---
+
+@patch("pr_review_performance.review.load_config")
+@patch("pr_review_performance.review.get_pr_info")
+@patch("pr_review_performance.review.parse_pr_url", return_value=("owner", "repo", 42))
+@patch("subprocess.run")
+def test_logs_model_and_url_at_startup_without_token(mock_subproc, mock_parse, mock_pr_info, mock_cfg, capsys):
+    mock_cfg.return_value = Config(model="my/model", api_url="https://llm.example.com/api", api_token=SECRET)
+    mock_pr_info.return_value = _mock_pr_info()
+    mock_subproc.return_value = MagicMock(returncode=1, stdout="")
+
+    sys.argv = ["review", "https://github.com/owner/repo/pull/42"]
+    main()
+
+    err = capsys.readouterr().err
+    assert "my/model" in err
+    assert "https://llm.example.com/api" in err
+    assert SECRET not in err

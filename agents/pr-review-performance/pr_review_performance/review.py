@@ -141,6 +141,11 @@ Examples:
     args = parser.parse_args()
 
     config = load_config(args)
+    print(
+        f"Model: {config.model} (overview: {config.effective_overview_model})\n"
+        f"API URL: {config.api_url}",
+        file=sys.stderr,
+    )
 
     # Parse PR URL to get owner/repo/pr_number
     try:
