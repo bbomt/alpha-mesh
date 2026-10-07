@@ -239,3 +239,23 @@ def test_error_results_are_not_cached():
         run_file_review(_chunk(), "o", config)
 
     assert config.read_cache == {}
+
+
+def test_read_cache_stops_storing_once_the_size_cap_is_reached():
+    config = MockConfig()
+    config.read_cache = {}
+    config.read_cache_max_bytes = 10
+    chat_stub = _scripted_chat([_tool_call("1", "a.py")], [_tool_call("2", "b.py")])
+    bodies = {"a.py": "x" * 8, "b.py": "y" * 8}  # second would take the cache to 16 > 10
+    seen_tool_messages = []
+
+    def capturing(messages, tools, config):
+        seen_tool_messages[:] = [m["content"] for m in messages if m.get("role") == "tool"]
+        return chat_stub(messages, tools, config)
+
+    with patch("pr_review_performance.stage2.chat", side_effect=capturing), \
+         patch("pr_review_performance.stage2.execute_read_file", side_effect=lambda p, *a: bodies[p]):
+        run_file_review(_chunk(), "o", config)
+
+    assert seen_tool_messages == ["x" * 8, "y" * 8]  # both still served to the model
+    assert config.read_cache == {"a.py": "x" * 8}    # but only the first was stored

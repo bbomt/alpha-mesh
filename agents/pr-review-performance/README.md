@@ -106,7 +106,7 @@ CLAUDE.md
 
 ## read_file caching
 
-While reviewing a file the model can call `read_file` to look at other files. Results are cached for the run: a file read once is served from memory to later file reviews (logged as `(cached)`), and a repeat request inside the same file review gets a short "already read" note instead of the content. Error results are never cached. The cache is cleared when the run exits, so nothing persists between runs.
+While reviewing a file the model can call `read_file` to look at other files. Results are cached for the run: a file read once is served from memory to later file reviews (logged as `(cached)`), and a repeat request inside the same file review gets a short "already read" note instead of the content. Error results are never cached. Total cached content is capped at 50 MB; once full, files are still served but no longer stored. The cache is cleared when the run exits, so nothing persists between runs.
 
 ## Failure behaviour
 

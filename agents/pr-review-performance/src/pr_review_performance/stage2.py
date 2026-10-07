@@ -114,6 +114,8 @@ def _parse_json_response(text: str) -> dict | None:
         return None
 
 
+DEFAULT_READ_CACHE_MAX_BYTES = 50 * 1024 * 1024
+
 ALREADY_READ_NOTE = (
     "You already read this file earlier in this conversation; its content is above. "
     "Do not request it again. Continue the review or return your JSON answer."
@@ -162,7 +164,10 @@ def run_file_review(chunk, overview: str, config) -> FileReviewResult:
                             getattr(config, "github_reader", None),
                         )
                         if read_cache is not None and not result.startswith("Error:"):
-                            read_cache[path] = result
+                            cap = getattr(config, "read_cache_max_bytes", DEFAULT_READ_CACHE_MAX_BYTES)
+                            used = sum(len(v.encode()) for v in read_cache.values())
+                            if used + len(result.encode()) <= cap:
+                                read_cache[path] = result
                     paths_read.add(path)
                     messages.append({
                         "role": "assistant",

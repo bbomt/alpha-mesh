@@ -66,6 +66,7 @@ class Config:
     github_reader: GitHubFileReader | None = None
     # read_file results shared by every file review in one run; cleared when main() exits.
     read_cache: dict[str, str] = field(default_factory=dict)
+    read_cache_max_bytes: int = 50 * 1024 * 1024
 
     @property
     def effective_overview_model(self) -> str:
