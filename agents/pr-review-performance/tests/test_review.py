@@ -137,3 +137,24 @@ def test_logs_model_and_url_at_startup_without_token(mock_subproc, mock_parse, m
     assert "my/model" in err
     assert "https://llm.example.com/api" in err
     assert SECRET not in err
+
+
+def test_startup_banner_and_error_never_print_url_credentials(capsys):
+    from pr_review_performance.llm import LLMError
+
+    url = "https://user:pw123@llm.example.com:8443/api?key=abc999"
+    cfg = Config(model="m", api_url=url, api_token=SECRET)
+    with patch("pr_review_performance.review.load_config", return_value=cfg), \
+         patch("pr_review_performance.review.parse_pr_url", return_value=("owner", "repo", 42)), \
+         patch("pr_review_performance.review.get_pr_info", return_value=_mock_pr_info()), \
+         patch("pr_review_performance.review.get_pr_description", return_value=""), \
+         patch("pr_review_performance.review.get_diff", return_value=DIFF), \
+         patch("pr_review_performance.stage1.chat", side_effect=LLMError("API returned 404")), \
+         patch("subprocess.run", return_value=MagicMock(returncode=0, stdout="ghtoken")):
+        sys.argv = ["review", "https://github.com/owner/repo/pull/42"]
+        main()
+
+    err = capsys.readouterr().err
+    assert "llm.example.com" in err
+    assert "pw123" not in err
+    assert "abc999" not in err

@@ -32,6 +32,15 @@ from pr_review_performance.tools import GitHubFileReader
 DRY_RUN_MODEL = "dry-run-model"
 
 
+def _safe_url(url: str) -> str:
+    """URL without userinfo or query string, safe to print."""
+    p = urlparse(url)
+    if not p.hostname:
+        return "(invalid URL)"
+    port = f":{p.port}" if p.port else ""
+    return f"{p.scheme}://{p.hostname}{port}{p.path}"
+
+
 def _mock_llm_config(config):
     """Return a config identical to the given one but with a dry-run model marker."""
     class DryRunConfig:
@@ -143,7 +152,7 @@ Examples:
     config = load_config(args)
     print(
         f"Model: {config.model} (overview: {config.effective_overview_model})\n"
-        f"API URL: {config.api_url}",
+        f"API URL: {_safe_url(config.api_url)}",
         file=sys.stderr,
     )
 
@@ -333,7 +342,7 @@ Examples:
         return 0
 
     except LLMError as e:
-        host = urlparse(config.api_url).netloc or config.api_url
+        host = urlparse(config.api_url).hostname or "(invalid URL)"
         print(
             f"ERROR: LLM API call failed during {current_step}: {e}\n"
             f"  model: {config.model}\n"

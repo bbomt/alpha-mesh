@@ -3,6 +3,8 @@
 Returns a 3-6 sentence plain-text summary of the PR's intent.
 """
 
+import copy
+
 from pr_review_performance.llm import chat
 
 
@@ -39,7 +41,9 @@ def run_overview(full_diff: str, pr_description: str, config) -> str:
 
     messages = [{"role": "user", "content": prompt}]
 
-    response = chat(messages, tools=None, config=config)
+    overview_config = copy.copy(config)
+    overview_config.model = config.effective_overview_model
+    response = chat(messages, tools=None, config=overview_config)
     if response.content:
         return response.content.strip()
     return "Overview not available."
