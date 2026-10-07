@@ -15,7 +15,7 @@ def _diff(*paths):
 
 
 def test_ignore_file_default_is_alpha_mesh_root():
-    root = Path(config_module.__file__).resolve().parents[3]
+    root = Path(config_module.__file__).resolve().parents[4]
     assert IGNORE_FILE == root / ".pr-review-ignore"
     assert (root / "bin" / "mesh").exists()  # sanity: this really is the alpha-mesh root
 

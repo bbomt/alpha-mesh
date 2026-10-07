@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# agents/pr-review-performance/pr_review_performance/bin/pr-review-performance
+# agents/pr-review-performance/bin/pr-review-performance
 # Actual bash runner — loads .env, tee logs, calls Python.
 
 set -euo pipefail
@@ -26,7 +26,7 @@ export REPO_PATH
 
 SCRIPT_REALPATH="$(readlink -f "${BASH_SOURCE[0]}")"
 AGENT_DIR="$(cd "$(dirname "$SCRIPT_REALPATH")/.." && pwd)"
-MESH_DIR="$(cd "$AGENT_DIR/../../.." && pwd)"
+MESH_DIR="$(cd "$AGENT_DIR/../.." && pwd)"
 ENV_FILE="$MESH_DIR/.env"
 
 # Load .env for CODE_REVIEW_* vars

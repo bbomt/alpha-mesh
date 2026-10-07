@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# alpha-mesh/test/test-pr-review-performance
+# Runs the pr-review-performance pytest suite and checks the mesh entry point.
+
+set -euo pipefail
+
+MESH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+AGENT_DIR="$MESH_DIR/agents/pr-review-performance"
+
+echo "=== pr-review-performance tests ==="
+echo ""
+
+echo "[1/2] pytest suite..."
+if (cd "$AGENT_DIR" && uv run pytest -q); then
+  echo "  PASS"
+else
+  echo "  FAIL: pytest suite failed"
+  exit 1
+fi
+
+echo "[2/2] mesh pr-review-performance --help runs via the wrapper..."
+if "$MESH_DIR/bin/mesh" pr-review-performance --help 2>&1 | grep -q "usage:"; then
+  echo "  PASS"
+else
+  echo "  FAIL: mesh pr-review-performance --help did not print usage"
+  exit 1
+fi
+
+echo ""
+echo "=== ALL PR-REVIEW-PERFORMANCE TESTS PASSED ==="

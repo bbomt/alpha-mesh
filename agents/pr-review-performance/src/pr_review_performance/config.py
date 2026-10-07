@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 REQUIRED_ENV_VARS = ["CODE_REVIEW_URL", "CODE_REVIEW_TOKEN", "CODE_REVIEW_MODEL"]
 
 # Global list of files excluded from review, at the alpha-mesh root.
-IGNORE_FILE = Path(__file__).resolve().parents[3] / ".pr-review-ignore"
+IGNORE_FILE = Path(__file__).resolve().parents[4] / ".pr-review-ignore"
 
 
 def load_ignore_patterns(path: Path) -> list[str]:
