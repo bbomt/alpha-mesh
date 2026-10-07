@@ -33,6 +33,25 @@ RETRIES = 3
 BACKOFF = [2, 4, 8]
 
 
+def _parse_chat_response(response) -> ChatResponse:
+    """Parse a 200 response body; any malformed body is an LLMError."""
+    try:
+        choice = response.json()["choices"][0]
+        if choice.get("finish_reason", "") == "tool_calls":
+            tool_calls = []
+            for tc in choice.get("message", {}).get("tool_calls", []):
+                func = tc.get("function", {})
+                tool_calls.append(ToolCall(
+                    id=tc["id"],
+                    name=func["name"],
+                    arguments=json.loads(func.get("arguments", "{}")),
+                ))
+            return ChatResponse(content=None, tool_calls=tool_calls)
+        return ChatResponse(content=choice["message"].get("content"), tool_calls=[])
+    except (ValueError, KeyError, IndexError, TypeError, AttributeError) as e:
+        raise LLMError(f"Malformed API response ({type(e).__name__}: {e})") from e
+
+
 def chat(
     messages: list[dict],
     tools: list[dict] | None,
@@ -86,9 +105,7 @@ def chat(
                 )
                 last_error = f"404 with tools, retry: {retry_response.status_code}"
                 if retry_response.status_code == 200:
-                    data = retry_response.json()
-                    choice = data["choices"][0]
-                    return ChatResponse(content=choice["message"].get("content"), tool_calls=[])
+                    return _parse_chat_response(retry_response)
                 raise LLMError(f"API returned 404 with tools, retry also failed: {last_error}")
 
             if response.status_code in TRANSIENT_ERROR_CODES and attempt < RETRIES - 1:
@@ -99,24 +116,7 @@ def chat(
             if response.status_code != 200:
                 raise LLMError(f"API returned {response.status_code}: {response.text[:200]}")
 
-            data = response.json()
-            choice = data["choices"][0]
-            finish_reason = choice.get("finish_reason", "")
-
-            if finish_reason == "tool_calls":
-                tool_calls = []
-                for tc in choice.get("message", {}).get("tool_calls", []):
-                    func = tc.get("function", {})
-                    arguments_str = func.get("arguments", "{}")
-                    args = json.loads(arguments_str)
-                    tool_calls.append(ToolCall(
-                        id=tc["id"],
-                        name=func["name"],
-                        arguments=args,
-                    ))
-                return ChatResponse(content=None, tool_calls=tool_calls)
-            else:
-                return ChatResponse(content=choice["message"].get("content"), tool_calls=[])
+            return _parse_chat_response(response)
 
         except httpx.TimeoutException:
             last_error = "Request timed out"
