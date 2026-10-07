@@ -172,3 +172,70 @@ def test_run_file_review_raises_on_llm_error():
     with patch("pr_review_performance.stage2.chat", side_effect=LLMError("API returned 404")):
         with pytest.raises(LLMError):
             run_file_review(chunk, "Overview text", MockConfig())
+
+
+# --- read_file caching (PMAT-229) ---
+
+def _tool_call(call_id, path):
+    from types import SimpleNamespace
+    return SimpleNamespace(id=call_id, name="read_file", arguments={"path": path, "reason": "check"})
+
+
+def _scripted_chat(*tool_call_rounds):
+    """chat() stub: one tool-call round per entry, then a final JSON answer."""
+    rounds = list(tool_call_rounds)
+
+    def fake(messages, tools, config):
+        if rounds:
+            return MockLLMResponse(tool_calls=rounds.pop(0))
+        return MockLLMResponse(content='{"summary": "ok", "issues": []}')
+
+    return fake
+
+
+def _chunk(path="src/a.py"):
+    return FileChunk(file_path=path, diff_text=f"diff --git a/{path} b/{path}\n+x\n")
+
+
+def test_repeated_read_in_one_review_hits_the_file_once_and_tells_the_model():
+    scripted = _scripted_chat([_tool_call("1", "pyproject.toml")], [_tool_call("2", "pyproject.toml")])
+    seen_messages = []
+
+    def capturing(messages, tools, config):
+        seen_messages.append(list(messages))
+        return scripted(messages, tools, config)
+
+    with patch("pr_review_performance.stage2.chat", side_effect=capturing), \
+         patch("pr_review_performance.stage2.execute_read_file", return_value="FILE BODY") as ex:
+        result = run_file_review(_chunk(), "overview", MockConfig())
+
+    assert ex.call_count == 1
+    tool_msgs = [m["content"] for m in seen_messages[-1] if m.get("role") == "tool"]
+    assert tool_msgs[0] == "FILE BODY"
+    assert "already" in tool_msgs[1].lower()
+    assert result.summary == "ok"
+
+
+def test_read_cache_is_shared_across_file_reviews_in_one_run():
+    config = MockConfig()
+    config.read_cache = {}
+    with patch("pr_review_performance.stage2.chat", side_effect=_scripted_chat([_tool_call("1", "pyproject.toml")])), \
+         patch("pr_review_performance.stage2.execute_read_file", return_value="FILE BODY") as first:
+        run_file_review(_chunk("a.py"), "o", config)
+    with patch("pr_review_performance.stage2.chat", side_effect=_scripted_chat([_tool_call("2", "pyproject.toml")])), \
+         patch("pr_review_performance.stage2.execute_read_file", return_value="FILE BODY") as second:
+        run_file_review(_chunk("b.py"), "o", config)
+
+    assert first.call_count == 1
+    assert second.call_count == 0  # served from the shared cache
+    assert config.read_cache == {"pyproject.toml": "FILE BODY"}
+
+
+def test_error_results_are_not_cached():
+    config = MockConfig()
+    config.read_cache = {}
+    with patch("pr_review_performance.stage2.chat", side_effect=_scripted_chat([_tool_call("1", "missing.py")])), \
+         patch("pr_review_performance.stage2.execute_read_file", return_value="Error: file not found: missing.py"):
+        run_file_review(_chunk(), "o", config)
+
+    assert config.read_cache == {}

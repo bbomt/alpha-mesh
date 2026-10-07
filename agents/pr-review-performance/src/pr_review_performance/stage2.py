@@ -114,6 +114,12 @@ def _parse_json_response(text: str) -> dict | None:
         return None
 
 
+ALREADY_READ_NOTE = (
+    "You already read this file earlier in this conversation; its content is above. "
+    "Do not request it again. Continue the review or return your JSON answer."
+)
+
+
 def run_file_review(chunk, overview: str, config) -> FileReviewResult:
     """Run agentic review for a single file chunk.
 
@@ -126,6 +132,8 @@ def run_file_review(chunk, overview: str, config) -> FileReviewResult:
 
     tool_calls_made = 0
     max_iterations = config.max_tool_calls + 1
+    read_cache = getattr(config, "read_cache", None)
+    paths_read: set[str] = set()  # paths already shown to the model in this review
 
     for iteration in range(max_iterations):
         response = chat(
@@ -141,12 +149,21 @@ def run_file_review(chunk, overview: str, config) -> FileReviewResult:
                     reason = tc.arguments.get("reason", "")
                     print(f"  → read_file: {path}", file=sys.stderr, flush=True)
                     print(f"     reason: {reason}", file=sys.stderr, flush=True)
-                    result = execute_read_file(
-                        path,
-                        config.repo_root,
-                        config.max_file_lines,
-                        getattr(config, "github_reader", None),
-                    )
+                    if path in paths_read:
+                        result = ALREADY_READ_NOTE
+                    elif read_cache is not None and path in read_cache:
+                        result = read_cache[path]
+                        print("     (cached)", file=sys.stderr, flush=True)
+                    else:
+                        result = execute_read_file(
+                            path,
+                            config.repo_root,
+                            config.max_file_lines,
+                            getattr(config, "github_reader", None),
+                        )
+                        if read_cache is not None and not result.startswith("Error:"):
+                            read_cache[path] = result
+                    paths_read.add(path)
                     messages.append({
                         "role": "assistant",
                         "content": None,

@@ -158,3 +158,21 @@ def test_startup_banner_and_error_never_print_url_credentials(capsys):
     assert "llm.example.com" in err
     assert "pw123" not in err
     assert "abc999" not in err
+
+
+def test_read_cache_is_cleared_when_main_exits(capsys):
+    from pr_review_performance.llm import LLMError
+
+    cfg = Config(model="m", api_url="http://x", api_token=SECRET)
+    cfg.read_cache["pyproject.toml"] = "FILE BODY"
+    with patch("pr_review_performance.review.load_config", return_value=cfg), \
+         patch("pr_review_performance.review.parse_pr_url", return_value=("owner", "repo", 42)), \
+         patch("pr_review_performance.review.get_pr_info", return_value=_mock_pr_info()), \
+         patch("pr_review_performance.review.get_pr_description", return_value=""), \
+         patch("pr_review_performance.review.get_diff", return_value=DIFF), \
+         patch("pr_review_performance.stage1.chat", side_effect=LLMError("API returned 404")), \
+         patch("subprocess.run", return_value=MagicMock(returncode=0, stdout="ghtoken")):
+        sys.argv = ["review", "https://github.com/owner/repo/pull/42"]
+        main()
+
+    assert cfg.read_cache == {}

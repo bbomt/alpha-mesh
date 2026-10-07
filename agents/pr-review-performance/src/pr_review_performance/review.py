@@ -358,6 +358,7 @@ Examples:
         return 1
 
     finally:
+        config.read_cache.clear()
         if config.github_reader is not None:
             config.github_reader.close()
 

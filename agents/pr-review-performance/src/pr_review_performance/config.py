@@ -64,6 +64,8 @@ class Config:
     verbose: bool = False
     hide_pr_comment: bool = False
     github_reader: GitHubFileReader | None = None
+    # read_file results shared by every file review in one run; cleared when main() exits.
+    read_cache: dict[str, str] = field(default_factory=dict)
 
     @property
     def effective_overview_model(self) -> str:
