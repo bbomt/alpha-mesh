@@ -22,6 +22,5 @@ uv.lock
 *.swp
 .env
 
-# Claude Code and alpha-mesh runtime dirs
+# Claude Code runtime dir (holds tokens in settings.json; never track)
 .claude/
-.mesh/
