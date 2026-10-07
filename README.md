@@ -22,8 +22,7 @@ alpha-mesh/
 │   │   │   └── bin/dream    # Shell entry point
 │   │   └── tests/
 │   │       └── test_dream_core.py  # Python tests for dream module
-│   ├── pr-review-performance/ # PR review agent — LLM-powered, two-stage review (see below)
-│   └── agent_runner/        # Shared Claude-plugin agent framework (PMAT-188/189); no current consumer, kept for future agents
+│   └── pr-review-performance/ # PR review agent — LLM-powered, two-stage review (see below)
 ├── config/
 │   └── models.json          # All model profiles
 ├── memory/

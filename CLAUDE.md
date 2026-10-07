@@ -24,8 +24,7 @@ alpha-mesh/
 │   ├── dream/               # Dream agent
 │   │   ├── dream/           # Python package with dream logic
 │   │   └── tests/           # Dream tests
-│   ├── pr-review-performance/ # PR review agent — LLM-powered, two-stage review
-│   └── agent_runner/       # Shared Claude-plugin agent framework (no current consumer)
+│   └── pr-review-performance/ # PR review agent — LLM-powered, two-stage review
 ├── test/
 │   ├── run-all              # Runs all test suites
 │   └── test-*               # Individual test suites
