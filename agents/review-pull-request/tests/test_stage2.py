@@ -259,3 +259,13 @@ def test_read_cache_stops_storing_once_the_size_cap_is_reached():
 
     assert seen_tool_messages == ["x" * 8, "y" * 8]  # both still served to the model
     assert config.read_cache == {"a.py": "x" * 8}    # but only the first was stored
+
+
+def test_read_file_log_line_names_the_file_under_review(capsys):
+    with patch("review_pull_request.stage2.chat", side_effect=_scripted_chat([_tool_call("1", "pyproject.toml")])), \
+         patch("review_pull_request.stage2.execute_read_file", return_value="FILE BODY"):
+        run_file_review(_chunk("src/a.py"), "o", MockConfig())
+
+    err = capsys.readouterr().err
+    assert "read_file: pyproject.toml" in err
+    assert "reviewing src/a.py" in err.split("read_file: pyproject.toml")[1].splitlines()[0]
