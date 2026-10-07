@@ -40,9 +40,7 @@ echo ""
 
 # ─── Create directory structure ─────────────────────────────────────────────
 echo "Creating directories..."
-mkdir -p \
-  "$MESH_DIR/config" \
-  "$MESH_DIR/tasks"
+mkdir -p "$MESH_DIR/config"
 echo "  ✓ done"
 echo ""
 
@@ -50,10 +48,6 @@ echo ""
 cat > "$MESH_DIR/.gitignore" <<'EOF'
 # secrets — never commit
 config/active.json
-
-# local DB — back up separately, don't commit
-tasks/task-log.db
-tasks/*.db
 
 # Python bytecode
 __pycache__/

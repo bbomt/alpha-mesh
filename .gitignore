@@ -1,10 +1,6 @@
 # secrets — never commit
 config/active.json
 
-# local DB — back up separately, don't commit
-tasks/task-log.db
-tasks/*.db
-
 # Python bytecode
 __pycache__/
 *.pyc
