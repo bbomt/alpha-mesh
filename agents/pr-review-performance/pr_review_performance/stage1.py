@@ -3,7 +3,7 @@
 Returns a 3-6 sentence plain-text summary of the PR's intent.
 """
 
-from pr_review_performance.llm import chat, LLMError
+from pr_review_performance.llm import chat
 
 
 OVERVIEW_PROMPT = """You are a senior engineer reviewing a pull request.
@@ -25,7 +25,7 @@ Output plain text only. Do not add headings, section titles, or markdown formatt
 def run_overview(full_diff: str, pr_description: str, config) -> str:
     """Perform the overview pass.
 
-    Returns the overview text. On API error returns a fallback string (no crash).
+    Returns the overview text. LLMError propagates: an unusable model API is fatal.
     """
     if pr_description:
         description_section = pr_description
@@ -39,11 +39,7 @@ def run_overview(full_diff: str, pr_description: str, config) -> str:
 
     messages = [{"role": "user", "content": prompt}]
 
-    try:
-        response = chat(messages, tools=None, config=config)
-        if response.content:
-            return response.content.strip()
-        return "Overview not available."
-    except LLMError as e:
-        print(f"WARNING: overview LLM call failed: {e}", flush=True)
-        return "Overview not available due to an API error."
+    response = chat(messages, tools=None, config=config)
+    if response.content:
+        return response.content.strip()
+    return "Overview not available."

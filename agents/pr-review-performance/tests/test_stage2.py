@@ -162,3 +162,13 @@ def test_run_file_review_passes_github_reader_to_execute_read_file():
             run_file_review(chunk, "Overview", config)
 
     assert captured_reader.get("reader") is mock_reader
+
+
+def test_run_file_review_raises_on_llm_error():
+    """A failed LLM call must propagate, not return an empty 'LLM call failed.' result."""
+    from pr_review_performance.llm import LLMError
+
+    chunk = FileChunk(file_path="src/main.py", diff_text="diff --git a/src/main.py b/src/main.py\n+x\n")
+    with patch("pr_review_performance.stage2.chat", side_effect=LLMError("API returned 404")):
+        with pytest.raises(LLMError):
+            run_file_review(chunk, "Overview text", MockConfig())

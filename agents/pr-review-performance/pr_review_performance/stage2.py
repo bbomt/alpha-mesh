@@ -8,7 +8,7 @@ import json as _json
 import sys
 from dataclasses import dataclass, field
 
-from pr_review_performance.llm import chat, ChatResponse, LLMError
+from pr_review_performance.llm import chat, ChatResponse
 from pr_review_performance.tools import READ_FILE_TOOL_SCHEMA, execute_read_file
 
 
@@ -118,6 +118,7 @@ def run_file_review(chunk, overview: str, config) -> FileReviewResult:
     """Run agentic review for a single file chunk.
 
     Handles read_file tool calls, retries JSON parse once on failure.
+    LLMError propagates: an unusable model API is fatal.
     """
     messages = [
         {"role": "user", "content": _build_per_file_prompt(chunk, overview)}
@@ -127,20 +128,11 @@ def run_file_review(chunk, overview: str, config) -> FileReviewResult:
     max_iterations = config.max_tool_calls + 1
 
     for iteration in range(max_iterations):
-        try:
-            response = chat(
-                messages,
-                tools=[READ_FILE_TOOL_SCHEMA],
-                config=config,
-            )
-        except LLMError as e:
-            print(f"WARNING: LLM call failed: {e}", flush=True)
-            return FileReviewResult(
-                file_path=chunk.file_path,
-                summary="LLM call failed.",
-                issues=[],
-                tool_calls_made=tool_calls_made,
-            )
+        response = chat(
+            messages,
+            tools=[READ_FILE_TOOL_SCHEMA],
+            config=config,
+        )
 
         if response.tool_calls:
             for tc in response.tool_calls:

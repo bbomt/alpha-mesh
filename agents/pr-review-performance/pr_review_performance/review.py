@@ -6,6 +6,7 @@ mesh pr-review-performance <pr_url> [flags]
 import argparse
 import sys
 import time
+from urllib.parse import urlparse
 
 from pr_review_performance.chunker import build_chunks
 from pr_review_performance.config import load_config
@@ -17,6 +18,7 @@ from pr_review_performance.git import (
     parse_pr_url,
 )
 from pr_review_performance.github import post_comment
+from pr_review_performance.llm import LLMError
 from pr_review_performance.incremental import (
     find_last_review_comment,
     get_commits_since,
@@ -190,6 +192,7 @@ Examples:
 
     start_time = time.time()
     incremental_info = None
+    current_step = "review"
     try:
         # ── Incremental diff (--since-last-review) ──────────────────────────
         if args.since_last_review and not args.dry_run:
@@ -281,6 +284,7 @@ Examples:
                 all_summaries.append((chunk.file_path, MOCK_FILE_RESULT["summary"]))
             model = DRY_RUN_MODEL
         else:
+            current_step = "overview pass"
             print("Stage 1: Overview pass...", file=sys.stderr)
             overview = run_overview(diff, pr_desc, config)
             print(f"Overview: {overview[:80]}...", file=sys.stderr)
@@ -288,6 +292,7 @@ Examples:
             all_issues = []
             all_summaries = []
             for i, chunk in enumerate(chunks):
+                current_step = chunk.file_path
                 print(f"[{i+1}/{len(chunks)}] reviewing {chunk.file_path}...", file=sys.stderr)
                 result = run_file_review(chunk, overview, config)
                 all_issues.extend(result.issues)
@@ -321,6 +326,18 @@ Examples:
         mins, secs = divmod(int(elapsed), 60)
         print(f"PR review complete! Reviewed {len(chunks)} file(s) in {mins}m {secs}s.", file=sys.stderr)
         return 0
+
+    except LLMError as e:
+        host = urlparse(config.api_url).netloc or config.api_url
+        print(
+            f"ERROR: LLM API call failed during {current_step}: {e}\n"
+            f"  model: {config.model}\n"
+            f"  api host: {host}\n"
+            "  The model API is unusable, so the review was aborted and nothing was posted.\n"
+            "  Check CODE_REVIEW_MODEL / CODE_REVIEW_URL / CODE_REVIEW_TOKEN in .env.",
+            file=sys.stderr,
+        )
+        return 1
 
     except Exception as e:
         print(f"ERROR: {e}", file=sys.stderr)
