@@ -1,0 +1,4 @@
+# Files excluded from mesh pr-review-performance (one pattern per line)
+CLAUDE.md
+.mesh/*
+**/README.md

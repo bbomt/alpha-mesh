@@ -22,6 +22,9 @@ def _matches_exclusion(file_path: str, exclusions: list[str]) -> bool:
     for pattern in exclusions:
         if fnmatch.fnmatch(file_path, pattern):
             return True
+        # "**/name" also matches "name" at the repo root (zero directories).
+        if pattern.startswith("**/") and fnmatch.fnmatch(file_path, pattern[3:]):
+            return True
         if pattern.startswith("*") and pattern.endswith("*") and len(pattern) > 2:
             inner = pattern[1:-1].strip("/")
             parts = file_path.split(os.sep)

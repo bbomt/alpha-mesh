@@ -19,6 +19,20 @@ if TYPE_CHECKING:
 
 REQUIRED_ENV_VARS = ["CODE_REVIEW_URL", "CODE_REVIEW_TOKEN", "CODE_REVIEW_MODEL"]
 
+# Global list of files excluded from review, at the alpha-mesh root.
+IGNORE_FILE = Path(__file__).resolve().parents[3] / ".pr-review-ignore"
+
+
+def load_ignore_patterns(path: Path) -> list[str]:
+    """Read exclusion patterns: one per line, '#' comments and blank lines skipped.
+
+    A missing file means no extra exclusions.
+    """
+    if not path.exists():
+        return []
+    lines = (line.strip() for line in path.read_text().splitlines())
+    return [line for line in lines if line and not line.startswith("#")]
+
 
 def _load_toml(config_path: str | None) -> dict:
     """Load TOML config file, return empty dict if not found."""
@@ -96,7 +110,7 @@ def load_config(args) -> Config:
 
     max_tool_calls = limits.get("max_tool_calls", 10)
     max_file_lines = limits.get("max_file_lines", 8000)
-    exclusions = exclusions_section.get("patterns", [])
+    exclusions = exclusions_section.get("patterns", []) + load_ignore_patterns(IGNORE_FILE)
     github_repo = github_section.get("repo", "")
     output_file = output_section.get("file", "review_output.md")
     overview_model = models_section.get("overview_model", "")
