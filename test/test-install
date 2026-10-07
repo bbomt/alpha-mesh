@@ -13,7 +13,7 @@ echo "=== install tests ==="
 echo ""
 
 # ─── test: bin/install exists and is executable ────────────────────────────────
-echo "[1/5] bin/install exists and is executable..."
+echo "[1/6] bin/install exists and is executable..."
 if [[ -x "$MESH_DIR/bin/install" ]]; then
   echo "  PASS"
 else
@@ -22,7 +22,7 @@ else
 fi
 
 # ─── test: required tools are available ─────────────────────────────────────────
-echo "[2/5] Required tools are available..."
+echo "[2/6] Required tools are available..."
 for tool in jq sqlite3 curl python3; do
   if command -v "$tool" >/dev/null 2>&1; then
     echo "  PASS: $tool found"
@@ -33,7 +33,7 @@ for tool in jq sqlite3 curl python3; do
 done
 
 # ─── test: bin/install can be run (dry-run mode if available) ───────────────────
-echo "[3/5] bin/install runs without error..."
+echo "[3/6] bin/install runs without error..."
 # Run install and capture output — may need to handle interactive prompts
 # Use expect-style timeout or check for non-interactive mode
 output=$(bash -c "echo 'n' | $MESH_DIR/bin/install 2>&1" || true)
@@ -52,32 +52,52 @@ fi
 
 # ─── test: install keeps .claude/ and .mesh/ ignored ───────────────────────────
 # bin/install rewrites .gitignore; it must not drop the runtime-dir entries.
-echo "[4/5] .gitignore still ignores .claude/ and .mesh/ after install..."
+echo "[4/6] .gitignore still ignores .claude/ and .mesh/ after install..."
 # The assertions are only meaningful if install got as far as writing .gitignore.
 if ! echo "$output" | grep -q ".gitignore written"; then
   echo "  FAIL: install did not reach the .gitignore step (output above is from test 3)"
   FAILED=1
 fi
-for d in .claude .mesh; do
-  if git -C "$MESH_DIR" check-ignore -q "$d/x"; then
-    echo "  PASS: $d/ ignored"
+for d in .claude/ .mesh/; do
+  # Check the rewritten file itself: git check-ignore would also honour a global gitignore.
+  if grep -qx "$d" "$MESH_DIR/.gitignore"; then
+    echo "  PASS: $d listed in .gitignore"
   else
-    echo "  FAIL: $d/ not ignored after install"
+    echo "  FAIL: $d missing from .gitignore after install"
     FAILED=1
   fi
 done
 
-# ─── test: install does not recreate the removed tasks/ directory ───────────────
-echo "[5/5] install does not create tasks/ (task-log was removed)..."
-rmdir "$MESH_DIR/tasks" 2>/dev/null || true
+# ─── test: install does not create the removed tasks/ directory ────────────────
+echo "[5/6] install does not create tasks/ (task-log was removed)..."
+tasks_existed=0
+[[ -e "$MESH_DIR/tasks" ]] && tasks_existed=1
 echo 'n' | "$MESH_DIR/bin/install" >/dev/null 2>&1 || true
-if [[ -e "$MESH_DIR/tasks" ]]; then
+if [[ "$tasks_existed" -eq 0 && -e "$MESH_DIR/tasks" ]]; then
   echo "  FAIL: install created tasks/"
   rmdir "$MESH_DIR/tasks" 2>/dev/null || true
   FAILED=1
 else
   echo "  PASS"
 fi
+
+# ─── test: install removes dangling links to retired commands ───────────────────
+echo "[6/6] install removes dangling ~/bin links that point into alpha-mesh..."
+FAKE_HOME="$(mktemp -d)"
+mkdir -p "$FAKE_HOME/bin"
+ln -s "$MESH_DIR/bin/retired-command" "$FAKE_HOME/bin/retired-command"   # dangling, ours
+ln -s /nonexistent/other-tool "$FAKE_HOME/bin/other-tool"                # dangling, not ours
+echo 'n' | HOME="$FAKE_HOME" "$MESH_DIR/bin/install" >/dev/null 2>&1 || true
+if [[ -L "$FAKE_HOME/bin/retired-command" ]]; then
+  echo "  FAIL: dangling link to a retired alpha-mesh command was left behind"
+  FAILED=1
+elif [[ ! -L "$FAKE_HOME/bin/other-tool" ]]; then
+  echo "  FAIL: install removed a link that does not belong to alpha-mesh"
+  FAILED=1
+else
+  echo "  PASS"
+fi
+rm -rf "$FAKE_HOME"
 
 # ─── summary ────────────────────────────────────────────────────────────────────
 echo ""

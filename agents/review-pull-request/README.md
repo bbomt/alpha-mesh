@@ -108,6 +108,12 @@ Default list:
 
 While reviewing a file the model can call `read_file` to look at other files. Results are cached for the run: a file read once is served from memory to later file reviews (logged as `(cached)`), and a repeat request inside the same file review gets a short "already read" note instead of the content. Error results are never cached. Total cached content is capped at 50 MB; once full, files are still served but no longer stored. The cache is cleared when the run exits, so nothing persists between runs.
 
+## Incomplete and fully excluded reviews
+
+- If the model gives no usable answer for a file (unparseable reply, tool-call limit reached), that file is listed in the report under "Not fully reviewed", the "No issues found ✅" all-clear is withheld, and the run exits non-zero (the report is still posted).
+- If every changed file matches an exclusion pattern, the agent says so on stderr and posts a short comment stating that the PR was **not** reviewed, instead of exiting silently. Nothing is posted with `--no-post-comment` or `--dry-run`.
+- Severities other than high/medium/low from the model (`error`, `critical`, `warning`, anything else) are mapped to high/medium/low so no finding is dropped from the report.
+
 ## Failure behaviour
 
 If an LLM API call fails (for example a `404` because the model in `CODE_REVIEW_MODEL` is not available), the review **aborts**. The agent never continues with partial results and never posts a "No issues found" comment for files it could not review.

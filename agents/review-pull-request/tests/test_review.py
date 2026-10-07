@@ -230,3 +230,84 @@ def test_github_token_env_var_is_accepted_when_gh_has_no_token(capsys, monkeypat
         main()
 
     assert "no GitHub token" not in capsys.readouterr().err  # got past the token check (fails later on head SHA)
+
+
+# --- incomplete files, all-excluded diffs, error reporting (pass 6) ---
+
+def _run_main_with_results(file_review, diff, exclusions=(), extra_argv=()):
+    cfg = Config(model="m", api_url="http://x", api_token=SECRET, exclusions=list(exclusions))
+    with patch("review_pull_request.review.load_config", return_value=cfg), \
+         patch("review_pull_request.review.parse_pr_url", return_value=("owner", "repo", 42)), \
+         patch("review_pull_request.review.get_pr_info", return_value=_mock_pr_info()), \
+         patch("review_pull_request.review.get_pr_description", return_value=""), \
+         patch("review_pull_request.review.get_diff", return_value=diff), \
+         patch("review_pull_request.review.run_overview", return_value="An overview."), \
+         patch("review_pull_request.review.run_file_review", side_effect=file_review), \
+         patch("review_pull_request.review.post_comment") as mock_post, \
+         patch("subprocess.run", return_value=MagicMock(returncode=0, stdout="ghtoken")):
+        sys.argv = ["review", "https://github.com/owner/repo/pull/42", *extra_argv]
+        rc = main()
+    return rc, mock_post
+
+
+def test_incomplete_file_reviews_are_reported_and_fail_the_run(capsys):
+    from review_pull_request.stage2 import FileReviewResult
+
+    def review(chunk, overview, config):
+        return FileReviewResult(file_path=chunk.file_path, summary="Could not parse model response.",
+                                issues=[], tool_calls_made=0, incomplete=True)
+
+    rc, mock_post = _run_main_with_results(review, DIFF)
+
+    body = mock_post.call_args[0][0]
+    assert "No issues found. ✅" not in body
+    assert "src/a.py" in body
+    assert rc != 0
+    assert "not fully reviewed" in capsys.readouterr().err.lower()
+
+
+README_DIFF = "diff --git a/README.md b/README.md\n--- a/README.md\n+++ b/README.md\n@@ -1 +1 @@\n+x\n"
+
+
+def test_all_files_excluded_is_announced_on_the_pr_not_silently_skipped(capsys):
+    rc, mock_post = _run_main_with_results(lambda *a: None, README_DIFF, exclusions=["**/README.md"])
+
+    assert rc == 0
+    mock_post.assert_called_once()
+    body = mock_post.call_args[0][0]
+    assert "excluded" in body.lower()
+    assert "README.md" in body
+    assert "excluded" in capsys.readouterr().err.lower()
+
+
+def test_all_files_excluded_posts_nothing_with_no_post_comment():
+    rc, mock_post = _run_main_with_results(lambda *a: None, README_DIFF, exclusions=["**/README.md"],
+                                           extra_argv=["--no-post-comment"])
+
+    assert rc == 0
+    mock_post.assert_not_called()
+
+
+def test_safe_url_survives_unparseable_urls():
+    from review_pull_request.review import _safe_url
+
+    assert _safe_url("http://[::1") == "(invalid URL)"
+
+
+def test_overview_failure_names_the_overview_model(capsys):
+    from review_pull_request.llm import LLMError
+
+    cfg = Config(model="file-model", api_url="https://llm.example.com", api_token=SECRET,
+                 overview_model="overview-model")
+    with patch("review_pull_request.review.load_config", return_value=cfg), \
+         patch("review_pull_request.review.parse_pr_url", return_value=("owner", "repo", 42)), \
+         patch("review_pull_request.review.get_pr_info", return_value=_mock_pr_info()), \
+         patch("review_pull_request.review.get_pr_description", return_value=""), \
+         patch("review_pull_request.review.get_diff", return_value=DIFF), \
+         patch("review_pull_request.stage1.chat", side_effect=LLMError("API returned 404")), \
+         patch("subprocess.run", return_value=MagicMock(returncode=0, stdout="ghtoken")):
+        sys.argv = ["review", "https://github.com/owner/repo/pull/42"]
+        main()
+
+    err = capsys.readouterr().err
+    assert "model: overview-model" in err

@@ -25,3 +25,15 @@ def test_none_when_neither_is_available(monkeypatch):
     monkeypatch.delenv("GITHUB_TOKEN", raising=False)
     with _gh(1):
         assert _get_github_token() is None
+
+
+def test_missing_gh_binary_falls_back_to_env_token(monkeypatch):
+    monkeypatch.setenv("GITHUB_TOKEN", "from-env")
+    with patch("review_pull_request.github.subprocess.run", side_effect=FileNotFoundError("gh")):
+        assert _get_github_token() == "from-env"
+
+
+def test_missing_gh_binary_and_no_env_token_returns_none(monkeypatch):
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    with patch("review_pull_request.github.subprocess.run", side_effect=FileNotFoundError("gh")):
+        assert _get_github_token() is None

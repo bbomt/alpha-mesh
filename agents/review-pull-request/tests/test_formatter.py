@@ -106,3 +106,15 @@ def test_file_paths_in_backticks():
     report = render_report("overview", issues, [], config)
     assert "`src/auth.py`" in report
     assert "`" in report
+
+
+def test_incomplete_files_suppress_the_all_clear_and_are_listed():
+    from review_pull_request.config import Config
+
+    cfg = Config(model="m", api_url="http://x", api_token="t")
+    body = render_report("ov", [], summaries=[("a.py", "s")], config=cfg, model="m",
+                         incomplete=["b.py", "c.py"])
+
+    assert "No issues found. ✅" not in body
+    assert "not fully reviewed" in body.lower()
+    assert "b.py" in body and "c.py" in body

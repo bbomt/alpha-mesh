@@ -10,12 +10,15 @@ from review_pull_request.git import parse_pr_url
 
 def _get_github_token() -> str | None:
     """Get GitHub token: gh auth token > GITHUB_TOKEN env var."""
-    result = subprocess.run(
-        ["gh", "auth", "token"],
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode == 0 and result.stdout.strip():
+    try:
+        result = subprocess.run(
+            ["gh", "auth", "token"],
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.SubprocessError):  # gh not installed
+        result = None
+    if result is not None and result.returncode == 0 and result.stdout.strip():
         return result.stdout.strip()
     return os.environ.get("GITHUB_TOKEN") or None
 

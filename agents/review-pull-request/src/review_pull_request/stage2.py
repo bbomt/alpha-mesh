@@ -94,6 +94,17 @@ class FileReviewResult:
     summary: str
     issues: list[Issue] = field(default_factory=list)
     tool_calls_made: int = 0
+    incomplete: bool = False  # the file could not be fully reviewed (do not report it as clean)
+
+
+_SEVERITY_ALIASES = {"error": "high", "critical": "high", "warning": "medium"}
+
+
+def _normalise_severity(value) -> str:
+    """Map whatever the model emitted onto high/medium/low so no finding is dropped."""
+    sev = str(value or "medium").strip().lower()
+    sev = _SEVERITY_ALIASES.get(sev, sev)
+    return sev if sev in ("high", "medium", "low") else "low"
 
 
 def _build_per_file_prompt(chunk, overview: str) -> str:
@@ -101,17 +112,25 @@ def _build_per_file_prompt(chunk, overview: str) -> str:
 
 
 def _parse_json_response(text: str) -> dict | None:
-    """Strip code fences and parse JSON. Returns None on failure."""
+    """Extract and parse the JSON object in a model reply (bare, fenced, or wrapped in prose).
+
+    Returns None on failure.
+    """
     text = text.strip()
-    if text.startswith("```"):
-        text = text.split("```")[1]
-        if text.startswith("json"):
-            text = text[4:]
-        text = text.strip()
-    try:
-        return _json.loads(text)
-    except Exception:
-        return None
+    candidates = [text]
+    if "```" in text:
+        fenced = text.split("```")[1]
+        candidates.append(fenced[4:] if fenced.startswith("json") else fenced)
+    if "{" in text and "}" in text:
+        candidates.append(text[text.index("{"): text.rindex("}") + 1])
+    for candidate in candidates:
+        try:
+            parsed = _json.loads(candidate.strip())
+        except Exception:
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+    return None
 
 
 DEFAULT_READ_CACHE_MAX_BYTES = 50 * 1024 * 1024
@@ -198,6 +217,7 @@ def run_file_review(chunk, overview: str, config) -> FileReviewResult:
                     summary="Max tool calls reached.",
                     issues=[],
                     tool_calls_made=tool_calls_made,
+                    incomplete=True,
                 )
         else:
             content = response.content or ""
@@ -220,6 +240,7 @@ def run_file_review(chunk, overview: str, config) -> FileReviewResult:
                     summary="Could not parse model response.",
                     issues=[],
                     tool_calls_made=tool_calls_made,
+                    incomplete=True,
                 )
 
             issues = []
@@ -227,7 +248,7 @@ def run_file_review(chunk, overview: str, config) -> FileReviewResult:
                 issues.append(Issue(
                     file=iss.get("file", chunk.file_path),
                     line=iss.get("line"),
-                    severity=iss.get("severity", "medium"),
+                    severity=_normalise_severity(iss.get("severity")),
                     comment=iss.get("comment", ""),
                     suggestion=iss.get("suggestion"),
                 ))
@@ -244,4 +265,5 @@ def run_file_review(chunk, overview: str, config) -> FileReviewResult:
         summary="Max iterations reached.",
         issues=[],
         tool_calls_made=tool_calls_made,
+        incomplete=True,
     )

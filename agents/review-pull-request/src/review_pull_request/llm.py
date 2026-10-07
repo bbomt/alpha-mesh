@@ -41,10 +41,13 @@ def _parse_chat_response(response) -> ChatResponse:
             tool_calls = []
             for tc in choice.get("message", {}).get("tool_calls", []):
                 func = tc.get("function", {})
+                arguments = json.loads(func.get("arguments", "{}"))
+                if not isinstance(arguments, dict):
+                    raise ValueError(f"tool call arguments must be an object, got {type(arguments).__name__}")
                 tool_calls.append(ToolCall(
                     id=tc["id"],
                     name=func["name"],
-                    arguments=json.loads(func.get("arguments", "{}")),
+                    arguments=arguments,
                 ))
             return ChatResponse(content=None, tool_calls=tool_calls)
         return ChatResponse(content=choice["message"].get("content"), tool_calls=[])
@@ -116,7 +119,14 @@ def chat(
             if response.status_code != 200:
                 raise LLMError(f"API returned {response.status_code}: {response.text[:200]}")
 
-            return _parse_chat_response(response)
+            try:
+                return _parse_chat_response(response)
+            except LLMError as e:  # a malformed 200 body can be a one-off provider glitch
+                last_error = str(e)
+                if attempt < RETRIES - 1:
+                    time.sleep(BACKOFF[attempt] if attempt < len(BACKOFF) else BACKOFF[-1])
+                    continue
+                raise
 
         except httpx.TimeoutException:
             last_error = "Request timed out"

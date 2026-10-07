@@ -298,3 +298,57 @@ def test_read_cache_bytes_counter_tracks_stored_content():
         run_file_review(_chunk(), "o", config)
 
     assert config.read_cache_bytes == len("xxx".encode()) + len("yy\u00e9".encode())
+
+
+# --- severity normalisation, incomplete results, JSON extraction ---
+
+def _final(issues_json):
+    return MockLLMResponse(content='{"summary": "s", "issues": %s}' % issues_json)
+
+
+def test_unknown_severities_are_normalised_so_findings_are_not_dropped():
+    issues = (
+        '[{"file":"a","line":1,"severity":"error","comment":"c1"},'
+        '{"file":"a","line":2,"severity":"critical","comment":"c2"},'
+        '{"file":"a","line":3,"severity":"warning","comment":"c3"},'
+        '{"file":"a","line":4,"severity":"weird","comment":"c4"},'
+        '{"file":"a","line":5,"severity":"HIGH","comment":"c5"}]'
+    )
+    with patch("review_pull_request.stage2.chat", return_value=_final(issues)):
+        result = run_file_review(_chunk(), "o", MockConfig())
+
+    assert [i.severity for i in result.issues] == ["high", "high", "medium", "low", "high"]
+
+
+def test_unparseable_final_response_marks_the_result_incomplete():
+    with patch("review_pull_request.stage2.chat", return_value=MockLLMResponse(content="not json at all")):
+        result = run_file_review(_chunk(), "o", MockConfig())
+
+    assert result.incomplete is True
+
+
+def test_max_tool_calls_marks_the_result_incomplete():
+    config = MockConfig()
+    config.max_tool_calls = 1
+    with patch("review_pull_request.stage2.chat", side_effect=_scripted_chat([_tool_call("1", "a.py")])), \
+         patch("review_pull_request.stage2.execute_read_file", return_value="x"):
+        result = run_file_review(_chunk(), "o", config)
+
+    assert result.incomplete is True
+
+
+def test_a_normal_result_is_not_incomplete():
+    with patch("review_pull_request.stage2.chat", return_value=_final("[]")):
+        result = run_file_review(_chunk(), "o", MockConfig())
+
+    assert result.incomplete is False
+
+
+def test_json_is_found_inside_prose_and_fences():
+    from review_pull_request.stage2 import _parse_json_response
+
+    body = '{"summary": "ok", "issues": []}'
+    assert _parse_json_response("Here is my review:\n```json\n" + body + "\n```\nHope it helps.") == {"summary": "ok", "issues": []}
+    assert _parse_json_response("Sure! " + body + " Let me know.") == {"summary": "ok", "issues": []}
+    assert _parse_json_response("```json\n" + body + "\n```") == {"summary": "ok", "issues": []}
+    assert _parse_json_response("nothing here") is None

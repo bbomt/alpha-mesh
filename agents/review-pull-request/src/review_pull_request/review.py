@@ -9,6 +9,7 @@ import time
 from urllib.parse import urlparse
 
 from review_pull_request.chunker import build_chunks
+from review_pull_request.constants import REVIEW_SIGNATURE
 from review_pull_request.config import load_config
 from review_pull_request.formatter import render_report
 from review_pull_request.git import (
@@ -34,7 +35,10 @@ DRY_RUN_MODEL = "dry-run-model"
 
 def _safe_url(url: str) -> str:
     """URL without userinfo or query string, safe to print."""
-    p = urlparse(url)
+    try:
+        p = urlparse(url)
+    except ValueError:  # e.g. unbalanced IPv6 brackets
+        return "(invalid URL)"
     if not p.hostname:
         return "(invalid URL)"
     try:
@@ -208,6 +212,7 @@ Examples:
     start_time = time.time()
     incremental_info = None
     current_step = "review"
+    incomplete_files: list[str] = []
     try:
         # ── Incremental diff (--since-last-review) ──────────────────────────
         if args.since_last_review and not args.dry_run:
@@ -284,7 +289,24 @@ Examples:
 
         chunks = build_chunks(diff, config.exclusions)
         if not chunks:
-            print("No files to review (diff empty or all files excluded).", file=sys.stderr)
+            all_paths = [c.file_path for c in build_chunks(diff, [])]
+            if not all_paths:
+                print("No files to review (diff is empty).", file=sys.stderr)
+                return 0
+            notice = (
+                f"{REVIEW_SIGNATURE}\n\n"
+                f"No files were reviewed: all {len(all_paths)} changed file(s) were excluded "
+                "by the exclusion patterns (`.pr-review-ignore` / `review_config.toml`), so this "
+                "pull request has **not** been reviewed.\n\n"
+                + "\n".join(f"- `{p}`" for p in all_paths)
+            )
+            print(
+                f"No files to review: all {len(all_paths)} changed file(s) were excluded "
+                "by exclusion patterns.",
+                file=sys.stderr,
+            )
+            if not args.dry_run and not args.no_post_comment and args.pr_url:
+                post_comment(notice, args.pr_url, config)
             return 0
 
         print(f"Diff: {len(chunks)} file chunk(s) to review", file=sys.stderr)
@@ -312,6 +334,8 @@ Examples:
                 result = run_file_review(chunk, overview, config)
                 all_issues.extend(result.issues)
                 all_summaries.append((chunk.file_path, result.summary))
+                if result.incomplete:
+                    incomplete_files.append(chunk.file_path)
                 print(
                     f"  → {len(result.issues)} issue(s), "
                     f"{result.tool_calls_made} tool call(s)", file=sys.stderr,
@@ -325,6 +349,7 @@ Examples:
             config=config,
             model=model,
             incremental_info=incremental_info,
+            incomplete=incomplete_files,
         )
 
         # stdout: hide_pr_comment means print body to stdout only if NOT hiding
@@ -340,13 +365,24 @@ Examples:
         elapsed = time.time() - start_time
         mins, secs = divmod(int(elapsed), 60)
         print(f"PR review complete! Reviewed {len(chunks)} file(s) in {mins}m {secs}s.", file=sys.stderr)
+        if incomplete_files:
+            print(
+                f"WARNING: {len(incomplete_files)} file(s) were not fully reviewed "
+                f"(unusable model response): {', '.join(incomplete_files)}",
+                file=sys.stderr,
+            )
+            return 1
         return 0
 
     except LLMError as e:
-        host = urlparse(config.api_url).hostname or "(invalid URL)"
+        try:
+            host = urlparse(config.api_url).hostname or "(invalid URL)"
+        except ValueError:
+            host = "(invalid URL)"
+        failed_model = config.effective_overview_model if current_step == "overview pass" else config.model
         print(
             f"ERROR: LLM API call failed during {current_step}: {e}\n"
-            f"  model: {config.model}\n"
+            f"  model: {failed_model}\n"
             f"  api host: {host}\n"
             "  The model API is unusable, so the review was aborted and nothing was posted.\n"
             "  Check CODE_REVIEW_MODEL / CODE_REVIEW_URL / CODE_REVIEW_TOKEN in .env.",

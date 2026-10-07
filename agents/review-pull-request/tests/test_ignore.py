@@ -15,9 +15,10 @@ def _diff(*paths):
 
 
 def test_ignore_file_default_is_alpha_mesh_root():
-    root = Path(config_module.__file__).resolve().parents[4]
-    assert IGNORE_FILE == root / ".pr-review-ignore"
-    assert (root / "bin" / "mesh").exists()  # sanity: this really is the alpha-mesh root
+    # Derived from this test file's location, independently of config.py's own computation.
+    repo_root = Path(__file__).resolve().parents[3]
+    assert (repo_root / "bin" / "mesh").exists()  # sanity: this really is the alpha-mesh root
+    assert IGNORE_FILE == repo_root / ".pr-review-ignore"
 
 
 def test_load_ignore_patterns_skips_comments_and_blank_lines(tmp_path):
