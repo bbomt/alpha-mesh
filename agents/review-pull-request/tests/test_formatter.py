@@ -112,12 +112,13 @@ def test_incomplete_files_suppress_the_all_clear_and_are_listed():
     from review_pull_request.config import Config
 
     cfg = Config(model="m", api_url="http://x", api_token="t")
-    body = render_report("ov", [], summaries=[("a.py", "s")], config=cfg, model="m",
-                         incomplete=["b.py", "c.py"])
+    body = render_report("ov", [], summaries=[("a.py", "s"), ("b.py", "s"), ("c.py", "s")],
+                         config=cfg, model="m", incomplete=["b.py", "c.py"])
 
     assert "No issues found. ✅" not in body
     assert "not fully reviewed" in body.lower()
     assert "b.py" in body and "c.py" in body
+    assert "Files reviewed:** 1 of 3" in body
 
 
 def test_header_counts_only_files_that_were_actually_reviewed():
@@ -139,3 +140,26 @@ def test_excluded_files_are_listed_so_the_report_does_not_imply_full_coverage():
 
     assert "Excluded from review" in body
     assert "README.md" in body and "CLAUDE.md" in body
+
+
+def test_partial_report_does_not_carry_the_review_marker():
+    from review_pull_request.config import Config
+    from review_pull_request.constants import REVIEW_SIGNATURE
+
+    cfg = Config(model="m", api_url="http://x", api_token="t")
+    partial = render_report("ov", [], summaries=[("a.py", "s")], config=cfg, model="m", incomplete=["a.py"])
+    complete = render_report("ov", [], summaries=[("a.py", "s")], config=cfg, model="m")
+
+    assert REVIEW_SIGNATURE not in partial  # must never become a --since-last-review baseline
+    assert REVIEW_SIGNATURE in complete
+
+
+def test_incomplete_list_is_capped():
+    from review_pull_request.config import Config
+
+    cfg = Config(model="m", api_url="http://x", api_token="t")
+    paths = [f"f{i}.py" for i in range(500)]
+    body = render_report("ov", [], summaries=[(p, "s") for p in paths], config=cfg, model="m", incomplete=paths)
+
+    assert "and 450 more" in body
+    assert len(body) < 20_000

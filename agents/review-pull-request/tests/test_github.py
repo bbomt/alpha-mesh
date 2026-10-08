@@ -75,3 +75,13 @@ def test_post_comment_returns_false_on_api_failure():
 
 def test_post_comment_returns_false_without_a_token():
     assert _post(201, token=None) is False
+
+
+def test_post_comment_is_true_even_if_the_success_body_is_not_json():
+    from review_pull_request.github import post_comment
+
+    resp = MagicMock(status_code=201, text="ok")
+    resp.json.side_effect = ValueError("not json")
+    with patch("review_pull_request.github._get_github_token", return_value="t"), \
+         patch("review_pull_request.github.httpx.post", return_value=resp):
+        assert post_comment("body", "https://github.com/o/r/pull/1", None) is True

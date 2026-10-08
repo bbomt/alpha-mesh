@@ -49,7 +49,10 @@ def render_report(
 
     effective_model = model or config.model
 
-    if incremental_info:
+    if incomplete:
+        # No REVIEW_SIGNATURE: a partial review must never become a --since-last-review baseline.
+        lines.append("# Partial pull request review\n")
+    elif incremental_info:
         n = incremental_info.get("commit_count", 0)
         lines.append(f"{REVIEW_SIGNATURE} (incremental — {n} commit(s) since last review)\n")
     else:
@@ -110,7 +113,9 @@ def render_report(
             "The model did not return a usable review for these files, so they are "
             "**not** covered by the result above:\n"
         )
-        lines.extend(f"- `{path}`" for path in incomplete)
+        lines.extend(f"- `{path}`" for path in incomplete[:MAX_LISTED_FILES])
+        if len(incomplete) > MAX_LISTED_FILES:
+            lines.append(f"- … and {len(incomplete) - MAX_LISTED_FILES} more")
         lines.append("")
 
     if excluded:

@@ -100,8 +100,11 @@ Default list:
 
 ```
 **/CLAUDE.md
-.mesh/*
 **/README.md
+**/.claude/*
+**/.mesh/*
+**/.env
+config/active.json
 ```
 
 ## read_file caching
@@ -110,6 +113,7 @@ While reviewing a file the model can call `read_file` to look at other files. Re
 
 ## Incomplete and fully excluded reviews
 
+- A report with incomplete files carries the heading "Partial pull request review" (not the `# AI Code Review` marker), so it is never used as a `--since-last-review` baseline.
 - If the model gives no usable answer for a file (unparseable reply, tool-call limit reached), that file is listed in the report under "Not fully reviewed", the "No issues found ✅" all-clear is withheld, and the run exits non-zero (the report is still posted).
 - If every changed file matches an exclusion pattern, the agent says so on stderr and posts a short comment stating that the PR was **not** reviewed, instead of exiting silently. Nothing is posted with `--no-post-comment` or `--dry-run`.
 - If the review (or the "not reviewed" notice) could not be posted to the PR, the run exits non-zero instead of reporting success.

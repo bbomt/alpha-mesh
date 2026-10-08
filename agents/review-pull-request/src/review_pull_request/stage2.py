@@ -97,14 +97,18 @@ class FileReviewResult:
     incomplete: bool = False  # the file could not be fully reviewed (do not report it as clean)
 
 
-_SEVERITY_ALIASES = {"error": "high", "critical": "high", "warning": "medium"}
+_SEVERITY_ALIASES = {
+    "error": "high", "critical": "high", "blocker": "high", "major": "high",
+    "warning": "medium", "moderate": "medium",
+    "minor": "low", "info": "low", "nit": "low", "suggestion": "low",
+}
 
 
 def _normalise_severity(value) -> str:
     """Map whatever the model emitted onto high/medium/low so no finding is dropped."""
     sev = str(value or "medium").strip().lower()
     sev = _SEVERITY_ALIASES.get(sev, sev)
-    return sev if sev in ("high", "medium", "low") else "low"
+    return sev if sev in ("high", "medium", "low") else "medium"  # unknown: do not understate
 
 
 def _build_per_file_prompt(chunk, overview: str) -> str:

@@ -57,8 +57,11 @@ def post_comment(body: str, pr_url: str, config) -> bool:
             timeout=30.0,
         )
         if response.status_code in (200, 201):
-            data = response.json()
-            print(f"PR comment posted: {data.get('html_url', api_url)}", flush=True)
+            try:
+                url = response.json().get("html_url", api_url)
+            except Exception:  # the comment is posted; a bad body must not flip that to a failure
+                url = api_url
+            print(f"PR comment posted: {url}", flush=True)
             return True
         else:
             print(

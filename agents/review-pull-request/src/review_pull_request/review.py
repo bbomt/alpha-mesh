@@ -322,6 +322,8 @@ Examples:
                 "by exclusion patterns.",
                 file=sys.stderr,
             )
+            if not args.no_output:
+                print(notice)
             if not args.dry_run and not args.no_post_comment and args.pr_url:
                 if not post_comment(notice, args.pr_url, config):
                     print("ERROR: could not post the 'not reviewed' notice to the PR.", file=sys.stderr)

@@ -49,6 +49,9 @@ cat > "$MESH_DIR/.gitignore" <<'EOF'
 # secrets — never commit
 config/active.json
 
+# legacy task-log data (feature removed): keep any leftover local DB out of git
+tasks/*.db
+
 # Python bytecode
 __pycache__/
 *.pyc

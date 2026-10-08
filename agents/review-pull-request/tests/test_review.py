@@ -369,3 +369,19 @@ def test_mixed_pr_report_lists_the_excluded_files():
     body = mock_post.call_args[0][0]
     assert "Excluded from review" in body
     assert "README.md" in body
+
+
+def test_excluded_notice_is_printed_so_dry_runs_and_previews_can_see_it(capsys):
+    rc, mock_post = _run_main_with_results(lambda *a: None, README_DIFF, exclusions=["**/README.md"],
+                                           extra_argv=["--no-post-comment"])
+
+    assert rc == 0
+    assert "Pull request not reviewed" in capsys.readouterr().out
+
+
+def test_excluded_notice_respects_no_output(capsys):
+    rc, _ = _run_main_with_results(lambda *a: None, README_DIFF, exclusions=["**/README.md"],
+                                   extra_argv=["--no-post-comment", "--no-output"])
+
+    assert rc == 0
+    assert "Pull request not reviewed" not in capsys.readouterr().out

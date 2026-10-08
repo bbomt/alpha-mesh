@@ -130,6 +130,13 @@ def load_config(args) -> Config:
 
     repo_root = args.repo_path or os.getcwd()
 
+    if not (IGNORE_FILE.parent / "bin" / "mesh").exists():
+        print(
+            f"WARNING: {IGNORE_FILE} is not inside an alpha-mesh checkout; "
+            "the global exclusions (.pr-review-ignore) may not be applied.",
+            file=sys.stderr,
+        )
+
     return Config(
         model=model,
         api_url=api_url,

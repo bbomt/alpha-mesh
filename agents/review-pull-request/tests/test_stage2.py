@@ -322,12 +322,18 @@ def test_unknown_severities_are_normalised_so_findings_are_not_dropped():
         '{"file":"a","line":2,"severity":"critical","comment":"c2"},'
         '{"file":"a","line":3,"severity":"warning","comment":"c3"},'
         '{"file":"a","line":4,"severity":"weird","comment":"c4"},'
-        '{"file":"a","line":5,"severity":"HIGH","comment":"c5"}]'
+        '{"file":"a","line":5,"severity":"HIGH","comment":"c5"},'
+        '{"file":"a","line":6,"severity":"blocker","comment":"c6"},'
+        '{"file":"a","line":7,"severity":"major","comment":"c7"},'
+        '{"file":"a","line":8,"severity":"moderate","comment":"c8"},'
+        '{"file":"a","line":9,"severity":"minor","comment":"c9"}]'
     )
     with patch("review_pull_request.stage2.chat", return_value=_final(issues)):
         result = run_file_review(_chunk(), "o", MockConfig())
 
-    assert [i.severity for i in result.issues] == ["high", "high", "medium", "low", "high"]
+    # unknown values default to medium (like a missing severity), never silently to low
+    assert [i.severity for i in result.issues] == [
+        "high", "high", "medium", "medium", "high", "high", "high", "medium", "low"]
 
 
 def test_unparseable_final_response_marks_the_result_incomplete():

@@ -1,4 +1,8 @@
 # Files excluded from mesh review-pull-request (one pattern per line)
 **/CLAUDE.md
-.mesh/*
 **/README.md
+# Token-bearing paths: never send these to the LLM or quote them in a PR comment
+**/.claude/*
+**/.mesh/*
+**/.env
+config/active.json

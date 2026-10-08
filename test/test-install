@@ -58,9 +58,9 @@ if ! echo "$output" | grep -q ".gitignore written"; then
   echo "  FAIL: install did not reach the .gitignore step (output above is from test 3)"
   FAILED=1
 fi
-for d in .claude/ .mesh/; do
+for d in .claude/ .mesh/ 'tasks/*.db'; do
   # Check the rewritten file itself: git check-ignore would also honour a global gitignore.
-  if grep -qx "$d" "$MESH_DIR/.gitignore"; then
+  if grep -qxF "$d" "$MESH_DIR/.gitignore"; then
     echo "  PASS: $d listed in .gitignore"
   else
     echo "  FAIL: $d missing from .gitignore after install"
@@ -88,6 +88,7 @@ echo "[6/7] install warns about legacy tasks/ data and keeps it..."
 if [[ -e "$MESH_DIR/tasks" ]]; then
   echo "  SKIP: tasks/ already exists in this checkout"
 else
+  trap 'rm -rf "$MESH_DIR/tasks"' EXIT INT TERM
   mkdir -p "$MESH_DIR/tasks" && : > "$MESH_DIR/tasks/task-log.db"
   legacy_out=$(echo 'n' | "$MESH_DIR/bin/install" 2>&1 || true)
   if ! echo "$legacy_out" | grep -qi "legacy tasks/"; then
@@ -100,11 +101,13 @@ else
     echo "  PASS"
   fi
   rm -rf "$MESH_DIR/tasks"
+  trap - EXIT INT TERM
 fi
 
 # ─── test: install removes dangling links to retired commands ───────────────────
 echo "[7/7] install removes dangling ~/bin links that point into alpha-mesh..."
 FAKE_HOME="$(mktemp -d)"
+trap 'rm -rf "$FAKE_HOME"' EXIT INT TERM
 mkdir -p "$FAKE_HOME/bin"
 ln -s "$MESH_DIR/bin/retired-command" "$FAKE_HOME/bin/retired-command"   # dangling, ours
 ln -s /nonexistent/other-tool "$FAKE_HOME/bin/other-tool"                # dangling, not ours
@@ -119,6 +122,7 @@ else
   echo "  PASS"
 fi
 rm -rf "$FAKE_HOME"
+trap - EXIT INT TERM
 
 # ─── summary ────────────────────────────────────────────────────────────────────
 echo ""
