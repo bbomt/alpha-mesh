@@ -26,8 +26,11 @@ else
   exit 1
 fi
 
+TEST_LOG_DIR="$(mktemp -d)"   # keep test output out of the real daily review log
+trap 'rm -rf "$TEST_LOG_DIR"' EXIT
+
 echo "[3/4] mesh wrapper runs end to end (--help)..."
-if "$MESH_DIR/bin/mesh" review-pull-request --help 2>&1 | grep -q "usage:"; then
+if ALPHA_MESH_LOG_DIR="$TEST_LOG_DIR/smoke" "$MESH_DIR/bin/mesh" review-pull-request --help 2>&1 | grep -q "usage:"; then
   echo "  PASS"
 else
   echo "  FAIL: mesh review-pull-request --help did not print usage"
@@ -37,12 +40,10 @@ fi
 # The wrapper tees into a per-day log; it must append, or any run (including a
 # --help smoke test) would wipe the day's earlier review log.
 echo "[4/4] wrapper appends to the daily log instead of truncating it..."
-TEST_LOG_DIR="$(mktemp -d)"
-trap 'rm -rf "$TEST_LOG_DIR"' EXIT
 ALPHA_MESH_LOG_DIR="$TEST_LOG_DIR" "$AGENT_DIR/bin/review-pull-request" --help >/dev/null 2>&1 || true
-size_after_first="$(cat "$TEST_LOG_DIR"/*.log 2>/dev/null | wc -c)"
+size_after_first="$( (cat "$TEST_LOG_DIR"/*.log 2>/dev/null || true) | wc -c)"
 ALPHA_MESH_LOG_DIR="$TEST_LOG_DIR" "$AGENT_DIR/bin/review-pull-request" --help >/dev/null 2>&1 || true
-size_after_second="$(cat "$TEST_LOG_DIR"/*.log 2>/dev/null | wc -c)"
+size_after_second="$( (cat "$TEST_LOG_DIR"/*.log 2>/dev/null || true) | wc -c)"
 if [[ "$size_after_first" -gt 0 && "$size_after_second" -gt "$size_after_first" ]]; then
   echo "  PASS"
 else

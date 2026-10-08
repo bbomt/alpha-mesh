@@ -6,4 +6,5 @@
 **/.mesh/*
 **/.env
 **/.env.*
+**/.envrc
 config/active.json

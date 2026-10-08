@@ -169,3 +169,21 @@ def test_directory_lines_do_not_match_name_prefixes(tmp_path):
 
     # build/ matches at any depth; /dist/ only at the repo root; name prefixes never match
     assert [c.file_path for c in build_chunks(diff, patterns)] == ["builder.ts", "src/buildkit.go", "pkg/dist/a.js"]
+
+
+def test_literal_paths_also_cover_directory_contents_like_gitignore(tmp_path):
+    f = tmp_path / ".pr-review-ignore"
+    f.write_text("/build\nfoo/bar\n".replace("\\n", "\n"))
+    patterns = load_ignore_patterns(f)
+    diff = _diff("build", "build/out.js", "src/build/x.js", "foo/bar", "foo/bar/baz.py", "x/foo/bar/y", "src/a.py")
+
+    # anchored and middle-slash patterns are relative to the root, as in gitignore
+    assert [c.file_path for c in build_chunks(diff, patterns)] == ["src/build/x.js", "x/foo/bar/y", "src/a.py"]
+
+
+def test_direnv_files_are_treated_as_sensitive():
+    from review_pull_request.config import SENSITIVE_PATTERNS
+    from review_pull_request.policy import PathPolicy
+
+    policy = PathPolicy(SENSITIVE_PATTERNS)
+    assert policy.is_excluded(".envrc") and policy.is_excluded("svc/.envrc")

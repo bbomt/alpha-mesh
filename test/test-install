@@ -14,7 +14,6 @@ FAILED=0
 FAKE_HOME="$(mktemp -d)"
 CREATED_TASKS=0
 GITIGNORE_SNAPSHOT="$FAKE_HOME/gitignore.orig"
-cp "$MESH_DIR/.gitignore" "$GITIGNORE_SNAPSHOT"   # install rewrites .gitignore; restore any local edits
 cleanup() {
   [[ -f "$GITIGNORE_SNAPSHOT" ]] && cp "$GITIGNORE_SNAPSHOT" "$MESH_DIR/.gitignore"
   rm -rf "$FAKE_HOME"
@@ -24,6 +23,8 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
+# install rewrites .gitignore; snapshot it (after the trap is set) so local edits are restored
+[[ -f "$MESH_DIR/.gitignore" ]] && cp "$MESH_DIR/.gitignore" "$GITIGNORE_SNAPSHOT"
 
 REAL_BACKUP="$HOME/.claude/settings.json.pre-alpha-mesh.bak"
 # mtime of a file: GNU stat first, then BSD/macOS stat; "none" if the file is absent.

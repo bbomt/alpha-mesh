@@ -21,10 +21,14 @@ if TYPE_CHECKING:
 REQUIRED_ENV_VARS = ["CODE_REVIEW_URL", "CODE_REVIEW_TOKEN", "CODE_REVIEW_MODEL"]
 
 # Always excluded, even if .pr-review-ignore is missing or misplaced: token-bearing paths.
-SENSITIVE_PATTERNS = ["**/.env", "**/.env.*", "**/.claude/*", "**/.mesh/*", "config/active.json"]
+SENSITIVE_PATTERNS = ["**/.env", "**/.env.*", "**/.envrc", "**/.claude/*", "**/.mesh/*", "config/active.json"]
 
 # Global list of files excluded from review, at the alpha-mesh root.
 IGNORE_FILE = Path(__file__).resolve().parents[4] / ".pr-review-ignore"
+
+
+def _has_glob(pattern: str) -> bool:
+    return any(ch in pattern for ch in "*?[")
 
 
 def load_ignore_patterns(path: Path) -> list[str]:
@@ -52,13 +56,14 @@ def load_ignore_patterns(path: Path) -> list[str]:
             patterns.append(f"{line.strip('/')}/*")
         elif line.endswith("/"):  # gitignore-style directory: match it at any depth
             patterns.append(f"**/{line}*")
-        elif line.startswith("/"):  # anchored at the repo root
-            patterns.append(line.lstrip("/"))
-        elif "/" not in line and not any(ch in line for ch in "*?["):
+        elif "/" not in line and not _has_glob(line):
             # bare name: a file or a directory, at any depth (gitignore semantics)
             patterns.extend([f"**/{line}", f"**/{line}/*"])
         else:
-            patterns.append(line)
+            # contains a slash: relative to the repo root (gitignore semantics)
+            line = line.lstrip("/")
+            # a literal path may name a directory: cover its contents too
+            patterns.extend([line] if _has_glob(line) else [line, f"{line}/*"])
     return patterns
 
 

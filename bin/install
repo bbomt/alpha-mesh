@@ -103,8 +103,8 @@ done
 
 # The task-log feature was removed; its local data is never deleted automatically.
 if [[ -d "$MESH_DIR/tasks" ]]; then
-  echo "  NOTE: legacy tasks/ directory found (old task-log data)."
-  echo "        It is no longer ignored by git. Back it up or delete it: $MESH_DIR/tasks"
+  echo "  NOTE: legacy tasks/ directory found (old task-log data); the task-log feature was removed."
+  echo "        tasks/*.db stays git-ignored, but nothing uses this folder now. Back it up or delete it: $MESH_DIR/tasks"
 fi
 
 # Remove dangling links to commands alpha-mesh no longer ships (renamed or retired).

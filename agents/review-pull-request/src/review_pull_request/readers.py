@@ -65,6 +65,8 @@ class PolicyFileReader:
         self._policy = policy
 
     def read_file(self, path: str, max_lines: int) -> str:
+        if not isinstance(path, str) or not path or "\x00" in path:  # model-supplied, so untrusted
+            return ReadError(f"Error: invalid path: {path!r}")
         clean = normalise(path)
         if clean == ".." or clean.startswith("../"):
             return ReadError("Error: access denied — path is outside the repository root.")

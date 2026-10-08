@@ -4,7 +4,7 @@
 
 > **Content of an excluded file never reaches the model, by any path.**
 
-"Excluded" means it matches `.pr-review-ignore`, `[exclusions]` in `review_config.toml`, or the built-in sensitive patterns (`**/.env`, `**/.env.*`, `**/.claude/*`, `**/.mesh/*`, `config/active.json`).
+"Excluded" means it matches `.pr-review-ignore`, `[exclusions]` in `review_config.toml`, or the built-in sensitive patterns (`**/.env`, `**/.env.*`, `**/.envrc`, `**/.claude/*`, `**/.mesh/*`, `config/active.json`).
 
 File content can reach the model three ways:
 

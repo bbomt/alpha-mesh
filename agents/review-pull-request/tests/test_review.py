@@ -476,3 +476,24 @@ def test_incremental_run_touching_only_excluded_files_does_not_claim_the_pr_is_u
     assert rc == 0
     mock_post.assert_not_called()
     assert "excluded" in capsys.readouterr().err.lower()
+
+
+def test_no_unreviewed_notice_when_a_prior_review_exists_even_after_falling_back_to_full_diff(capsys):
+    cfg = Config(model="m", api_url="http://x", api_token=SECRET, exclusions=["**/README.md"])
+    with patch("review_pull_request.review.load_config", return_value=cfg), \
+         patch("review_pull_request.review.parse_pr_url", return_value=("owner", "repo", 42)), \
+         patch("review_pull_request.review.get_pr_info", return_value=_mock_pr_info()), \
+         patch("review_pull_request.review.get_pr_description", return_value=""), \
+         patch("review_pull_request.review.find_last_review_comment",
+               return_value={"created_at": "2024-01-15T10:00:00Z", "body": "# AI Code Review"}), \
+         patch("review_pull_request.review.get_commits_since",
+               return_value=[{"sha": "abc", "parents": [{"sha": "p"}]}]), \
+         patch("review_pull_request.review.build_incremental_diff", return_value=""), \
+         patch("review_pull_request.review.get_diff", return_value=README_DIFF), \
+         patch("review_pull_request.review.post_comment") as mock_post, \
+         patch("subprocess.run", return_value=MagicMock(returncode=0, stdout="ghtoken")):
+        sys.argv = ["review", "https://github.com/owner/repo/pull/42", "--since-last-review"]
+        rc = main()
+
+    assert rc == 0
+    mock_post.assert_not_called()

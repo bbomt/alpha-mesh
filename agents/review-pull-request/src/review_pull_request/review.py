@@ -238,10 +238,12 @@ Examples:
     incremental_info = None
     current_step = "review"
     incomplete_files: list[str] = []
+    prior_review_exists = False
     try:
         # ── Incremental diff (--since-last-review) ──────────────────────────
         if args.since_last_review and not args.dry_run:
             last_review = find_last_review_comment(owner, repo, pr_number, _token)
+            prior_review_exists = bool(last_review)
             if not last_review:
                 print(
                     "No previous review found — running full review.",
@@ -319,7 +321,7 @@ Examples:
             if not all_paths:
                 print("No files to review (diff is empty).", file=sys.stderr)
                 return 0
-            if incremental_info:
+            if incremental_info or prior_review_exists:
                 # The PR already has a review; new commits only touch excluded files. Saying
                 # "this PR has not been reviewed" would be false, and the notice (which is not a
                 # baseline) would be re-posted on every later incremental run.

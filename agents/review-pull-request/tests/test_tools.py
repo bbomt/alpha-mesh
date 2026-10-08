@@ -356,6 +356,7 @@ class TestExclusionEdgeCases:
         result = execute_read_file(".ENV", str(tmp_path), 100, None, exclusions=["**/.env"])
 
         assert "SECRET" not in result
+        assert isinstance(result, ReadError) and "excluded" in result  # refused, not just "not found"
 
     def test_symlink_to_an_excluded_file_is_refused(self, tmp_path):
         (tmp_path / ".env").write_text("SECRET=1")

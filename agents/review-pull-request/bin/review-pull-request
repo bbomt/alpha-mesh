@@ -40,6 +40,8 @@ fi
 LOG_DIR="${ALPHA_MESH_LOG_DIR:-${HOME}/environment/logs/ai/claude}"
 LOG_FILE="${LOG_DIR}/alpha-mesh-review-pull-request-$(date +%Y-%m-%d).log"
 mkdir -p "$LOG_DIR"
+LOG_DIR="$(cd "$LOG_DIR" && pwd)"   # absolute, because we cd below before tee opens the file
+LOG_FILE="${LOG_DIR}/$(basename "$LOG_FILE")"
 
 cd "$AGENT_DIR"
 

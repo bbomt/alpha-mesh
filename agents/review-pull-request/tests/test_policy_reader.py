@@ -52,3 +52,10 @@ def test_local_reader_reads_plain_files_and_reports_errors(tmp_path):
     assert reader.read_file("a.py", 100) == "x = 1\n"
     assert isinstance(reader.read_file("missing.py", 100), ReadError)
     assert isinstance(reader.read_file("../outside.py", 100), ReadError)
+
+
+def test_malformed_paths_from_the_model_are_errors_not_exceptions():
+    reader = _guarded(StubReader(default="x"))
+
+    for bad in ("a\x00b", 42, None, ["a"]):
+        assert isinstance(reader.read_file(bad, 100), ReadError), repr(bad)
