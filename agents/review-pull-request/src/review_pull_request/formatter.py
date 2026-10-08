@@ -10,6 +10,7 @@ MAX_LISTED_FILES = 50
 
 def _code_span(text: str) -> str:
     """Markdown inline code for untrusted text: the fence is longer than any backtick run inside."""
+    text = " ".join(text.splitlines())  # a newline would end the span (and a heading line)
     longest = max((len(run) for run in re.findall(r"`+", text)), default=0)
     fence = "`" * (longest + 1)
     pad = " " if text.startswith("`") or text.endswith("`") else ""

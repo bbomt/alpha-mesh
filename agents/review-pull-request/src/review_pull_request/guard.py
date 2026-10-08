@@ -11,6 +11,7 @@ REDACTED = "[REDACTED]"
 TOKEN_PATTERNS = [
     r"sk-[A-Za-z0-9_\-]{20,}",            # OpenAI / OpenRouter style keys
     r"gh[pousr]_[A-Za-z0-9]{30,}",        # GitHub tokens
+    r"github_pat_[A-Za-z0-9_]{30,}",      # GitHub fine-grained tokens
     r"AKIA[0-9A-Z]{16}",                  # AWS access key ids
     r"xox[baprs]-[A-Za-z0-9\-]{10,}",     # Slack tokens
     r"-----BEGIN [A-Z ]*PRIVATE KEY-----",

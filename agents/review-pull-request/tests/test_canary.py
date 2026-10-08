@@ -139,3 +139,31 @@ def test_credentials_are_redacted_even_when_they_sit_in_an_allowed_file():
     assert model.seen
     assert not [m for m in model.seen if GITHUB_TOKEN in m or "sk-abcdefghij" in m]
     assert any("[REDACTED]" in m for m in model.seen)
+
+
+# Diff header shapes that once let an excluded file's content through (PR #8 pass 15).
+_RENAMED_OUT = (  # .env renamed to an allowed name with edits: its old lines stay in the hunk
+    "diff --git a/.env b/notes.md\nsimilarity index 80%\nrename from .env\nrename to notes.md\n"
+    f"--- a/.env\n+++ b/notes.md\n@@ -1,2 +1,2 @@\n-TOKEN={CANARY}\n KEEP={CANARY}\n+x\n"
+)
+_SPACED = _file_diff("secret dir/.env", f"TOKEN={CANARY}")
+_QUOTED = (  # git quotes paths with special characters
+    'diff --git "a/caf\\303\\251/.env" "b/caf\\303\\251/.env"\n'
+    '--- "a/caf\\303\\251/.env"\n+++ "b/caf\\303\\251/.env"\n'
+    f"@@ -1 +1 @@\n+TOKEN={CANARY}\n"
+)
+
+
+@pytest.mark.parametrize("shape", [_RENAMED_OUT, _SPACED, _QUOTED], ids=["renamed-out", "spaced", "quoted"])
+def test_canary_never_reaches_the_model_through_unusual_diff_headers(shape):
+    model = _run(shape + _file_diff("src/app.py", "x = 1"))
+
+    assert model.seen
+    assert not [m for m in model.seen if CANARY in m]
+
+
+@pytest.mark.parametrize("shape", [_RENAMED_OUT, _SPACED, _QUOTED], ids=["renamed-out", "spaced", "quoted"])
+def test_the_harness_detects_unusual_header_leaks_when_protection_is_off(shape):
+    model = _run(shape + _file_diff("src/app.py", "x = 1"), exclusions=[])
+
+    assert CANARY in model.seen[0], "the overview prompt (the diff) should carry the canary"

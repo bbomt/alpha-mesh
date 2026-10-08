@@ -59,3 +59,42 @@ def test_malformed_paths_from_the_model_are_errors_not_exceptions():
 
     for bad in ("a\x00b", 42, None, ["a"]):
         assert isinstance(reader.read_file(bad, 100), ReadError), repr(bad)
+
+
+def test_local_reader_stops_reading_at_the_line_limit(tmp_path, monkeypatch):
+    from review_pull_request import readers
+
+    (tmp_path / "big.txt").write_text("".join(f"line {i}\n" for i in range(10_000)))
+    consumed = []
+    real_open = open
+
+    class Counting:
+        """A text file that counts the lines pulled from it (and has no readlines())."""
+        def __init__(self, f):
+            self.f = f
+        def __enter__(self):
+            return self
+        def __exit__(self, *a):
+            self.f.close()
+        def __iter__(self):
+            return self
+        def __next__(self):
+            consumed.append(1)
+            return next(self.f)
+        def read(self, n=-1):
+            return self.f.read(n)
+
+    monkeypatch.setattr(readers, "open", lambda *a, **k: Counting(real_open(*a, **k)), raising=False)
+
+    text = LocalFileReader(str(tmp_path)).read_file("big.txt", 5)
+
+    assert "TRUNCATED" in text and "line 4\n" in text and "line 5\n" not in text
+    assert len(consumed) <= 6
+
+
+def test_a_text_file_with_a_multibyte_character_at_the_sniff_boundary_is_not_binary(tmp_path):
+    (tmp_path / "t.txt").write_bytes(b"a" * 8191 + "é".encode() + b"\nend\n")  # é straddles byte 8192
+
+    text = LocalFileReader(str(tmp_path)).read_file("t.txt", 100)
+
+    assert not isinstance(text, ReadError) and text.endswith("end\n")

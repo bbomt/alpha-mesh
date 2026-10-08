@@ -10,13 +10,8 @@ import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from dotenv import load_dotenv
-
-if TYPE_CHECKING:
-    from review_pull_request.tools import GitHubFileReader
-
 
 REQUIRED_ENV_VARS = ["CODE_REVIEW_URL", "CODE_REVIEW_TOKEN", "CODE_REVIEW_MODEL"]
 
@@ -29,6 +24,37 @@ IGNORE_FILE = Path(__file__).resolve().parents[4] / ".pr-review-ignore"
 
 def _has_glob(pattern: str) -> bool:
     return any(ch in pattern for ch in "*?[")
+
+
+def _zero_dir_variants(pattern: str) -> list[str]:
+    """'a/**/b' also matches 'a/b' in gitignore; PathPolicy needs that variant spelled out."""
+    if "/**/" not in pattern:
+        return [pattern]
+    head, tail = pattern.split("/**/", 1)
+    return [f"{head}/**/{t}" for t in _zero_dir_variants(tail)] + [f"{head}/{t}" for t in _zero_dir_variants(tail)]
+
+
+def normalise_patterns(lines: list[str]) -> list[str]:
+    """Turn gitignore-style lines (from .pr-review-ignore or [exclusions]) into PathPolicy patterns."""
+    patterns = []
+    for raw in lines:
+        line = re.sub(r"\s+#.*$", "", raw).strip()  # inline comment
+        if not line or line.startswith("#"):
+            continue
+        if line.endswith("/") and line.startswith("/"):  # anchored directory: repo root only
+            patterns.append(f"{line.strip('/')}/*")
+        elif line.endswith("/"):  # gitignore-style directory: match it at any depth
+            patterns.append(f"**/{line}*")
+        elif "/" not in line and not _has_glob(line):
+            # bare name: a file or a directory, at any depth (gitignore semantics)
+            patterns.extend([f"**/{line}", f"**/{line}/*"])
+        else:
+            # contains a slash: relative to the repo root (gitignore semantics)
+            line = line.lstrip("/")
+            # a literal path may name a directory: cover its contents too
+            for variant in _zero_dir_variants(line):
+                patterns.extend([variant] if _has_glob(variant) else [variant, f"{variant}/*"])
+    return patterns
 
 
 def load_ignore_patterns(path: Path) -> list[str]:
@@ -47,24 +73,7 @@ def load_ignore_patterns(path: Path) -> list[str]:
             file=sys.stderr,
         )
         sys.exit(1)
-    patterns = []
-    for raw in text.splitlines():
-        line = re.sub(r"\s+#.*$", "", raw).strip()  # inline comment
-        if not line or line.startswith("#"):
-            continue
-        if line.endswith("/") and line.startswith("/"):  # anchored directory: repo root only
-            patterns.append(f"{line.strip('/')}/*")
-        elif line.endswith("/"):  # gitignore-style directory: match it at any depth
-            patterns.append(f"**/{line}*")
-        elif "/" not in line and not _has_glob(line):
-            # bare name: a file or a directory, at any depth (gitignore semantics)
-            patterns.extend([f"**/{line}", f"**/{line}/*"])
-        else:
-            # contains a slash: relative to the repo root (gitignore semantics)
-            line = line.lstrip("/")
-            # a literal path may name a directory: cover its contents too
-            patterns.extend([line] if _has_glob(line) else [line, f"{line}/*"])
-    return patterns
+    return normalise_patterns(text.splitlines())
 
 
 def _load_toml(config_path: str | None) -> dict:
@@ -96,7 +105,6 @@ class Config:
     repo_root: str = ""
     verbose: bool = False
     hide_pr_comment: bool = False
-    github_reader: GitHubFileReader | None = None
     # read_file results shared by every file review in one run; cleared when main() exits.
     read_cache: dict[str, str] = field(default_factory=dict)
     read_cache_max_bytes: int = 50 * 1024 * 1024
@@ -148,7 +156,8 @@ def load_config(args) -> Config:
     max_tool_calls = limits.get("max_tool_calls", 10)
     max_file_lines = limits.get("max_file_lines", 8000)
     exclusions = list(dict.fromkeys(
-        exclusions_section.get("patterns", []) + load_ignore_patterns(IGNORE_FILE) + SENSITIVE_PATTERNS
+        normalise_patterns(exclusions_section.get("patterns", []))
+        + load_ignore_patterns(IGNORE_FILE) + SENSITIVE_PATTERNS
     ))
     github_repo = github_section.get("repo", "")
     output_file = output_section.get("file", "review_output.md")

@@ -280,13 +280,32 @@ def test_unparseable_final_response_marks_the_result_incomplete():
     assert _review(model=MockLLMResponse(content="not json at all")).incomplete is True
 
 
-def test_max_tool_calls_marks_the_result_incomplete():
+def test_at_the_read_limit_the_model_is_asked_to_answer_and_its_findings_are_kept():
     config = MockConfig()
     config.max_tool_calls = 1
 
-    result = _review(config=config, model=_scripted([_tool_call("1", "a.py")]))
+    def respond(messages, tools):
+        if tools is None:  # read limit reached: no tools offered, an answer is expected
+            return _final('[{"file":"a.py","line":1,"severity":"high","comment":"bug"}]')
+        return MockLLMResponse(tool_calls=[_tool_call(str(len(messages)), "a.py")])
 
-    assert result.incomplete is True
+    llm = FakeLLM(respond)
+    result = _review(config=config, model=llm)
+
+    assert result.incomplete is False
+    assert [i.comment for i in result.issues] == ["bug"]
+    assert llm.calls[-1][1] is None
+    assert "no more" in llm.calls[-1][0][-1]["content"].lower()
+
+
+def test_a_model_that_keeps_asking_to_read_past_the_limit_is_incomplete():
+    config = MockConfig()
+    config.max_tool_calls = 1
+
+    def respond(messages, tools):
+        return MockLLMResponse(tool_calls=[_tool_call(str(len(messages)), "a.py")])
+
+    assert _review(config=config, model=FakeLLM(respond)).incomplete is True
 
 
 def test_a_normal_result_is_not_incomplete():
@@ -301,6 +320,14 @@ def test_json_is_found_inside_prose_and_fences():
     assert _parse_json_response("Sure! " + body + " Let me know.") == {"summary": "ok", "issues": []}
     assert _parse_json_response("```json\n" + body + "\n```") == {"summary": "ok", "issues": []}
     assert _parse_json_response("nothing here") is None
+
+
+def test_the_answer_after_an_echoed_schema_example_wins():
+    from review_pull_request.stage2 import _parse_json_response
+
+    echoed = '```json\n{"summary": "example", "issues": [{"severity": "high"}]}\n```'
+    answer = '```json\n{"summary": "real", "issues": []}\n```'
+    assert _parse_json_response(f"The schema is:\n{echoed}\nMy review:\n{answer}")["summary"] == "real"
 
 
 def test_model_cannot_read_excluded_files_through_the_read_tool():

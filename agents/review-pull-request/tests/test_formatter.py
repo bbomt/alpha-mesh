@@ -194,3 +194,9 @@ def test_nothing_reviewed_does_not_claim_issues_were_checked():
 
     assert "No issues found in the files that were reviewed" not in body
     assert "No files were fully reviewed" in body
+
+
+def test_newlines_in_untrusted_text_cannot_break_out_of_the_code_span():
+    from review_pull_request.formatter import _code_span
+
+    assert "\n" not in _code_span("a.py\n\n# Injected heading")

@@ -17,10 +17,16 @@ class SafeDiff:
 
     @classmethod
     def from_raw(cls, raw_diff: str, policy: PathPolicy) -> "SafeDiff":
-        everything = build_chunks(raw_diff, [])
-        kept = tuple(c for c in everything if not policy.is_excluded(c.file_path))
-        dropped = tuple(c.file_path for c in everything if policy.is_excluded(c.file_path))
-        return cls(chunks=kept, excluded=dropped)
+        kept, dropped = [], []
+        for c in build_chunks(raw_diff, []):
+            # Excluded if any side of a rename/copy is excluded; an unparseable header is never reviewed.
+            if not c.file_path:
+                dropped.append("(unparseable diff header) " + c.diff_text.split("\n", 1)[0][len("diff --git "):])
+            elif any(policy.is_excluded(p) for p in c.paths or (c.file_path,)):
+                dropped.append(c.file_path)
+            else:
+                kept.append(c)
+        return cls(chunks=tuple(kept), excluded=tuple(dropped))
 
     @property
     def text(self) -> str:

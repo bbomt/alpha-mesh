@@ -4,6 +4,8 @@ LocalFileReader reads a checkout; GitHubFileReader (tools.py) reads over the API
 wrapped in PolicyFileReader (Decorator), which refuses excluded paths before any read happens.
 """
 
+import codecs
+import itertools
 import os
 
 from review_pull_request.policy import PathPolicy, normalise
@@ -38,7 +40,7 @@ class LocalFileReader:
         try:
             with open(target, "rb") as f:
                 raw = f.read(8192)
-            raw.decode("utf-8")
+            codecs.getincrementaldecoder("utf-8")().decode(raw, final=False)  # a char may straddle the cut
         except UnicodeDecodeError:
             return ReadError("Error: file appears to be binary and cannot be read as text.")
         except (OSError, ValueError) as e:
@@ -46,7 +48,7 @@ class LocalFileReader:
 
         try:
             with open(target, "r", encoding="utf-8") as f:
-                lines = f.readlines()
+                lines = list(itertools.islice(f, max_lines + 1))  # never load more than needed
         except Exception as e:
             return ReadError(f"Error: could not read file: {e}")
 

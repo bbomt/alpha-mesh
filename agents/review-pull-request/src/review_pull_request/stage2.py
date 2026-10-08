@@ -123,8 +123,8 @@ def _parse_json_response(text: str) -> dict | None:
     """
     text = text.strip()
     candidates = [text]
-    if "```" in text:
-        fenced = text.split("```")[1]
+    # Fenced blocks, last first: the answer comes last, after any echoed schema example.
+    for fenced in reversed(text.split("```")[1::2]):
         candidates.append(fenced[4:] if fenced.startswith("json") else fenced)
     if "{" in text and "}" in text:
         candidates.append(text[text.index("{"): text.rindex("}") + 1])
@@ -139,6 +139,11 @@ def _parse_json_response(text: str) -> dict | None:
 
 
 DEFAULT_READ_CACHE_MAX_BYTES = 50 * 1024 * 1024
+
+READ_LIMIT_NOTE = (
+    "You have reached the file-read limit: no more reads are available. "
+    "Return your JSON answer now, based on what you have read."
+)
 
 ALREADY_READ_NOTE = (
     "You already read this file earlier in this conversation; its content is above. "
@@ -159,13 +164,23 @@ def run_file_review(chunk, overview: str, session) -> FileReviewResult:
     ]
 
     tool_calls_made = 0
-    max_iterations = config.max_tool_calls + 1
+    max_iterations = config.max_tool_calls + 3  # reads, then the answer, then one JSON retry
+    tools = [READ_FILE_TOOL_SCHEMA]
     read_cache = getattr(config, "read_cache", None)
     paths_read: set[str] = set()  # paths already shown to the model in this review
 
     for iteration in range(max_iterations):
-        response = session.review_llm.chat(messages, tools=[READ_FILE_TOOL_SCHEMA])
+        response = session.review_llm.chat(messages, tools=tools)
 
+        if response.tool_calls and tools is None:
+            # Past the read limit the model was told to answer; asking again means no answer.
+            return FileReviewResult(
+                file_path=chunk.file_path,
+                summary="Max tool calls reached.",
+                issues=[],
+                tool_calls_made=tool_calls_made,
+                incomplete=True,
+            )
         if response.tool_calls:
             for tc in response.tool_calls:
                 if tc.name == "read_file":
@@ -211,13 +226,9 @@ def run_file_review(chunk, overview: str, session) -> FileReviewResult:
                     tool_calls_made += 1
 
             if tool_calls_made >= config.max_tool_calls:
-                return FileReviewResult(
-                    file_path=chunk.file_path,
-                    summary="Max tool calls reached.",
-                    issues=[],
-                    tool_calls_made=tool_calls_made,
-                    incomplete=True,
-                )
+                # Keep what the model has learned: no more reads, ask for the answer now.
+                tools = None
+                messages.append({"role": "user", "content": READ_LIMIT_NOTE})
         else:
             content = response.content or ""
             parsed = _parse_json_response(content)

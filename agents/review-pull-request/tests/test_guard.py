@@ -51,3 +51,11 @@ def test_guarded_llm_scrubs_before_delegating_and_returns_the_answer():
     assert response.content == "answer"
     shown = json.dumps(inner.calls[0][0])
     assert API_TOKEN not in shown
+
+
+def test_fine_grained_github_tokens_are_replaced():
+    token = "github_pat_11ABCDEFG0123456789_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUV"
+
+    out = Redactor([]).scrub([{"role": "tool", "content": f"TOKEN={token}"}])[0]["content"]
+
+    assert "github_pat_11ABC" not in out

@@ -102,6 +102,8 @@ Files matching the patterns in `alpha-mesh/.pr-review-ignore` are not reviewed. 
 - one pattern per line; blank lines and lines starting with `#` are ignored
 - a missing file means no extra exclusions
 - `**/name` matches `name` at any depth, including the repo root
+- lines follow gitignore path semantics (`dir/`, `/anchored`, `a/**/b` also matching `a/b`); `[exclusions] patterns` get the same treatment
+- a renamed or copied file is excluded if either its old or new path matches
 
 Default list:
 
@@ -191,7 +193,7 @@ mesh review-pull-request https://github.com/org/repo/pull/42 --since-last-review
 
 ```toml
 [limits]
-max_tool_calls = 20
+max_tool_calls = 20   # file reads per file review; at the limit the model is asked for its answer
 max_file_lines = 8000
 
 [exclusions]

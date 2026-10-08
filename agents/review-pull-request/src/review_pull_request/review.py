@@ -226,9 +226,10 @@ Examples:
             file=sys.stderr,
         )
         return 1
-    config.github_reader = GitHubFileReader(owner, repo, head_sha, _token)
+    # Kept local, never on config: stages see only the policy-wrapped reader in the session.
+    github_reader = GitHubFileReader(owner, repo, head_sha, _token)
     # Everything that reaches the model or the file reader goes through this session's policy.
-    session = ReviewSession.create(config, inner_reader=config.github_reader, secrets=[_token])
+    session = ReviewSession.create(config, inner_reader=github_reader, secrets=[_token])
     _verbose_print(config, f"read_file: GitHub API (ref={head_sha[:8]})")
 
     # Print model info if verbose
@@ -441,8 +442,7 @@ Examples:
     finally:
         config.read_cache.clear()
         config.read_cache_bytes = 0
-        if config.github_reader is not None:
-            config.github_reader.close()
+        github_reader.close()
 
 
 if __name__ == "__main__":

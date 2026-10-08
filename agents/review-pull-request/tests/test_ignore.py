@@ -187,3 +187,28 @@ def test_direnv_files_are_treated_as_sensitive():
 
     policy = PathPolicy(SENSITIVE_PATTERNS)
     assert policy.is_excluded(".envrc") and policy.is_excluded("svc/.envrc")
+
+
+def test_toml_exclusions_get_the_same_gitignore_semantics_as_the_ignore_file(tmp_path, monkeypatch):
+    toml_file = tmp_path / "review_config.toml"
+    toml_file.write_text('[exclusions]\npatterns = ["secrets/", "/private", "credentials/**/*.json"]\n')
+    monkeypatch.setattr(config_module, "IGNORE_FILE", tmp_path / "missing")
+    monkeypatch.setattr(config_module, "load_dotenv", lambda *a, **k: None)
+    for var, val in [("CODE_REVIEW_URL", "http://x"), ("CODE_REVIEW_TOKEN", "t"), ("CODE_REVIEW_MODEL", "m")]:
+        monkeypatch.setenv(var, val)
+    args = SimpleNamespace(config=str(toml_file), model=None, base=None, repo_path=None,
+                           dry_run=False, verbose=False, hide_pr_comment=False)
+
+    patterns = load_config(args).exclusions
+    diff = _diff("secrets/a.txt", "app/secrets/b.txt", "private/c.txt", "credentials/k.json",
+                 "credentials/x/k.json", "src/a.py")
+
+    assert [c.file_path for c in build_chunks(diff, patterns)] == ["src/a.py"]
+
+
+def test_a_double_star_in_the_middle_also_matches_zero_directories(tmp_path):
+    f = tmp_path / ".pr-review-ignore"
+    f.write_text("src/**/*.tmp\n")
+    diff = _diff("src/x.tmp", "src/a/b/y.tmp", "other/z.tmp")
+
+    assert [c.file_path for c in build_chunks(diff, load_ignore_patterns(f))] == ["other/z.tmp"]
