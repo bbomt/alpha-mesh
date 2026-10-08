@@ -185,6 +185,7 @@ def run_file_review(chunk, overview: str, config) -> FileReviewResult:
                             config.repo_root,
                             config.max_file_lines,
                             getattr(config, "github_reader", None),
+                            getattr(config, "exclusions", None),
                         )
                         if read_cache is not None and not isinstance(result, ReadError):
                             cap = getattr(config, "read_cache_max_bytes", DEFAULT_READ_CACHE_MAX_BYTES)

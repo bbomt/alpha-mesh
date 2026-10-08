@@ -116,3 +116,27 @@ def test_load_config_warns_when_the_ignore_file_is_not_in_an_alpha_mesh_checkout
     load_config(args)
 
     assert "global exclusions" in capsys.readouterr().err.lower()
+
+
+def test_token_bearing_paths_are_excluded_even_if_the_ignore_file_is_missing(tmp_path, monkeypatch):
+    toml_file = tmp_path / "review_config.toml"
+    toml_file.write_text("")
+    monkeypatch.setattr(config_module, "IGNORE_FILE", tmp_path / "nowhere" / ".pr-review-ignore")
+    monkeypatch.setattr(config_module, "load_dotenv", lambda *a, **k: None)
+    for var, val in [("CODE_REVIEW_URL", "http://x"), ("CODE_REVIEW_TOKEN", "t"), ("CODE_REVIEW_MODEL", "m")]:
+        monkeypatch.setenv(var, val)
+    args = SimpleNamespace(config=str(toml_file), model=None, base=None, repo_path=None,
+                           dry_run=False, verbose=False, hide_pr_comment=False)
+
+    cfg = load_config(args)
+    kept = [c.file_path for c in build_chunks(_diff(".env", ".claude/settings.json", ".mesh/MEMORY.md",
+                                                     "config/active.json", "src/a.py"), cfg.exclusions)]
+
+    assert kept == ["src/a.py"]
+
+
+def test_patterns_are_normalised_so_gitignore_style_lines_actually_match(tmp_path):
+    f = tmp_path / ".pr-review-ignore"
+    f.write_text("build/\\n.env   # secrets\\n/vendor/*\\n".replace("\\n", "\n"))
+
+    assert load_ignore_patterns(f) == ["**/build/*", ".env", "vendor/*"]

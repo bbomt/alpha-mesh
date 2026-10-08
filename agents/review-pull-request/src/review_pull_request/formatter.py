@@ -1,9 +1,19 @@
 """Render issues as a Markdown report grouped by severity."""
 
+import re
+
 from review_pull_request.constants import REVIEW_SIGNATURE
 
 
 MAX_LISTED_FILES = 50
+
+
+def _code_span(text: str) -> str:
+    """Markdown inline code for untrusted text: the fence is longer than any backtick run inside."""
+    longest = max((len(run) for run in re.findall(r"`+", text)), default=0)
+    fence = "`" * (longest + 1)
+    pad = " " if text.startswith("`") or text.endswith("`") else ""
+    return f"{fence}{pad}{text}{pad}{fence}"
 SEVERITY_ORDER = ["high", "medium", "low"]
 SEVERITY_EMOJI = {
     "high": "🔴",
@@ -58,7 +68,7 @@ def render_report(
     else:
         lines.append(f"{REVIEW_SIGNATURE}\n")
 
-    files_reviewed = len(summaries) - len(incomplete or [])
+    files_reviewed = max(0, len(summaries) - len(incomplete or []))  # summaries include incomplete files
     files_reviewed_text = (
         f"{files_reviewed} of {len(summaries)}" if incomplete else str(files_reviewed)
     )
@@ -101,7 +111,7 @@ def render_report(
 
             for iss in sorted(group, key=lambda i: i.file):
                 line_str = f" · line {iss.line}" if iss.line else ""
-                lines.append(f"#### `{iss.file}`{line_str}\n")
+                lines.append(f"#### {_code_span(iss.file)}{line_str}\n")
                 lines.append(f"**Problem:** {iss.comment}\n")
                 if iss.suggestion:
                     lines.append(f"**Fix:** {iss.suggestion}\n")
@@ -113,7 +123,7 @@ def render_report(
             "The model did not return a usable review for these files, so they are "
             "**not** covered by the result above:\n"
         )
-        lines.extend(f"- `{path}`" for path in incomplete[:MAX_LISTED_FILES])
+        lines.extend(f"- {_code_span(path)}" for path in incomplete[:MAX_LISTED_FILES])
         if len(incomplete) > MAX_LISTED_FILES:
             lines.append(f"- … and {len(incomplete) - MAX_LISTED_FILES} more")
         lines.append("")
@@ -124,7 +134,7 @@ def render_report(
         lines.append(
             "These changed files matched an exclusion pattern and were **not** reviewed:\n"
         )
-        lines.extend(f"- `{path}`" for path in shown)
+        lines.extend(f"- {_code_span(path)}" for path in shown)
         if len(excluded) > len(shown):
             lines.append(f"- … and {len(excluded) - len(shown)} more")
         lines.append("")

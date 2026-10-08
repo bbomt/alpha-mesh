@@ -314,3 +314,28 @@ class TestReadErrorType:
 
         assert not isinstance(result, ReadError)
         assert result == "Error: something happened\n"
+
+
+class TestExclusionsApplyToReads:
+    def test_excluded_path_is_refused_and_never_fetched(self, tmp_path):
+        from review_pull_request.tools import ReadError
+
+        reader = MagicMock()
+        result = execute_read_file(".env", str(tmp_path), 100, reader, exclusions=["**/.env"])
+
+        assert isinstance(result, ReadError)
+        assert "excluded" in result
+        reader.read_file.assert_not_called()
+
+    def test_path_tricks_do_not_bypass_the_exclusion(self, tmp_path):
+        (tmp_path / "src").mkdir()
+        (tmp_path / ".env").write_text("SECRET=1")
+
+        for sneaky in ("src/../.env", "./.env", "/.env"):
+            result = execute_read_file(sneaky, str(tmp_path), 100, None, exclusions=["**/.env"])
+            assert "SECRET" not in result, sneaky
+
+    def test_non_excluded_paths_still_read(self, tmp_path):
+        (tmp_path / "a.py").write_text("print(1)\n")
+
+        assert execute_read_file("a.py", str(tmp_path), 100, None, exclusions=["**/.env"]) == "print(1)\n"

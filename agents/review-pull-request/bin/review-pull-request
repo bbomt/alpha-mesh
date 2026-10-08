@@ -43,4 +43,4 @@ mkdir -p "$LOG_DIR"
 
 cd "$AGENT_DIR"
 
-exec uv run python -m review_pull_request --repo-path "$REPO_PATH" "$@" 2>&1 | tee "$LOG_FILE"
+exec uv run python -m review_pull_request --repo-path "$REPO_PATH" "$@" 2>&1 | tee -a "$LOG_FILE"

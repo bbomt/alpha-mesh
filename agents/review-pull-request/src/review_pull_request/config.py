@@ -6,6 +6,7 @@ Loads .env + review_config.toml into a Config dataclass.
 from __future__ import annotations
 
 import os
+import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -18,6 +19,9 @@ if TYPE_CHECKING:
 
 
 REQUIRED_ENV_VARS = ["CODE_REVIEW_URL", "CODE_REVIEW_TOKEN", "CODE_REVIEW_MODEL"]
+
+# Always excluded, even if .pr-review-ignore is missing or misplaced: token-bearing paths.
+SENSITIVE_PATTERNS = ["**/.env", "**/.claude/*", "**/.mesh/*", "config/active.json"]
 
 # Global list of files excluded from review, at the alpha-mesh root.
 IGNORE_FILE = Path(__file__).resolve().parents[4] / ".pr-review-ignore"
@@ -39,8 +43,15 @@ def load_ignore_patterns(path: Path) -> list[str]:
             file=sys.stderr,
         )
         sys.exit(1)
-    lines = (line.strip() for line in text.splitlines())
-    return [line for line in lines if line and not line.startswith("#")]
+    patterns = []
+    for raw in text.splitlines():
+        line = re.sub(r"\s+#.*$", "", raw).strip()  # inline comment
+        if not line or line.startswith("#"):
+            continue
+        if line.endswith("/"):  # gitignore-style directory: match it at any depth
+            line = f"**/{line.lstrip('/')}*"
+        patterns.append(line.lstrip("/") if not line.startswith("**/") else line)
+    return patterns
 
 
 def _load_toml(config_path: str | None) -> dict:
@@ -123,7 +134,9 @@ def load_config(args) -> Config:
 
     max_tool_calls = limits.get("max_tool_calls", 10)
     max_file_lines = limits.get("max_file_lines", 8000)
-    exclusions = exclusions_section.get("patterns", []) + load_ignore_patterns(IGNORE_FILE)
+    exclusions = list(dict.fromkeys(
+        exclusions_section.get("patterns", []) + load_ignore_patterns(IGNORE_FILE) + SENSITIVE_PATTERNS
+    ))
     github_repo = github_section.get("repo", "")
     output_file = output_section.get("file", "review_output.md")
     overview_model = models_section.get("overview_model", "")

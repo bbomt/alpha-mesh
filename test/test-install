@@ -9,11 +9,27 @@ cd "$MESH_DIR"
 
 FAILED=0
 
+# Every install run below uses a throwaway HOME so the tests never touch the real
+# ~/bin links or ~/.claude settings backup.
+FAKE_HOME="$(mktemp -d)"
+CREATED_TASKS=0
+cleanup() {
+  rm -rf "$FAKE_HOME"
+  [[ "$CREATED_TASKS" -eq 1 ]] && rm -rf "$MESH_DIR/tasks"
+  return 0
+}
+trap cleanup EXIT INT TERM
+
+REAL_BACKUP="$HOME/.claude/settings.json.pre-alpha-mesh.bak"
+backup_before="$(stat -c '%Y' "$REAL_BACKUP" 2>/dev/null || echo none)"
+
+run_install() { echo 'n' | HOME="$FAKE_HOME" "$MESH_DIR/bin/install" 2>&1; }
+
 echo "=== install tests ==="
 echo ""
 
 # ─── test: bin/install exists and is executable ────────────────────────────────
-echo "[1/7] bin/install exists and is executable..."
+echo "[1/8] bin/install exists and is executable..."
 if [[ -x "$MESH_DIR/bin/install" ]]; then
   echo "  PASS"
 else
@@ -22,7 +38,7 @@ else
 fi
 
 # ─── test: required tools are available ─────────────────────────────────────────
-echo "[2/7] Required tools are available..."
+echo "[2/8] Required tools are available..."
 for tool in jq sqlite3 curl python3; do
   if command -v "$tool" >/dev/null 2>&1; then
     echo "  PASS: $tool found"
@@ -33,10 +49,10 @@ for tool in jq sqlite3 curl python3; do
 done
 
 # ─── test: bin/install can be run (dry-run mode if available) ───────────────────
-echo "[3/7] bin/install runs without error..."
+echo "[3/8] bin/install runs without error..."
 # Run install and capture output — may need to handle interactive prompts
 # Use expect-style timeout or check for non-interactive mode
-output=$(bash -c "echo 'n' | $MESH_DIR/bin/install 2>&1" || true)
+output=$(run_install || true)
 if echo "$output" | grep -qi "error\|fail"; then
   # Check if it's a real error or just the "not running as root" early exit
   if echo "$output" | grep -qi "sudo\|root\|permission\|denied"; then
@@ -52,7 +68,7 @@ fi
 
 # ─── test: install keeps .claude/ and .mesh/ ignored ───────────────────────────
 # bin/install rewrites .gitignore; it must not drop the runtime-dir entries.
-echo "[4/7] .gitignore still ignores .claude/ and .mesh/ after install..."
+echo "[4/8] .gitignore still ignores .claude/ and .mesh/ after install..."
 # The assertions are only meaningful if install got as far as writing .gitignore.
 if ! echo "$output" | grep -q ".gitignore written"; then
   echo "  FAIL: install did not reach the .gitignore step (output above is from test 3)"
@@ -69,11 +85,11 @@ for d in .claude/ .mesh/ 'tasks/*.db'; do
 done
 
 # ─── test: install does not create the removed tasks/ directory ────────────────
-echo "[5/7] install does not create tasks/ (task-log was removed)..."
+echo "[5/8] install does not create tasks/ (task-log was removed)..."
 if [[ -e "$MESH_DIR/tasks" ]]; then
   echo "  SKIP: tasks/ already exists in this checkout (see the legacy-data check below)"
 else
-  echo 'n' | "$MESH_DIR/bin/install" >/dev/null 2>&1 || true
+  run_install >/dev/null || true
   if [[ -e "$MESH_DIR/tasks" ]]; then
     echo "  FAIL: install created tasks/"
     rmdir "$MESH_DIR/tasks" 2>/dev/null || true
@@ -84,13 +100,13 @@ else
 fi
 
 # ─── test: install warns about leftover task-log data instead of deleting it ────
-echo "[6/7] install warns about legacy tasks/ data and keeps it..."
+echo "[6/8] install warns about legacy tasks/ data and keeps it..."
 if [[ -e "$MESH_DIR/tasks" ]]; then
   echo "  SKIP: tasks/ already exists in this checkout"
 else
-  trap 'rm -rf "$MESH_DIR/tasks"' EXIT INT TERM
+  CREATED_TASKS=1
   mkdir -p "$MESH_DIR/tasks" && : > "$MESH_DIR/tasks/task-log.db"
-  legacy_out=$(echo 'n' | "$MESH_DIR/bin/install" 2>&1 || true)
+  legacy_out=$(run_install || true)
   if ! echo "$legacy_out" | grep -qi "legacy tasks/"; then
     echo "  FAIL: install did not mention the leftover tasks/ directory"
     FAILED=1
@@ -101,17 +117,15 @@ else
     echo "  PASS"
   fi
   rm -rf "$MESH_DIR/tasks"
-  trap - EXIT INT TERM
+  CREATED_TASKS=0
 fi
 
 # ─── test: install removes dangling links to retired commands ───────────────────
-echo "[7/7] install removes dangling ~/bin links that point into alpha-mesh..."
-FAKE_HOME="$(mktemp -d)"
-trap 'rm -rf "$FAKE_HOME"' EXIT INT TERM
+echo "[7/8] install removes dangling ~/bin links that point into alpha-mesh..."
 mkdir -p "$FAKE_HOME/bin"
 ln -s "$MESH_DIR/bin/retired-command" "$FAKE_HOME/bin/retired-command"   # dangling, ours
 ln -s /nonexistent/other-tool "$FAKE_HOME/bin/other-tool"                # dangling, not ours
-echo 'n' | HOME="$FAKE_HOME" "$MESH_DIR/bin/install" >/dev/null 2>&1 || true
+run_install >/dev/null || true
 if [[ -L "$FAKE_HOME/bin/retired-command" ]]; then
   echo "  FAIL: dangling link to a retired alpha-mesh command was left behind"
   FAILED=1
@@ -121,8 +135,16 @@ elif [[ ! -L "$FAKE_HOME/bin/other-tool" ]]; then
 else
   echo "  PASS"
 fi
-rm -rf "$FAKE_HOME"
-trap - EXIT INT TERM
+
+# ─── test: the suite left the real HOME alone ───────────────────────────────────
+echo "[8/8] tests did not touch the real ~/.claude settings backup..."
+backup_after="$(stat -c '%Y' "$REAL_BACKUP" 2>/dev/null || echo none)"
+if [[ "$backup_before" == "$backup_after" ]]; then
+  echo "  PASS"
+else
+  echo "  FAIL: install modified $REAL_BACKUP"
+  FAILED=1
+fi
 
 # ─── summary ────────────────────────────────────────────────────────────────────
 echo ""

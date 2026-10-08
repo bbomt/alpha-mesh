@@ -385,3 +385,15 @@ def test_excluded_notice_respects_no_output(capsys):
 
     assert rc == 0
     assert "Pull request not reviewed" not in capsys.readouterr().out
+
+
+def test_the_diff_is_parsed_once_per_run():
+    from review_pull_request import review as review_module
+    from review_pull_request.stage2 import FileReviewResult
+
+    real = review_module.build_chunks
+    with patch("review_pull_request.review.build_chunks", side_effect=real) as spy:
+        _run_main_with_results(lambda c, o, cfg: FileReviewResult(c.file_path, "s", [], 0),
+                               README_DIFF + DIFF, exclusions=["**/README.md"])
+
+    assert spy.call_count == 1

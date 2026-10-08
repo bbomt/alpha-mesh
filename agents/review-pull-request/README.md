@@ -121,6 +121,10 @@ While reviewing a file the model can call `read_file` to look at other files. Re
 - An unreadable `.pr-review-ignore` aborts the run (it would otherwise send files you meant to exclude).
 - Severities other than high/medium/low from the model (`error`, `critical`, `warning`, anything else) are mapped to high/medium/low so no finding is dropped from the report.
 
+## Excluded files stay away from the model
+
+Exclusion patterns apply to the diff **and** to the `read_file` tool: if the model asks for an excluded path (including tricks like `src/../.env`), it gets a refusal instead of the content, so a prompt-injected instruction cannot pull `.env` or `.claude/settings.json` into the conversation. Token-bearing paths (`**/.env`, `**/.claude/*`, `**/.mesh/*`, `config/active.json`) are built in and always excluded, even if `.pr-review-ignore` is missing or misplaced. Lines in `.pr-review-ignore` may use gitignore-style `dir/` (matched at any depth) and trailing ` # comments`.
+
 ## Failure behaviour
 
 If an LLM API call fails (for example a `404` because the model in `CODE_REVIEW_MODEL` is not available), the review **aborts**. The agent never continues with partial results and never posts a "No issues found" comment for files it could not review.

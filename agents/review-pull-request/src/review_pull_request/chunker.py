@@ -33,6 +33,11 @@ def _matches_exclusion(file_path: str, exclusions: list[str]) -> bool:
     return False
 
 
+def is_excluded(file_path: str, exclusions: list[str]) -> bool:
+    """True if file_path matches an exclusion pattern (also used to guard read_file)."""
+    return _matches_exclusion(file_path, exclusions)
+
+
 def chunk_exists(file_path: str, exclusions: list[str]) -> tuple[bool, bool]:
     if _matches_exclusion(file_path, exclusions):
         return True, True

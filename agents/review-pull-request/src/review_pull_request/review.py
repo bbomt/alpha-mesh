@@ -8,7 +8,7 @@ import sys
 import time
 from urllib.parse import urlparse
 
-from review_pull_request.chunker import build_chunks
+from review_pull_request.chunker import build_chunks, chunk_exists
 from review_pull_request.config import load_config
 from review_pull_request.formatter import render_report
 from review_pull_request.git import (
@@ -310,9 +310,10 @@ Examples:
                 print(f"ERROR: failed to get diff: {e}", file=sys.stderr)
                 return 1
 
-        chunks = build_chunks(diff, config.exclusions)
+        all_chunks = build_chunks(diff, [])
+        chunks = [c for c in all_chunks if not chunk_exists(c.file_path, config.exclusions)[1]]
         if not chunks:
-            all_paths = [c.file_path for c in build_chunks(diff, [])]
+            all_paths = [c.file_path for c in all_chunks]
             if not all_paths:
                 print("No files to review (diff is empty).", file=sys.stderr)
                 return 0
@@ -331,9 +332,7 @@ Examples:
             return 0
 
         reviewed_paths = {c.file_path for c in chunks}
-        excluded_files = [
-            c.file_path for c in build_chunks(diff, []) if c.file_path not in reviewed_paths
-        ]
+        excluded_files = [c.file_path for c in all_chunks if c.file_path not in reviewed_paths]
         print(f"Diff: {len(chunks)} file chunk(s) to review", file=sys.stderr)
 
         if args.dry_run:

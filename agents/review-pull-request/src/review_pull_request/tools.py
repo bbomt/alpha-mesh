@@ -1,9 +1,12 @@
 """The read_file tool — gives the LLM full codebase access with safety guards."""
 
 import os
+import posixpath
 from urllib.parse import quote
 
 import httpx
+
+from review_pull_request.chunker import is_excluded
 
 
 class ReadError(str):
@@ -152,8 +155,12 @@ def execute_read_file(
     repo_root: str,
     max_lines: int,
     github_reader: "GitHubFileReader | None" = None,
+    exclusions: list[str] | None = None,
 ) -> str:
     """Read a file with path-traversal guard and optional truncation.
+
+    Paths matching `exclusions` are refused, so excluded (e.g. token-bearing) files
+    stay away from the model through this tool too, not only in the diff.
 
     When github_reader is provided, always reads via GitHub API (remote-always mode).
     Without a reader, reads from the local filesystem.
@@ -161,6 +168,9 @@ def execute_read_file(
     Returns the file contents (possibly truncated) or an error string.
     Never raises — errors are returned as strings so the LLM can see them.
     """
+    if exclusions and is_excluded(posixpath.normpath(path.lstrip("/")), exclusions):
+        return ReadError(f"Error: path is excluded from review by the exclusion patterns: {path}")
+
     real_repo = os.path.realpath(repo_root)
     target = os.path.realpath(os.path.join(repo_root, path))
 

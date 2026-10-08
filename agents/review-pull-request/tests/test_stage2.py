@@ -154,7 +154,7 @@ def test_run_file_review_passes_github_reader_to_execute_read_file():
 
     captured_reader = {}
 
-    def capturing_execute(path, repo_root, max_lines, github_reader=None):
+    def capturing_execute(path, repo_root, max_lines, github_reader=None, exclusions=None):
         captured_reader["reader"] = github_reader
         return "remote content"
 
@@ -368,3 +368,22 @@ def test_json_is_found_inside_prose_and_fences():
     assert _parse_json_response("Sure! " + body + " Let me know.") == {"summary": "ok", "issues": []}
     assert _parse_json_response("```json\n" + body + "\n```") == {"summary": "ok", "issues": []}
     assert _parse_json_response("nothing here") is None
+
+
+def test_model_cannot_read_excluded_files_through_the_read_tool(tmp_path):
+    (tmp_path / ".env").write_text("TOKEN=super-secret-value")
+    config = MockConfig()
+    config.repo_root = str(tmp_path)
+    config.exclusions = ["**/.env"]
+    seen = []
+    scripted = _scripted_chat([_tool_call("1", ".env")])
+
+    def capturing(messages, tools, config):
+        seen.append([m["content"] for m in messages if m.get("role") == "tool"])
+        return scripted(messages, tools, config)
+
+    with patch("review_pull_request.stage2.chat", side_effect=capturing):
+        run_file_review(_chunk(), "o", config)
+
+    assert all("super-secret-value" not in c for batch in seen for c in batch)
+    assert "excluded" in seen[-1][0]

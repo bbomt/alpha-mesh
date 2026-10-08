@@ -163,3 +163,24 @@ def test_incomplete_list_is_capped():
 
     assert "and 450 more" in body
     assert len(body) < 20_000
+
+
+def test_backticks_in_untrusted_paths_cannot_break_out_of_the_code_span():
+    from review_pull_request.config import Config
+
+    cfg = Config(model="m", api_url="http://x", api_token="t")
+    nasty = "a`b.py"
+    body = render_report("ov", [], summaries=[(nasty, "s")], config=cfg, model="m",
+                         incomplete=[nasty], excluded=["x```y.md"])
+
+    assert "``a`b.py``" in body          # fenced with a longer backtick run
+    assert "````x```y.md````" in body
+
+
+def test_files_reviewed_count_never_goes_negative():
+    from review_pull_request.config import Config
+
+    cfg = Config(model="m", api_url="http://x", api_token="t")
+    body = render_report("ov", [], summaries=[], config=cfg, model="m", incomplete=["x.py"])
+
+    assert "-1" not in body
