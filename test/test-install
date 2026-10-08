@@ -26,7 +26,12 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 REAL_BACKUP="$HOME/.claude/settings.json.pre-alpha-mesh.bak"
-backup_before="$(stat -c '%Y' "$REAL_BACKUP" 2>/dev/null || echo none)"
+# mtime of a file: GNU stat first, then BSD/macOS stat; "none" if the file is absent.
+file_mtime() {
+  [[ -e "$1" ]] || { echo none; return 0; }
+  stat -c '%Y' "$1" 2>/dev/null || stat -f '%m' "$1" 2>/dev/null || echo unsupported
+}
+backup_before="$(file_mtime "$REAL_BACKUP")"
 
 run_install() { echo 'n' | HOME="$FAKE_HOME" "$MESH_DIR/bin/install" 2>&1; }
 
@@ -151,8 +156,11 @@ fi
 
 # ─── test: the suite left the real HOME alone ───────────────────────────────────
 echo "[8/8] tests did not touch the real ~/.claude settings backup..."
-backup_after="$(stat -c '%Y' "$REAL_BACKUP" 2>/dev/null || echo none)"
-if [[ "$backup_before" == "$backup_after" ]]; then
+backup_after="$(file_mtime "$REAL_BACKUP")"
+if [[ "$backup_before" == "unsupported" ]]; then
+  echo "  FAIL: cannot read file mtimes with this platform's stat, so the check proves nothing"
+  FAILED=1
+elif [[ "$backup_before" == "$backup_after" ]]; then
   echo "  PASS"
 else
   echo "  FAIL: install modified $REAL_BACKUP"

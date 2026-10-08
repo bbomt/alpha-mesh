@@ -48,8 +48,10 @@ def load_ignore_patterns(path: Path) -> list[str]:
         line = re.sub(r"\s+#.*$", "", raw).strip()  # inline comment
         if not line or line.startswith("#"):
             continue
-        if line.endswith("/"):  # gitignore-style directory: match it at any depth
-            patterns.append(f"**/{line.lstrip('/')}*")
+        if line.endswith("/") and line.startswith("/"):  # anchored directory: repo root only
+            patterns.append(f"{line.strip('/')}/*")
+        elif line.endswith("/"):  # gitignore-style directory: match it at any depth
+            patterns.append(f"**/{line}*")
         elif line.startswith("/"):  # anchored at the repo root
             patterns.append(line.lstrip("/"))
         elif "/" not in line and not any(ch in line for ch in "*?["):

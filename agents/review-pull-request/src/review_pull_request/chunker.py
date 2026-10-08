@@ -19,11 +19,14 @@ def _matches_exclusion(file_path: str, exclusions: list[str]) -> bool:
     For */inner/* style patterns: matches files where 'inner' appears
     as a path component (e.g. dist/bundle.js matches */dist/* because dist is a path component).
     """
+    # Case-insensitive on purpose: ".ENV" must not slip past "**/.env" (over-matching is fail-safe).
+    file_path = file_path.lower()
     for pattern in exclusions:
-        if fnmatch.fnmatch(file_path, pattern):
+        pattern = pattern.lower()
+        if fnmatch.fnmatchcase(file_path, pattern):
             return True
         # "**/name" also matches "name" at the repo root (zero directories).
-        if pattern.startswith("**/") and fnmatch.fnmatch(file_path, pattern[3:]):
+        if pattern.startswith("**/") and fnmatch.fnmatchcase(file_path, pattern[3:]):
             return True
         if pattern.startswith("*") and pattern.endswith("*") and len(pattern) > 2:
             inner = pattern[1:-1].strip("/")

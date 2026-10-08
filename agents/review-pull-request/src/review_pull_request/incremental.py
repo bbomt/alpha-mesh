@@ -92,7 +92,9 @@ def find_last_review_comment(
     if comments is None:
         return None
 
-    review_comments = [c for c in comments if REVIEW_SIGNATURE in c.get("body", "")]
+    # The marker must open the comment: a report that merely quotes it (e.g. in the overview
+    # of a diff that mentions it) is not a review baseline.
+    review_comments = [c for c in comments if c.get("body", "").lstrip().startswith(REVIEW_SIGNATURE)]
     if not review_comments:
         return None
 

@@ -37,10 +37,16 @@ fi
 # The wrapper tees into a per-day log; it must append, or any run (including a
 # --help smoke test) would wipe the day's earlier review log.
 echo "[4/4] wrapper appends to the daily log instead of truncating it..."
-if grep -q 'tee -a "\$LOG_FILE"' "$AGENT_DIR/bin/review-pull-request"; then
+TEST_LOG_DIR="$(mktemp -d)"
+trap 'rm -rf "$TEST_LOG_DIR"' EXIT
+ALPHA_MESH_LOG_DIR="$TEST_LOG_DIR" "$AGENT_DIR/bin/review-pull-request" --help >/dev/null 2>&1 || true
+size_after_first="$(cat "$TEST_LOG_DIR"/*.log 2>/dev/null | wc -c)"
+ALPHA_MESH_LOG_DIR="$TEST_LOG_DIR" "$AGENT_DIR/bin/review-pull-request" --help >/dev/null 2>&1 || true
+size_after_second="$(cat "$TEST_LOG_DIR"/*.log 2>/dev/null | wc -c)"
+if [[ "$size_after_first" -gt 0 && "$size_after_second" -gt "$size_after_first" ]]; then
   echo "  PASS"
 else
-  echo "  FAIL: bin/review-pull-request must use 'tee -a'"
+  echo "  FAIL: log did not grow across two runs ($size_after_first -> $size_after_second bytes); the wrapper must append"
   exit 1
 fi
 

@@ -342,3 +342,10 @@ def test_not_reviewed_notice_is_not_mistaken_for_a_review():
     notice = _excluded_notice(["README.md"])
 
     assert REVIEW_SIGNATURE not in notice
+
+
+def test_a_review_marker_quoted_inside_a_report_body_is_not_a_baseline():
+    quoted = _make_comment("# Partial pull request review\n\n> the diff mentions # AI Code Review here",
+                           "2024-01-15T10:00:00Z")
+    with patch("review_pull_request.incremental._paginate_get", return_value=[quoted]):
+        assert find_last_review_comment("o", "r", 1, "tok") is None

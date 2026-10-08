@@ -400,3 +400,16 @@ def test_malformed_issues_payloads_degrade_instead_of_aborting_the_run(payload):
 
     assert result.issues == []
     assert result.incomplete is True  # the model's answer was unusable, so do not report it as clean
+
+
+def test_equivalent_path_spellings_share_dedup_and_cache():
+    config = MockConfig()
+    config.read_cache = {}
+    scripted = _scripted_chat([_tool_call("1", "src/x.py")], [_tool_call("2", "./src/x.py")],
+                              [_tool_call("3", "/src/x.py")])
+    with patch("review_pull_request.stage2.chat", side_effect=scripted), \
+         patch("review_pull_request.stage2.execute_read_file", return_value="BODY") as ex:
+        run_file_review(_chunk(), "o", config)
+
+    assert ex.call_count == 1
+    assert list(config.read_cache) == ["src/x.py"]

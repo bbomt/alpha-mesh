@@ -122,3 +122,13 @@ class TestChunkExists:
 
     def test_exact_lockfile(self):
         assert chunk_exists("package-lock.json", ["package-lock.json"])[0]
+
+
+def test_exclusion_matching_ignores_case():
+    diff = "".join(
+        f"diff --git a/{p} b/{p}\n--- a/{p}\n+++ b/{p}\n@@ -1 +1 @@\n+x\n"
+        for p in (".ENV", ".Env.Local", "svc/.ENV", ".Claude/settings.json", "Config/Active.json", "src/a.py")
+    )
+    patterns = ["**/.env", "**/.env.*", "**/.claude/*", "config/active.json"]
+
+    assert [c.file_path for c in build_chunks(diff, patterns)] == ["src/a.py"]

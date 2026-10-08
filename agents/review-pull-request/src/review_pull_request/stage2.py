@@ -5,6 +5,7 @@ parses JSON response, returns FileReviewResult.
 """
 
 import json as _json
+import posixpath
 import sys
 from dataclasses import dataclass, field
 
@@ -174,10 +175,11 @@ def run_file_review(chunk, overview: str, config) -> FileReviewResult:
                     reason = tc.arguments.get("reason", "")
                     print(f"  → read_file: {path}  (while reviewing {chunk.file_path})", file=sys.stderr, flush=True)
                     print(f"     reason: {reason}", file=sys.stderr, flush=True)
-                    if path in paths_read:
+                    key = posixpath.normpath(path.lstrip("/"))  # same spelling execute_read_file vets
+                    if key in paths_read:
                         result = ALREADY_READ_NOTE
-                    elif read_cache is not None and path in read_cache:
-                        result = read_cache[path]
+                    elif read_cache is not None and key in read_cache:
+                        result = read_cache[key]
                         print("     (cached)", file=sys.stderr, flush=True)
                     else:
                         result = execute_read_file(
@@ -191,10 +193,10 @@ def run_file_review(chunk, overview: str, config) -> FileReviewResult:
                             cap = getattr(config, "read_cache_max_bytes", DEFAULT_READ_CACHE_MAX_BYTES)
                             size = len(result.encode())
                             if getattr(config, "read_cache_bytes", 0) + size <= cap:
-                                read_cache[path] = result
+                                read_cache[key] = result
                                 config.read_cache_bytes = getattr(config, "read_cache_bytes", 0) + size
                     if not isinstance(result, ReadError):
-                        paths_read.add(path)  # failed reads stay retryable
+                        paths_read.add(key)  # failed reads stay retryable
                     messages.append({
                         "role": "assistant",
                         "content": None,

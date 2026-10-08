@@ -37,7 +37,7 @@ if [[ -f "$ENV_FILE" ]]; then
 fi
 
 # Tee all output to the log file
-LOG_DIR="${HOME}/environment/logs/ai/claude"
+LOG_DIR="${ALPHA_MESH_LOG_DIR:-${HOME}/environment/logs/ai/claude}"
 LOG_FILE="${LOG_DIR}/alpha-mesh-review-pull-request-$(date +%Y-%m-%d).log"
 mkdir -p "$LOG_DIR"
 

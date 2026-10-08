@@ -158,3 +158,14 @@ def test_dotenv_variants_are_always_excluded():
     diff = _diff(".env", ".env.local", ".env.production", "svc/.env.development", "src/a.py")
 
     assert [c.file_path for c in build_chunks(diff, SENSITIVE_PATTERNS)] == ["src/a.py"]
+
+
+def test_directory_lines_do_not_match_name_prefixes(tmp_path):
+    f = tmp_path / ".pr-review-ignore"
+    f.write_text("build/\n/dist/\n".replace("\\n", "\n"))
+    patterns = load_ignore_patterns(f)
+    diff = _diff("build/out.js", "src/build/out.js", "builder.ts", "src/buildkit.go",
+                 "dist/a.js", "pkg/dist/a.js")
+
+    # build/ matches at any depth; /dist/ only at the repo root; name prefixes never match
+    assert [c.file_path for c in build_chunks(diff, patterns)] == ["builder.ts", "src/buildkit.go", "pkg/dist/a.js"]

@@ -73,3 +73,13 @@ def test_malformed_body_on_the_no_tools_fallback_is_retried_too():
         result = chat([{"role": "user", "content": "hi"}], tools, _Config())
 
     assert result.content == "ok"
+
+
+def test_provider_error_object_in_a_200_body_fails_fast_with_its_message():
+    body = {"error": {"message": "context_length_exceeded: too many tokens"}}
+    with patch("review_pull_request.llm.httpx.post", return_value=_response(body)) as post:
+        with pytest.raises(LLMError) as exc:
+            chat([{"role": "user", "content": "hi"}], None, _Config())
+
+    assert "context_length_exceeded" in str(exc.value)
+    assert post.call_count == 1  # deterministic rejection: no retries

@@ -15,6 +15,10 @@ class LLMError(Exception):
     """Raised on non-retryable LLM API errors."""
 
 
+class ProviderError(LLMError):
+    """The provider answered 200 with an error object: deterministic, so never retried."""
+
+
 @dataclass
 class ToolCall:
     id: str
@@ -36,7 +40,12 @@ BACKOFF = [2, 4, 8]
 def _parse_chat_response(response) -> ChatResponse:
     """Parse a 200 response body; any malformed body is an LLMError."""
     try:
-        choice = response.json()["choices"][0]
+        data = response.json()
+        if isinstance(data, dict) and isinstance(data.get("error"), (dict, str)):
+            err = data["error"]
+            message = err.get("message", err) if isinstance(err, dict) else err
+            raise ProviderError(f"API returned an error object: {message}")
+        choice = data["choices"][0]
         if choice.get("finish_reason", "") == "tool_calls":
             tool_calls = []
             for tc in choice.get("message", {}).get("tool_calls", []):
@@ -60,6 +69,8 @@ def _parse_or_retry(response, attempt: int) -> "ChatResponse | None":
     return None to retry, until the last attempt, where the LLMError is raised."""
     try:
         return _parse_chat_response(response)
+    except ProviderError:
+        raise
     except LLMError:
         if attempt >= RETRIES - 1:
             raise

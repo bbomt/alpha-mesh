@@ -85,3 +85,17 @@ def test_post_comment_is_true_even_if_the_success_body_is_not_json():
     with patch("review_pull_request.github._get_github_token", return_value="t"), \
          patch("review_pull_request.github.httpx.post", return_value=resp):
         assert post_comment("body", "https://github.com/o/r/pull/1", None) is True
+
+
+def test_oversized_report_is_truncated_to_githubs_comment_limit():
+    from review_pull_request.github import MAX_COMMENT_CHARS, post_comment
+
+    resp = MagicMock(status_code=201, text="ok")
+    resp.json.return_value = {"html_url": "u"}
+    with patch("review_pull_request.github._get_github_token", return_value="t"), \
+         patch("review_pull_request.github.httpx.post", return_value=resp) as post:
+        assert post_comment("x" * 200_000, "https://github.com/o/r/pull/1", None) is True
+
+    sent = post.call_args.kwargs["json"]["body"]
+    assert len(sent) <= MAX_COMMENT_CHARS
+    assert "truncated" in sent[-300:].lower()

@@ -24,6 +24,10 @@ def _get_github_token() -> str | None:
     return os.environ.get("GITHUB_TOKEN") or None
 
 
+MAX_COMMENT_CHARS = 65_000  # GitHub rejects comment bodies over 65,536 characters
+TRUNCATION_NOTE = "\n\n… _report truncated to fit GitHub's comment size limit_"
+
+
 def post_comment(body: str, pr_url: str, config) -> bool:
     """Post body as a comment on the GitHub PR at pr_url.
 
@@ -39,6 +43,10 @@ def post_comment(body: str, pr_url: str, config) -> bool:
     except Exception as e:
         print(f"WARNING: could not parse PR URL '{pr_url}': {e}", flush=True)
         return False
+
+    if len(body) > MAX_COMMENT_CHARS:
+        print(f"WARNING: report is {len(body)} characters; truncating to fit GitHub's limit.", flush=True)
+        body = body[: MAX_COMMENT_CHARS - len(TRUNCATION_NOTE)] + TRUNCATION_NOTE
 
     headers = {
         "Authorization": f"Bearer {github_token}",

@@ -61,8 +61,8 @@ def _excluded_notice(paths: list[str]) -> str:
         "# Pull request not reviewed",
         "",
         f"No files were reviewed: all {len(paths)} changed file(s) were excluded "
-        "by the exclusion patterns (`.pr-review-ignore` / `review_config.toml`), so this "
-        "pull request has **not** been reviewed.",
+        "by the exclusion patterns (`.pr-review-ignore`, `review_config.toml` or the built-in "
+        "sensitive-file rules), so this pull request has **not** been reviewed.",
         "",
     ]
     lines.extend(f"- {_code_span(p)}" for p in shown)
@@ -316,6 +316,16 @@ Examples:
             all_paths = [c.file_path for c in all_chunks]
             if not all_paths:
                 print("No files to review (diff is empty).", file=sys.stderr)
+                return 0
+            if incremental_info:
+                # The PR already has a review; new commits only touch excluded files. Saying
+                # "this PR has not been reviewed" would be false, and the notice (which is not a
+                # baseline) would be re-posted on every later incremental run.
+                print(
+                    f"No new reviewable changes: the {len(all_paths)} file(s) changed since the "
+                    "last review are all excluded by exclusion patterns.",
+                    file=sys.stderr,
+                )
                 return 0
             notice = _excluded_notice(all_paths)
             print(

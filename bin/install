@@ -116,7 +116,7 @@ for link in "$HOME/bin/"*; do
   else
     continue
   fi
-  if [[ "$target" == "$MESH_DIR/"* ]]; then
+  if [[ "$target" == "$MESH_DIR/"* || "$target" == "$(readlink -f "$MESH_DIR")/"* ]]; then
     echo "  Removing dangling: $link"
     rm -f "$link"
   fi
