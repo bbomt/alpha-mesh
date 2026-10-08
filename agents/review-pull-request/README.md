@@ -104,6 +104,7 @@ Default list:
 **/.claude/*
 **/.mesh/*
 **/.env
+**/.env.*
 config/active.json
 ```
 
@@ -123,7 +124,7 @@ While reviewing a file the model can call `read_file` to look at other files. Re
 
 ## Excluded files stay away from the model
 
-Exclusion patterns apply to the diff **and** to the `read_file` tool: if the model asks for an excluded path (including tricks like `src/../.env`), it gets a refusal instead of the content, so a prompt-injected instruction cannot pull `.env` or `.claude/settings.json` into the conversation. Token-bearing paths (`**/.env`, `**/.claude/*`, `**/.mesh/*`, `config/active.json`) are built in and always excluded, even if `.pr-review-ignore` is missing or misplaced. Lines in `.pr-review-ignore` may use gitignore-style `dir/` (matched at any depth) and trailing ` # comments`.
+Exclusion patterns apply to the diff **and** to the `read_file` tool: if the model asks for an excluded path (including tricks like `src/../.env`), it gets a refusal instead of the content, so a prompt-injected instruction cannot pull `.env` or `.claude/settings.json` into the conversation. Token-bearing paths (`**/.env`, `**/.env.*` (so `.env.example` too), `**/.claude/*`, `**/.mesh/*`, `config/active.json`) are built in and always excluded, even if `.pr-review-ignore` is missing or misplaced. Lines in `.pr-review-ignore` may use gitignore-style `dir/` (matched at any depth), bare names (`secrets.json`, `node_modules`: file or directory, at any depth), a leading `/` (repo root only) and trailing ` # comments`. Excluded files are also left out of the overview prompt, not only the per-file reviews.
 
 ## Failure behaviour
 

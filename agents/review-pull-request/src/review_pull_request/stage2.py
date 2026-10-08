@@ -249,7 +249,11 @@ def run_file_review(chunk, overview: str, config) -> FileReviewResult:
                 )
 
             issues = []
-            for iss in parsed.get("issues", []):
+            raw_issues = parsed.get("issues")
+            malformed = not isinstance(raw_issues, list) or any(not isinstance(i, dict) for i in raw_issues)
+            for iss in raw_issues if isinstance(raw_issues, list) else []:
+                if not isinstance(iss, dict):
+                    continue
                 issues.append(Issue(
                     file=iss.get("file", chunk.file_path),
                     line=iss.get("line"),
@@ -263,6 +267,7 @@ def run_file_review(chunk, overview: str, config) -> FileReviewResult:
                 summary=parsed.get("summary", ""),
                 issues=issues,
                 tool_calls_made=tool_calls_made,
+                incomplete=malformed,  # a garbled issues payload must not read as "clean"
             )
 
     return FileReviewResult(

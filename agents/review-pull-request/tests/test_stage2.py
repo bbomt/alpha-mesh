@@ -387,3 +387,16 @@ def test_model_cannot_read_excluded_files_through_the_read_tool(tmp_path):
 
     assert all("super-secret-value" not in c for batch in seen for c in batch)
     assert "excluded" in seen[-1][0]
+
+
+@pytest.mark.parametrize("payload", [
+    '{"summary": "s", "issues": null}',
+    '{"summary": "s", "issues": "none"}',
+    '{"summary": "s", "issues": ["oops", 3, null]}',
+])
+def test_malformed_issues_payloads_degrade_instead_of_aborting_the_run(payload):
+    with patch("review_pull_request.stage2.chat", return_value=MockLLMResponse(content=payload)):
+        result = run_file_review(_chunk(), "o", MockConfig())
+
+    assert result.issues == []
+    assert result.incomplete is True  # the model's answer was unusable, so do not report it as clean

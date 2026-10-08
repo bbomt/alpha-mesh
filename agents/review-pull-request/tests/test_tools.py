@@ -339,3 +339,31 @@ class TestExclusionsApplyToReads:
         (tmp_path / "a.py").write_text("print(1)\n")
 
         assert execute_read_file("a.py", str(tmp_path), 100, None, exclusions=["**/.env"]) == "print(1)\n"
+
+
+class TestExclusionEdgeCases:
+    def test_case_variants_of_an_excluded_path_are_refused(self, tmp_path):
+        (tmp_path / ".env").write_text("SECRET=1")
+
+        result = execute_read_file(".ENV", str(tmp_path), 100, None, exclusions=["**/.env"])
+
+        assert "SECRET" not in result
+
+    def test_symlink_to_an_excluded_file_is_refused(self, tmp_path):
+        (tmp_path / ".env").write_text("SECRET=1")
+        (tmp_path / "notes").mkdir()
+        os.symlink(tmp_path / ".env", tmp_path / "notes" / "link")
+
+        result = execute_read_file("notes/link", str(tmp_path), 100, None, exclusions=["**/.env"])
+
+        assert "SECRET" not in result
+
+    def test_unreadable_file_is_an_error_string_not_an_exception(self, tmp_path):
+        from review_pull_request.tools import ReadError
+
+        f = tmp_path / "locked.txt"
+        f.write_text("x")
+        with patch("builtins.open", side_effect=PermissionError("denied")):
+            result = execute_read_file("locked.txt", str(tmp_path), 100)
+
+        assert isinstance(result, ReadError)

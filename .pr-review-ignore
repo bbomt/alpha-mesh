@@ -5,4 +5,5 @@
 **/.claude/*
 **/.mesh/*
 **/.env
+**/.env.*
 config/active.json

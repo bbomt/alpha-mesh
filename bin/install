@@ -110,7 +110,13 @@ fi
 # Remove dangling links to commands alpha-mesh no longer ships (renamed or retired).
 # Only links whose target lives inside this repo are touched.
 for link in "$HOME/bin/"*; do
-  if [[ -L "$link" && ! -e "$link" && "$(readlink "$link")" == "$MESH_DIR/"* ]]; then
+  if [[ -L "$link" && ! -e "$link" ]]; then
+    # Resolve relative targets too (readlink -f works for dangling links).
+    target="$(readlink -f "$link" 2>/dev/null || readlink "$link")"
+  else
+    continue
+  fi
+  if [[ "$target" == "$MESH_DIR/"* ]]; then
     echo "  Removing dangling: $link"
     rm -f "$link"
   fi

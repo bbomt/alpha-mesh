@@ -88,7 +88,9 @@ def render_report(
 
     total = len(high) + len(medium) + len(low)
     lines.append("## Issues\n")
-    if total == 0 and incomplete:
+    if total == 0 and incomplete and files_reviewed == 0:
+        lines.append("\nNo files were fully reviewed, so no issues can be reported.\n")
+    elif total == 0 and incomplete:
         lines.append("\nNo issues found in the files that were reviewed.\n")
     elif total == 0:
         lines.append("\nNo issues found. ✅\n")

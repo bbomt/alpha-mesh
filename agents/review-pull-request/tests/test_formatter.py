@@ -184,3 +184,13 @@ def test_files_reviewed_count_never_goes_negative():
     body = render_report("ov", [], summaries=[], config=cfg, model="m", incomplete=["x.py"])
 
     assert "-1" not in body
+
+
+def test_nothing_reviewed_does_not_claim_issues_were_checked():
+    from review_pull_request.config import Config
+
+    cfg = Config(model="m", api_url="http://x", api_token="t")
+    body = render_report("ov", [], summaries=[("a.py", "s")], config=cfg, model="m", incomplete=["a.py"])
+
+    assert "No issues found in the files that were reviewed" not in body
+    assert "No files were fully reviewed" in body

@@ -397,3 +397,40 @@ def test_the_diff_is_parsed_once_per_run():
                                README_DIFF + DIFF, exclusions=["**/README.md"])
 
     assert spy.call_count == 1
+
+
+def test_excluded_files_never_reach_the_overview_prompt():
+    from review_pull_request.stage2 import FileReviewResult
+
+    secret_diff = ("diff --git a/.env b/.env\n--- a/.env\n+++ b/.env\n@@ -1 +1 @@\n+API_TOKEN=super-secret-value\n")
+    cfg = Config(model="m", api_url="http://x", api_token=SECRET, exclusions=["**/.env"])
+    with patch("review_pull_request.review.load_config", return_value=cfg), \
+         patch("review_pull_request.review.parse_pr_url", return_value=("owner", "repo", 42)), \
+         patch("review_pull_request.review.get_pr_info", return_value=_mock_pr_info()), \
+         patch("review_pull_request.review.get_pr_description", return_value=""), \
+         patch("review_pull_request.review.get_diff", return_value=secret_diff + DIFF), \
+         patch("review_pull_request.review.run_overview", return_value="ov") as overview, \
+         patch("review_pull_request.review.run_file_review",
+               side_effect=lambda c, o, cf: FileReviewResult(c.file_path, "s", [], 0)), \
+         patch("review_pull_request.review.post_comment", return_value=True), \
+         patch("subprocess.run", return_value=MagicMock(returncode=0, stdout="ghtoken")):
+        sys.argv = ["review", "https://github.com/owner/repo/pull/42"]
+        main()
+
+    sent = overview.call_args[0][0]
+    assert "super-secret-value" not in sent
+    assert "src/a.py" in sent
+
+
+def test_excluded_notice_escapes_backticks_in_paths():
+    from review_pull_request.review import _excluded_notice
+
+    assert "``a`b.py``" in _excluded_notice(["a`b.py"])
+
+
+def test_excluded_notice_respects_hide_pr_comment(capsys):
+    rc, _ = _run_main_with_results(lambda *a: None, README_DIFF, exclusions=["**/README.md"],
+                                   extra_argv=["--hide-pr-comment"])
+
+    assert rc == 0
+    assert "Pull request not reviewed" not in capsys.readouterr().out

@@ -27,7 +27,7 @@ def test_load_ignore_patterns_skips_comments_and_blank_lines(tmp_path):
     f = tmp_path / ".pr-review-ignore"
     f.write_text("# docs\nCLAUDE.md\n\n  .mesh/*  \n**/README.md\n")
 
-    assert load_ignore_patterns(f) == ["CLAUDE.md", ".mesh/*", "**/README.md"]
+    assert load_ignore_patterns(f) == ["**/CLAUDE.md", "**/CLAUDE.md/*", ".mesh/*", "**/README.md"]
 
 
 def test_load_ignore_patterns_missing_file_returns_empty(tmp_path):
@@ -64,14 +64,14 @@ def test_load_config_merges_ignore_file_with_toml_exclusions(tmp_path, monkeypat
     cfg = load_config(args)
 
     assert "*.lock" in cfg.exclusions
-    assert "CLAUDE.md" in cfg.exclusions
+    assert "**/CLAUDE.md" in cfg.exclusions
 
 
 def test_load_ignore_patterns_tolerates_a_utf8_bom(tmp_path):
     f = tmp_path / ".pr-review-ignore"
     f.write_bytes(b"\xef\xbb\xbfCLAUDE.md\n.mesh/*\n")
 
-    assert load_ignore_patterns(f) == ["CLAUDE.md", ".mesh/*"]
+    assert load_ignore_patterns(f) == ["**/CLAUDE.md", "**/CLAUDE.md/*", ".mesh/*"]
 
 
 def test_unreadable_ignore_file_aborts_instead_of_reviewing_more_files(tmp_path, capsys):
@@ -100,7 +100,7 @@ def test_shipped_ignore_file_keeps_secret_bearing_paths_away_from_the_llm():
     ]
     diff = _diff(*secret_paths, ".env.example", "src/a.py")
 
-    assert [c.file_path for c in build_chunks(diff, patterns)] == [".env.example", "src/a.py"]
+    assert [c.file_path for c in build_chunks(diff, patterns)] == ["src/a.py"]  # .env.example is over-excluded on purpose
 
 
 def test_load_config_warns_when_the_ignore_file_is_not_in_an_alpha_mesh_checkout(tmp_path, monkeypatch, capsys):
@@ -139,4 +139,22 @@ def test_patterns_are_normalised_so_gitignore_style_lines_actually_match(tmp_pat
     f = tmp_path / ".pr-review-ignore"
     f.write_text("build/\\n.env   # secrets\\n/vendor/*\\n".replace("\\n", "\n"))
 
-    assert load_ignore_patterns(f) == ["**/build/*", ".env", "vendor/*"]
+    assert load_ignore_patterns(f) == ["**/build/*", "**/.env", "**/.env/*", "vendor/*"]
+
+
+def test_bare_names_match_files_and_directories_at_any_depth(tmp_path):
+    f = tmp_path / ".pr-review-ignore"
+    f.write_text("secrets.json\nnode_modules\n".replace("\\n", "\n"))
+    patterns = load_ignore_patterns(f)
+    diff = _diff("secrets.json", "services/auth/secrets.json", "node_modules/x/index.js",
+                 "web/node_modules/y.js", "src/a.py")
+
+    assert [c.file_path for c in build_chunks(diff, patterns)] == ["src/a.py"]
+
+
+def test_dotenv_variants_are_always_excluded():
+    from review_pull_request.config import SENSITIVE_PATTERNS
+
+    diff = _diff(".env", ".env.local", ".env.production", "svc/.env.development", "src/a.py")
+
+    assert [c.file_path for c in build_chunks(diff, SENSITIVE_PATTERNS)] == ["src/a.py"]

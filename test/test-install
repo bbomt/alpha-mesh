@@ -13,12 +13,17 @@ FAILED=0
 # ~/bin links or ~/.claude settings backup.
 FAKE_HOME="$(mktemp -d)"
 CREATED_TASKS=0
+GITIGNORE_SNAPSHOT="$FAKE_HOME/gitignore.orig"
+cp "$MESH_DIR/.gitignore" "$GITIGNORE_SNAPSHOT"   # install rewrites .gitignore; restore any local edits
 cleanup() {
+  [[ -f "$GITIGNORE_SNAPSHOT" ]] && cp "$GITIGNORE_SNAPSHOT" "$MESH_DIR/.gitignore"
   rm -rf "$FAKE_HOME"
   [[ "$CREATED_TASKS" -eq 1 ]] && rm -rf "$MESH_DIR/tasks"
   return 0
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 REAL_BACKUP="$HOME/.claude/settings.json.pre-alpha-mesh.bak"
 backup_before="$(stat -c '%Y' "$REAL_BACKUP" 2>/dev/null || echo none)"
@@ -124,9 +129,17 @@ fi
 echo "[7/8] install removes dangling ~/bin links that point into alpha-mesh..."
 mkdir -p "$FAKE_HOME/bin"
 ln -s "$MESH_DIR/bin/retired-command" "$FAKE_HOME/bin/retired-command"   # dangling, ours
+ln -s "../$(basename "$MESH_DIR")/bin/retired-relative" "$FAKE_HOME/bin/retired-relative"   # relative form
 ln -s /nonexistent/other-tool "$FAKE_HOME/bin/other-tool"                # dangling, not ours
 run_install >/dev/null || true
-if [[ -L "$FAKE_HOME/bin/retired-command" ]]; then
+# the relative link resolves from $FAKE_HOME/bin; give it a real target dir so it points into the repo
+mkdir -p "$FAKE_HOME/$(basename "$MESH_DIR")"
+ln -sfn "$MESH_DIR/bin" "$FAKE_HOME/$(basename "$MESH_DIR")/bin"
+run_install >/dev/null || true
+if [[ -L "$FAKE_HOME/bin/retired-relative" ]]; then
+  echo "  FAIL: dangling RELATIVE link into alpha-mesh was left behind"
+  FAILED=1
+elif [[ -L "$FAKE_HOME/bin/retired-command" ]]; then
   echo "  FAIL: dangling link to a retired alpha-mesh command was left behind"
   FAILED=1
 elif [[ ! -L "$FAKE_HOME/bin/other-tool" ]]; then

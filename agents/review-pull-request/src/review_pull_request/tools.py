@@ -168,7 +168,13 @@ def execute_read_file(
     Returns the file contents (possibly truncated) or an error string.
     Never raises — errors are returned as strings so the LLM can see them.
     """
-    if exclusions and is_excluded(posixpath.normpath(path.lstrip("/")), exclusions):
+    def _excluded(p: str) -> bool:
+        # also compared case-insensitively: on case-insensitive filesystems ".ENV" opens ".env"
+        return bool(exclusions) and (
+            is_excluded(p, exclusions) or is_excluded(p.lower(), [x.lower() for x in exclusions])
+        )
+
+    if _excluded(posixpath.normpath(path.lstrip("/"))):
         return ReadError(f"Error: path is excluded from review by the exclusion patterns: {path}")
 
     real_repo = os.path.realpath(repo_root)
@@ -180,6 +186,10 @@ def execute_read_file(
     if github_reader is not None:
         return github_reader.read_file(path, max_lines)
 
+    # A symlink (or case alias) can resolve to an excluded file: check the real target too.
+    if _excluded(os.path.relpath(target, real_repo).replace(os.sep, "/")):
+        return ReadError(f"Error: path is excluded from review by the exclusion patterns: {path}")
+
     if not os.path.isfile(target):
         return ReadError(f"Error: file not found: {path}")
 
@@ -189,6 +199,8 @@ def execute_read_file(
         raw.decode("utf-8")
     except UnicodeDecodeError:
         return ReadError("Error: file appears to be binary and cannot be read as text.")
+    except (OSError, ValueError) as e:
+        return ReadError(f"Error: could not read file: {e}")
 
     try:
         with open(target, "r", encoding="utf-8") as f:

@@ -10,7 +10,7 @@ from urllib.parse import urlparse
 
 from review_pull_request.chunker import build_chunks, chunk_exists
 from review_pull_request.config import load_config
-from review_pull_request.formatter import render_report
+from review_pull_request.formatter import _code_span, render_report
 from review_pull_request.git import (
     get_diff,
     get_pr_description,
@@ -65,7 +65,7 @@ def _excluded_notice(paths: list[str]) -> str:
         "pull request has **not** been reviewed.",
         "",
     ]
-    lines.extend(f"- `{p}`" for p in shown)
+    lines.extend(f"- {_code_span(p)}" for p in shown)
     if len(paths) > len(shown):
         lines.append(f"- … and {len(paths) - len(shown)} more")
     return "\n".join(lines)
@@ -323,7 +323,8 @@ Examples:
                 "by exclusion patterns.",
                 file=sys.stderr,
             )
-            if not args.no_output:
+            will_post = not args.dry_run and not args.no_post_comment and args.pr_url
+            if not args.no_output and not (args.hide_pr_comment and will_post):
                 print(notice)
             if not args.dry_run and not args.no_post_comment and args.pr_url:
                 if not post_comment(notice, args.pr_url, config):
@@ -347,7 +348,8 @@ Examples:
         else:
             current_step = "overview pass"
             print("Stage 1: Overview pass...", file=sys.stderr)
-            overview = run_overview(diff, pr_desc, config)
+            # the overview prompt gets only non-excluded files: nothing excluded may reach the LLM
+            overview = run_overview("".join(c.diff_text for c in chunks), pr_desc, config)
             print(f"Overview: {overview[:80]}...", file=sys.stderr)
 
             all_issues = []
