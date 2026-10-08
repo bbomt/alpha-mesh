@@ -8,7 +8,6 @@ import sys
 import time
 from urllib.parse import urlparse
 
-from review_pull_request.chunker import build_chunks, chunk_exists
 from review_pull_request.config import load_config
 from review_pull_request.formatter import _code_span, render_report
 from review_pull_request.git import (
@@ -24,6 +23,7 @@ from review_pull_request.incremental import (
     get_commits_since,
     build_incremental_diff,
 )
+from review_pull_request.session import ReviewSession
 from review_pull_request.stage1 import run_overview
 from review_pull_request.stage2 import run_file_review
 from review_pull_request.tools import GitHubFileReader
@@ -226,6 +226,8 @@ Examples:
         )
         return 1
     config.github_reader = GitHubFileReader(owner, repo, head_sha, _token)
+    # Everything that reaches the model or the file reader goes through this session's policy.
+    session = ReviewSession.create(config, inner_reader=config.github_reader, secrets=[_token])
     _verbose_print(config, f"read_file: GitHub API (ref={head_sha[:8]})")
 
     # Print model info if verbose
@@ -310,10 +312,10 @@ Examples:
                 print(f"ERROR: failed to get diff: {e}", file=sys.stderr)
                 return 1
 
-        all_chunks = build_chunks(diff, [])
-        chunks = [c for c in all_chunks if not chunk_exists(c.file_path, config.exclusions)[1]]
+        safe = session.safe_diff(diff)
+        chunks = list(safe.chunks)
         if not chunks:
-            all_paths = [c.file_path for c in all_chunks]
+            all_paths = list(safe.excluded)
             if not all_paths:
                 print("No files to review (diff is empty).", file=sys.stderr)
                 return 0
@@ -342,8 +344,7 @@ Examples:
                     return 1
             return 0
 
-        reviewed_paths = {c.file_path for c in chunks}
-        excluded_files = [c.file_path for c in all_chunks if c.file_path not in reviewed_paths]
+        excluded_files = list(safe.excluded)
         print(f"Diff: {len(chunks)} file chunk(s) to review", file=sys.stderr)
 
         if args.dry_run:
@@ -358,8 +359,7 @@ Examples:
         else:
             current_step = "overview pass"
             print("Stage 1: Overview pass...", file=sys.stderr)
-            # the overview prompt gets only non-excluded files: nothing excluded may reach the LLM
-            overview = run_overview("".join(c.diff_text for c in chunks), pr_desc, config)
+            overview = run_overview(safe, pr_desc, session)
             print(f"Overview: {overview[:80]}...", file=sys.stderr)
 
             all_issues = []
@@ -367,7 +367,7 @@ Examples:
             for i, chunk in enumerate(chunks):
                 current_step = chunk.file_path
                 print(f"[{i+1}/{len(chunks)}] reviewing {chunk.file_path}...", file=sys.stderr)
-                result = run_file_review(chunk, overview, config)
+                result = run_file_review(chunk, overview, session)
                 all_issues.extend(result.issues)
                 all_summaries.append((chunk.file_path, result.summary))
                 if result.incomplete:

@@ -5,12 +5,12 @@ parses JSON response, returns FileReviewResult.
 """
 
 import json as _json
-import posixpath
 import sys
 from dataclasses import dataclass, field
 
-from review_pull_request.llm import chat, ChatResponse
-from review_pull_request.tools import READ_FILE_TOOL_SCHEMA, execute_read_file, ReadError
+from review_pull_request.policy import normalise
+from review_pull_request.readers import ReadError
+from review_pull_request.tools import READ_FILE_TOOL_SCHEMA
 
 
 PER_FILE_PROMPT = """## Task
@@ -146,12 +146,14 @@ ALREADY_READ_NOTE = (
 )
 
 
-def run_file_review(chunk, overview: str, config) -> FileReviewResult:
+def run_file_review(chunk, overview: str, session) -> FileReviewResult:
     """Run agentic review for a single file chunk.
 
-    Handles read_file tool calls, retries JSON parse once on failure.
+    Model calls go through session.review_llm and file reads through session.reader, which
+    already enforce the exclusion policy. Handles read_file tool calls, retries JSON parse once.
     LLMError propagates: an unusable model API is fatal.
     """
+    config = session.config
     messages = [
         {"role": "user", "content": _build_per_file_prompt(chunk, overview)}
     ]
@@ -162,11 +164,7 @@ def run_file_review(chunk, overview: str, config) -> FileReviewResult:
     paths_read: set[str] = set()  # paths already shown to the model in this review
 
     for iteration in range(max_iterations):
-        response = chat(
-            messages,
-            tools=[READ_FILE_TOOL_SCHEMA],
-            config=config,
-        )
+        response = session.review_llm.chat(messages, tools=[READ_FILE_TOOL_SCHEMA])
 
         if response.tool_calls:
             for tc in response.tool_calls:
@@ -175,20 +173,14 @@ def run_file_review(chunk, overview: str, config) -> FileReviewResult:
                     reason = tc.arguments.get("reason", "")
                     print(f"  → read_file: {path}  (while reviewing {chunk.file_path})", file=sys.stderr, flush=True)
                     print(f"     reason: {reason}", file=sys.stderr, flush=True)
-                    key = posixpath.normpath(path.lstrip("/"))  # same spelling execute_read_file vets
+                    key = normalise(path)  # one spelling per file, for dedup and the cache
                     if key in paths_read:
                         result = ALREADY_READ_NOTE
                     elif read_cache is not None and key in read_cache:
                         result = read_cache[key]
                         print("     (cached)", file=sys.stderr, flush=True)
                     else:
-                        result = execute_read_file(
-                            path,
-                            config.repo_root,
-                            config.max_file_lines,
-                            getattr(config, "github_reader", None),
-                            getattr(config, "exclusions", None),
-                        )
+                        result = session.reader.read_file(path, config.max_file_lines)
                         if read_cache is not None and not isinstance(result, ReadError):
                             cap = getattr(config, "read_cache_max_bytes", DEFAULT_READ_CACHE_MAX_BYTES)
                             size = len(result.encode())

@@ -8,6 +8,8 @@ from review_pull_request.review import main
 
 import pytest
 
+from tests.helpers import FakeLLM, http_llm_factory
+
 
 @pytest.fixture(autouse=True)
 def _restore_argv():
@@ -69,25 +71,38 @@ DIFF = (
 )
 
 
+def _raise_404(messages, tools):
+    from review_pull_request.llm import LLMError
+
+    raise LLMError("API returned 404")
+
+
 def _run_main_with_llm_error(capsys, argv_extra=(), overview_ok=False):
     """Run main() against a PR whose every LLM call raises LLMError(404)."""
     from review_pull_request.llm import LLMError
 
     config = Config(model="bad/model", api_url="https://llm.example.com", api_token=SECRET)
     err = LLMError("API returned 404 with tools, retry also failed: 404 with tools, retry: 404")
+    review_calls = []
+
+    def responder(messages, tools):
+        if tools is None and overview_ok:  # the overview call
+            return MagicMock(content="An overview.", tool_calls=[])
+        if tools is not None:
+            review_calls.append(1)
+        raise err
+
     with patch("review_pull_request.review.load_config", return_value=config), \
          patch("review_pull_request.review.parse_pr_url", return_value=("owner", "repo", 42)), \
          patch("review_pull_request.review.get_pr_info", return_value=_mock_pr_info()), \
          patch("review_pull_request.review.get_pr_description", return_value=""), \
          patch("review_pull_request.review.get_diff", return_value=DIFF), \
-         patch("review_pull_request.stage1.chat",
-               **({"return_value": MagicMock(content="An overview.", tool_calls=[])} if overview_ok else {"side_effect": err})), \
-         patch("review_pull_request.stage2.chat", side_effect=err) as mock_stage2, \
+         patch("review_pull_request.session.HttpLLM", http_llm_factory(responder)), \
          patch("review_pull_request.review.post_comment") as mock_post, \
          patch("subprocess.run", return_value=MagicMock(returncode=0, stdout="ghtoken")):
         sys.argv = ["review", "https://github.com/owner/repo/pull/42", *argv_extra]
         rc = main()
-    return rc, mock_post, capsys.readouterr(), mock_stage2
+    return rc, mock_post, capsys.readouterr(), review_calls
 
 
 def test_llm_404_aborts_with_nonzero_exit_and_no_post(capsys):
@@ -116,10 +131,10 @@ def test_llm_error_output_never_contains_token(capsys):
 
 
 def test_overview_failure_stops_before_any_file_review(capsys):
-    rc, _, _, mock_stage2 = _run_main_with_llm_error(capsys)
+    rc, _, _, review_calls = _run_main_with_llm_error(capsys)
 
     assert rc != 0
-    mock_stage2.assert_not_called()
+    assert review_calls == []
 
 
 def test_file_review_failure_after_good_overview_aborts_and_does_not_post(capsys):
@@ -163,7 +178,7 @@ def test_startup_banner_and_error_never_print_url_credentials(capsys):
          patch("review_pull_request.review.get_pr_info", return_value=_mock_pr_info()), \
          patch("review_pull_request.review.get_pr_description", return_value=""), \
          patch("review_pull_request.review.get_diff", return_value=DIFF), \
-         patch("review_pull_request.stage1.chat", side_effect=LLMError("API returned 404")), \
+         patch("review_pull_request.session.HttpLLM", http_llm_factory(_raise_404)), \
          patch("subprocess.run", return_value=MagicMock(returncode=0, stdout="ghtoken")):
         sys.argv = ["review", "https://github.com/owner/repo/pull/42"]
         main()
@@ -184,7 +199,7 @@ def test_read_cache_is_cleared_when_main_exits(capsys):
          patch("review_pull_request.review.get_pr_info", return_value=_mock_pr_info()), \
          patch("review_pull_request.review.get_pr_description", return_value=""), \
          patch("review_pull_request.review.get_diff", return_value=DIFF), \
-         patch("review_pull_request.stage1.chat", side_effect=LLMError("API returned 404")), \
+         patch("review_pull_request.session.HttpLLM", http_llm_factory(_raise_404)), \
          patch("subprocess.run", return_value=MagicMock(returncode=0, stdout="ghtoken")):
         sys.argv = ["review", "https://github.com/owner/repo/pull/42"]
         main()
@@ -209,7 +224,7 @@ def test_verbose_output_never_prints_url_credentials(capsys):
          patch("review_pull_request.review.get_pr_info", return_value=_mock_pr_info()), \
          patch("review_pull_request.review.get_pr_description", return_value=""), \
          patch("review_pull_request.review.get_diff", return_value=DIFF), \
-         patch("review_pull_request.stage1.chat", side_effect=LLMError("API returned 404")), \
+         patch("review_pull_request.session.HttpLLM", http_llm_factory(_raise_404)), \
          patch("subprocess.run", return_value=MagicMock(returncode=0, stdout="ghtoken")):
         sys.argv = ["review", "https://github.com/owner/repo/pull/42", "--verbose"]
         main()
@@ -304,7 +319,7 @@ def test_overview_failure_names_the_overview_model(capsys):
          patch("review_pull_request.review.get_pr_info", return_value=_mock_pr_info()), \
          patch("review_pull_request.review.get_pr_description", return_value=""), \
          patch("review_pull_request.review.get_diff", return_value=DIFF), \
-         patch("review_pull_request.stage1.chat", side_effect=LLMError("API returned 404")), \
+         patch("review_pull_request.session.HttpLLM", http_llm_factory(_raise_404)), \
          patch("subprocess.run", return_value=MagicMock(returncode=0, stdout="ghtoken")):
         sys.argv = ["review", "https://github.com/owner/repo/pull/42"]
         main()
@@ -388,11 +403,11 @@ def test_excluded_notice_respects_no_output(capsys):
 
 
 def test_the_diff_is_parsed_once_per_run():
-    from review_pull_request import review as review_module
+    from review_pull_request import safe_diff as safe_diff_module
     from review_pull_request.stage2 import FileReviewResult
 
-    real = review_module.build_chunks
-    with patch("review_pull_request.review.build_chunks", side_effect=real) as spy:
+    real = safe_diff_module.build_chunks
+    with patch("review_pull_request.safe_diff.build_chunks", side_effect=real) as spy:
         _run_main_with_results(lambda c, o, cfg: FileReviewResult(c.file_path, "s", [], 0),
                                README_DIFF + DIFF, exclusions=["**/README.md"])
 
@@ -417,7 +432,7 @@ def test_excluded_files_never_reach_the_overview_prompt():
         sys.argv = ["review", "https://github.com/owner/repo/pull/42"]
         main()
 
-    sent = overview.call_args[0][0]
+    sent = overview.call_args[0][0].text
     assert "super-secret-value" not in sent
     assert "src/a.py" in sent
 

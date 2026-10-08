@@ -13,8 +13,10 @@ import pytest
 
 from review_pull_request.config import Config, SENSITIVE_PATTERNS
 from review_pull_request.review import main
+from tests.helpers import http_llm_factory
 
 CANARY = "CANARY-7f3a9c-do-not-leak"
+GITHUB_TOKEN = "ghp_0123456789abcdefghijklmnopqrstuvwxyz"  # what `gh auth token` would print
 
 SECRET_PATHS = [".env", ".ENV", "svc/.env.production", ".claude/settings.json",
                 ".Claude/settings.local.json", ".mesh/MEMORY.md", "config/active.json"]
@@ -49,7 +51,7 @@ class RecordingModel:
         self.seen = []  # every message list the model was shown
         self._asked = {}
 
-    def __call__(self, messages, tools, config):
+    def __call__(self, messages, tools):
         from types import SimpleNamespace
 
         self.seen.append(json.dumps(messages))
@@ -76,9 +78,8 @@ def _run(diff, extra_argv=(), incremental=False, exclusions=None):
         patch("review_pull_request.review.get_pr_description", return_value="Adds an app."),
         patch("review_pull_request.review.GitHubFileReader", FakeReader),
         patch("review_pull_request.review.post_comment", return_value=True),
-        patch("review_pull_request.stage1.chat", side_effect=model),
-        patch("review_pull_request.stage2.chat", side_effect=model),
-        patch("subprocess.run", return_value=MagicMock(returncode=0, stdout="ghtoken")),
+        patch("review_pull_request.session.HttpLLM", http_llm_factory(model)),
+        patch("subprocess.run", return_value=MagicMock(returncode=0, stdout=GITHUB_TOKEN)),
     ]
     if incremental:
         patches += [
@@ -126,3 +127,14 @@ def test_the_harness_itself_detects_a_leak_when_protection_is_off():
     model = _run(_diff_with_secrets(), exclusions=[])
 
     assert any(CANARY in m for m in model.seen)
+
+
+def test_credentials_are_redacted_even_when_they_sit_in_an_allowed_file():
+    """Defence in depth: a token pasted into a reviewable file is scrubbed at the model boundary."""
+    leaky = _file_diff("src/app.py", f"KEY = '{GITHUB_TOKEN}'  # and sk-abcdefghijklmnopqrstuvwxyz")
+
+    model = _run(leaky)
+
+    assert model.seen
+    assert not [m for m in model.seen if GITHUB_TOKEN in m or "sk-abcdefghij" in m]
+    assert any("[REDACTED]" in m for m in model.seen)

@@ -3,9 +3,7 @@
 Returns a 3-6 sentence plain-text summary of the PR's intent.
 """
 
-import copy
-
-from review_pull_request.llm import chat
+from review_pull_request.safe_diff import SafeDiff
 
 
 OVERVIEW_PROMPT = """You are a senior engineer reviewing a pull request.
@@ -24,9 +22,10 @@ Output plain text only. Do not add headings, section titles, or markdown formatt
 """
 
 
-def run_overview(full_diff: str, pr_description: str, config) -> str:
+def run_overview(diff: SafeDiff, pr_description: str, session) -> str:
     """Perform the overview pass.
 
+    Takes a SafeDiff (never a raw diff string) and the session's overview model client.
     Returns the overview text. LLMError propagates: an unusable model API is fatal.
     """
     if pr_description:
@@ -36,14 +35,12 @@ def run_overview(full_diff: str, pr_description: str, config) -> str:
 
     prompt = OVERVIEW_PROMPT.format(
         pr_description=description_section,
-        full_diff=full_diff,
+        full_diff=diff.text,
     )
 
     messages = [{"role": "user", "content": prompt}]
 
-    overview_config = copy.copy(config)
-    overview_config.model = config.effective_overview_model
-    response = chat(messages, tools=None, config=overview_config)
+    response = session.overview_llm.chat(messages, tools=None)
     if response.content:
         return response.content.strip()
     return "Overview not available."

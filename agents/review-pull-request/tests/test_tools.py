@@ -3,7 +3,15 @@ import os
 from unittest.mock import MagicMock, patch
 import pytest
 
-from review_pull_request.tools import execute_read_file, GitHubFileReader, READ_FILE_TOOL_SCHEMA
+from review_pull_request.policy import PathPolicy
+from review_pull_request.readers import LocalFileReader, PolicyFileReader, ReadError
+from review_pull_request.tools import GitHubFileReader, READ_FILE_TOOL_SCHEMA
+
+
+def execute_read_file(path, repo_root, max_lines, github_reader=None, exclusions=None):
+    """Read exactly as the pipeline does: a reader wrapped in the exclusion policy."""
+    inner = github_reader if github_reader is not None else LocalFileReader(repo_root)
+    return PolicyFileReader(inner, PathPolicy(exclusions or [])).read_file(path, max_lines)
 
 
 class TestExecuteReadFile:

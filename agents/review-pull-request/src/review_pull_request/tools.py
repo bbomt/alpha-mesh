@@ -1,16 +1,10 @@
-"""The read_file tool — gives the LLM full codebase access with safety guards."""
+"""The read_file tool schema and the GitHub API file reader (wrapped by PolicyFileReader)."""
 
-import os
-import posixpath
 from urllib.parse import quote
 
 import httpx
 
-from review_pull_request.chunker import is_excluded
-
-
-class ReadError(str):
-    """A failed read, as text for the model. Content that merely starts with 'Error:' is not one."""
+from review_pull_request.readers import ReadError
 
 READ_FILE_TOOL_SCHEMA = {
     "type": "function",
@@ -148,69 +142,3 @@ class GitHubFileReader:
             self._cache.pop(next(iter(self._cache)))
         self._cache[cache_key] = content
         return content
-
-
-def execute_read_file(
-    path: str,
-    repo_root: str,
-    max_lines: int,
-    github_reader: "GitHubFileReader | None" = None,
-    exclusions: list[str] | None = None,
-) -> str:
-    """Read a file with path-traversal guard and optional truncation.
-
-    Paths matching `exclusions` are refused, so excluded (e.g. token-bearing) files
-    stay away from the model through this tool too, not only in the diff.
-
-    When github_reader is provided, always reads via GitHub API (remote-always mode).
-    Without a reader, reads from the local filesystem.
-
-    Returns the file contents (possibly truncated) or an error string.
-    Never raises — errors are returned as strings so the LLM can see them.
-    """
-    def _excluded(p: str) -> bool:
-        # also compared case-insensitively: on case-insensitive filesystems ".ENV" opens ".env"
-        return bool(exclusions) and (
-            is_excluded(p, exclusions) or is_excluded(p.lower(), [x.lower() for x in exclusions])
-        )
-
-    if _excluded(posixpath.normpath(path.lstrip("/"))):
-        return ReadError(f"Error: path is excluded from review by the exclusion patterns: {path}")
-
-    real_repo = os.path.realpath(repo_root)
-    target = os.path.realpath(os.path.join(repo_root, path))
-
-    if target != real_repo and not target.startswith(real_repo + os.sep):
-        return ReadError("Error: access denied — path is outside the repository root.")
-
-    if github_reader is not None:
-        return github_reader.read_file(path, max_lines)
-
-    # A symlink (or case alias) can resolve to an excluded file: check the real target too.
-    if _excluded(os.path.relpath(target, real_repo).replace(os.sep, "/")):
-        return ReadError(f"Error: path is excluded from review by the exclusion patterns: {path}")
-
-    if not os.path.isfile(target):
-        return ReadError(f"Error: file not found: {path}")
-
-    try:
-        with open(target, "rb") as f:
-            raw = f.read(8192)
-        raw.decode("utf-8")
-    except UnicodeDecodeError:
-        return ReadError("Error: file appears to be binary and cannot be read as text.")
-    except (OSError, ValueError) as e:
-        return ReadError(f"Error: could not read file: {e}")
-
-    try:
-        with open(target, "r", encoding="utf-8") as f:
-            lines = f.readlines()
-    except Exception as e:
-        return ReadError(f"Error: could not read file: {e}")
-
-    if len(lines) > max_lines:
-        truncated = "".join(lines[:max_lines])
-        truncated += f"\n[TRUNCATED — file exceeds {max_lines} lines. Showing first {max_lines} lines only.]\n"
-        return truncated
-
-    return "".join(lines)

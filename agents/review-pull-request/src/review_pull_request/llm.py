@@ -4,6 +4,7 @@ No vendor SDK — makes raw HTTP calls to /v1/chat/completions.
 Works with OpenRouter, Anthropic compat layer, Ollama, OpenAI, etc.
 """
 
+import copy
 import json
 import time
 from dataclasses import dataclass
@@ -167,3 +168,15 @@ def chat(
             raise LLMError(f"HTTP error: {e}")
 
     raise LLMError(f"Failed after {RETRIES} retries. Last error: {last_error}")
+
+
+class HttpLLM:
+    """The real model client: chat(messages, tools) against the configured endpoint and model."""
+
+    def __init__(self, config, model: str | None = None) -> None:
+        self._config = copy.copy(config)
+        if model:
+            self._config.model = model
+
+    def chat(self, messages: list[dict], tools=None) -> ChatResponse:
+        return chat(messages, tools, self._config)

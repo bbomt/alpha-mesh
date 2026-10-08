@@ -1,12 +1,13 @@
-"""Integration tests for stage2 via dry-run mock."""
+"""Tests for stage 2 (per-file review): model replies, read_file tool use, caching, results."""
+
+from types import SimpleNamespace
 
 import pytest
-from unittest.mock import patch, MagicMock
 
 from review_pull_request.chunker import FileChunk
-from review_pull_request.stage2 import run_file_review, Issue, FileReviewResult
-from review_pull_request.config import Config
-from review_pull_request.tools import GitHubFileReader, ReadError
+from review_pull_request.stage2 import run_file_review
+from review_pull_request.readers import ReadError
+from tests.helpers import FakeLLM, StubReader, make_session
 
 
 class MockLLMResponse:
@@ -34,17 +35,59 @@ class MockConfig:
         return self.overview_model or self.model
 
 
+def _chunk(path="src/a.py"):
+    return FileChunk(file_path=path, diff_text=f"diff --git a/{path} b/{path}\n+x\n")
+
+
+def _tool_call(call_id, path):
+    return SimpleNamespace(id=call_id, name="read_file", arguments={"path": path, "reason": "check"})
+
+
+def _scripted(*tool_call_rounds):
+    """A model that makes one round of tool calls per entry, then returns a final JSON answer."""
+    rounds = list(tool_call_rounds)
+
+    def respond(messages, tools):
+        if rounds:
+            return MockLLMResponse(tool_calls=rounds.pop(0))
+        return MockLLMResponse(content='{"summary": "ok", "issues": []}')
+
+    return respond
+
+
+def _review(chunk=None, overview="Overview", config=None, model=None, reader=None):
+    """Run one file review through a session whose model and reader are fakes.
+
+    model: a FakeLLM, a callable(messages, tools) -> response, a response, or an Exception.
+    """
+    config = config or MockConfig()
+    if isinstance(model, FakeLLM):
+        llm = model
+    elif isinstance(model, Exception):
+        def raiser(messages, tools):
+            raise model
+        llm = FakeLLM(raiser)
+    elif callable(model):
+        llm = FakeLLM(model)
+    else:
+        llm = FakeLLM(lambda messages, tools: model)
+    session = make_session(config, llm=llm, reader=reader or StubReader(default="FILE BODY"))
+    return run_file_review(chunk or _chunk(), overview, session)
+
+
+def _tool_messages(llm):
+    """Tool-result contents the model saw on its last call."""
+    return [m["content"] for m in llm.calls[-1][0] if m.get("role") == "tool"]
+
+
 def test_run_file_review_parses_valid_json():
     chunk = FileChunk(
         file_path="src/main.py",
         diff_text="diff --git a/src/main.py b/src/main.py\n--- a/src/main.py\n+++ b/src/main.py\n@@ -1 +1,2 @@\n+line one\n+line two\n",
     )
-    mock_response = MockLLMResponse(
-        content='{"summary": "Adds new helper function.", "issues": []}'
-    )
-    config = MockConfig()
-    with patch("review_pull_request.stage2.chat", return_value=mock_response):
-        result = run_file_review(chunk, "Overview text", config)
+    reply = MockLLMResponse(content='{"summary": "Adds new helper function.", "issues": []}')
+
+    result = _review(chunk, model=reply)
 
     assert result.file_path == "src/main.py"
     assert "helper function" in result.summary
@@ -52,16 +95,12 @@ def test_run_file_review_parses_valid_json():
 
 
 def test_run_file_review_extracts_issues():
-    chunk = FileChunk(
-        file_path="src/auth.py",
-        diff_text="diff --git a/src/auth.py b/src/auth.py\n+new line\n",
-    )
-    mock_response = MockLLMResponse(
+    chunk = FileChunk(file_path="src/auth.py", diff_text="diff --git a/src/auth.py b/src/auth.py\n+new line\n")
+    reply = MockLLMResponse(
         content='{"summary": "Token validation.", "issues": [{"file": "src/auth.py", "line": 42, "severity": "high", "comment": "Timing issue", "suggestion": "Use hmac.compare_digest."}]}'
     )
-    config = MockConfig()
-    with patch("review_pull_request.stage2.chat", return_value=mock_response):
-        result = run_file_review(chunk, "Overview", config)
+
+    result = _review(chunk, model=reply)
 
     assert len(result.issues) == 1
     assert result.issues[0].severity == "high"
@@ -69,149 +108,62 @@ def test_run_file_review_extracts_issues():
 
 
 def test_run_file_review_retry_on_invalid_json():
-    """On first invalid JSON, we send a retry message; second failure returns error summary."""
-    chunk = FileChunk(
-        file_path="src/main.py",
-        diff_text="diff --git a/src/main.py b/src/main.py\n+new\n",
-    )
+    """On first invalid JSON we send a retry message; the second answer is used."""
+    calls = [0]
 
-    call_count = [0]
-
-    def mock_chat(messages, tools, config):
-        call_count[0] += 1
-        if call_count[0] == 1:
+    def respond(messages, tools):
+        calls[0] += 1
+        if calls[0] == 1:
             return MockLLMResponse(content="This is not JSON")
-        else:
-            return MockLLMResponse(content='{"summary": "Recovered.", "issues": []}')
+        return MockLLMResponse(content='{"summary": "Recovered.", "issues": []}')
 
-    config = MockConfig()
-    with patch("review_pull_request.stage2.chat", side_effect=mock_chat):
-        result = run_file_review(chunk, "Overview", config)
+    result = _review(model=respond)
 
     assert result.summary == "Recovered."
-    assert call_count[0] == 2
+    assert calls[0] == 2
 
 
 def test_run_file_review_handles_tool_calls():
-    chunk = FileChunk(
-        file_path="src/main.py",
-        diff_text="diff --git a/src/main.py b/src/main.py\n+new\n",
-    )
-    from review_pull_request.llm import ToolCall
-
-    tool_call = ToolCall(
-        id="call_001",
-        name="read_file",
-        arguments={"path": "src/main.py"},
-    )
-
     calls = [0]
 
-    def mock_chat(messages, tools, config):
+    def respond(messages, tools):
         calls[0] += 1
         if calls[0] == 1:
-            return MockLLMResponse(tool_calls=[tool_call])
-        else:
-            return MockLLMResponse(
-                content='{"summary": "Reviewed.", "issues": []}'
-            )
+            return MockLLMResponse(tool_calls=[_tool_call("call_001", "src/main.py")])
+        return MockLLMResponse(content='{"summary": "Reviewed.", "issues": []}')
 
-    config = MockConfig()
-    with patch("review_pull_request.stage2.chat", side_effect=mock_chat):
-        with patch("review_pull_request.stage2.execute_read_file", return_value="def main():\n    pass\n"):
-            result = run_file_review(chunk, "Overview", config)
+    result = _review(model=respond, reader=StubReader(default="def main():\n    pass\n"))
 
     assert result.tool_calls_made == 1
     assert result.summary == "Reviewed."
 
 
-def test_run_file_review_passes_github_reader_to_execute_read_file():
-    """When config.github_reader is set, stage2 passes it to execute_read_file."""
-    chunk = FileChunk(
-        file_path="src/main.py",
-        diff_text="diff --git a/src/main.py b/src/main.py\n+new\n",
-    )
-    from review_pull_request.llm import ToolCall
+def test_run_file_review_reads_through_the_sessions_reader():
+    reader = StubReader(default="remote content")
 
-    tool_call = ToolCall(
-        id="call_github",
-        name="read_file",
-        arguments={"path": "src/main.py", "reason": "checking imports"},
-    )
+    _review(model=_scripted([_tool_call("call_github", "src/main.py")]), reader=reader)
 
-    calls = [0]
-
-    def mock_chat(messages, tools, config):
-        calls[0] += 1
-        if calls[0] == 1:
-            return MockLLMResponse(tool_calls=[tool_call])
-        return MockLLMResponse(content='{"summary": "OK", "issues": []}')
-
-    mock_reader = MagicMock(spec=GitHubFileReader)
-
-    config = MockConfig()
-    config.github_reader = mock_reader
-
-    captured_reader = {}
-
-    def capturing_execute(path, repo_root, max_lines, github_reader=None, exclusions=None):
-        captured_reader["reader"] = github_reader
-        return "remote content"
-
-    with patch("review_pull_request.stage2.chat", side_effect=mock_chat):
-        with patch("review_pull_request.stage2.execute_read_file", side_effect=capturing_execute):
-            run_file_review(chunk, "Overview", config)
-
-    assert captured_reader.get("reader") is mock_reader
+    assert reader.asked == ["src/main.py"]
 
 
 def test_run_file_review_raises_on_llm_error():
-    """A failed LLM call must propagate, not return an empty 'LLM call failed.' result."""
+    """A failed LLM call must propagate, not return an empty result."""
     from review_pull_request.llm import LLMError
 
-    chunk = FileChunk(file_path="src/main.py", diff_text="diff --git a/src/main.py b/src/main.py\n+x\n")
-    with patch("review_pull_request.stage2.chat", side_effect=LLMError("API returned 404")):
-        with pytest.raises(LLMError):
-            run_file_review(chunk, "Overview text", MockConfig())
+    with pytest.raises(LLMError):
+        _review(model=LLMError("API returned 404"))
 
 
-# --- read_file caching (PMAT-229) ---
-
-def _tool_call(call_id, path):
-    from types import SimpleNamespace
-    return SimpleNamespace(id=call_id, name="read_file", arguments={"path": path, "reason": "check"})
-
-
-def _scripted_chat(*tool_call_rounds):
-    """chat() stub: one tool-call round per entry, then a final JSON answer."""
-    rounds = list(tool_call_rounds)
-
-    def fake(messages, tools, config):
-        if rounds:
-            return MockLLMResponse(tool_calls=rounds.pop(0))
-        return MockLLMResponse(content='{"summary": "ok", "issues": []}')
-
-    return fake
-
-
-def _chunk(path="src/a.py"):
-    return FileChunk(file_path=path, diff_text=f"diff --git a/{path} b/{path}\n+x\n")
-
+# --- read_file caching ---
 
 def test_repeated_read_in_one_review_hits_the_file_once_and_tells_the_model():
-    scripted = _scripted_chat([_tool_call("1", "pyproject.toml")], [_tool_call("2", "pyproject.toml")])
-    seen_messages = []
+    llm = FakeLLM(_scripted([_tool_call("1", "pyproject.toml")], [_tool_call("2", "pyproject.toml")]))
+    reader = StubReader(default="FILE BODY")
 
-    def capturing(messages, tools, config):
-        seen_messages.append(list(messages))
-        return scripted(messages, tools, config)
+    result = _review(model=llm, reader=reader)
 
-    with patch("review_pull_request.stage2.chat", side_effect=capturing), \
-         patch("review_pull_request.stage2.execute_read_file", return_value="FILE BODY") as ex:
-        result = run_file_review(_chunk(), "overview", MockConfig())
-
-    assert ex.call_count == 1
-    tool_msgs = [m["content"] for m in seen_messages[-1] if m.get("role") == "tool"]
+    assert reader.asked == ["pyproject.toml"]
+    tool_msgs = _tool_messages(llm)
     assert tool_msgs[0] == "FILE BODY"
     assert "already" in tool_msgs[1].lower()
     assert result.summary == "ok"
@@ -220,24 +172,21 @@ def test_repeated_read_in_one_review_hits_the_file_once_and_tells_the_model():
 def test_read_cache_is_shared_across_file_reviews_in_one_run():
     config = MockConfig()
     config.read_cache = {}
-    with patch("review_pull_request.stage2.chat", side_effect=_scripted_chat([_tool_call("1", "pyproject.toml")])), \
-         patch("review_pull_request.stage2.execute_read_file", return_value="FILE BODY") as first:
-        run_file_review(_chunk("a.py"), "o", config)
-    with patch("review_pull_request.stage2.chat", side_effect=_scripted_chat([_tool_call("2", "pyproject.toml")])), \
-         patch("review_pull_request.stage2.execute_read_file", return_value="FILE BODY") as second:
-        run_file_review(_chunk("b.py"), "o", config)
+    first_reader, second_reader = StubReader(default="FILE BODY"), StubReader(default="FILE BODY")
 
-    assert first.call_count == 1
-    assert second.call_count == 0  # served from the shared cache
+    _review(_chunk("a.py"), config=config, model=_scripted([_tool_call("1", "pyproject.toml")]), reader=first_reader)
+    _review(_chunk("b.py"), config=config, model=_scripted([_tool_call("2", "pyproject.toml")]), reader=second_reader)
+
+    assert first_reader.asked == ["pyproject.toml"]
+    assert second_reader.asked == []  # served from the shared cache
     assert config.read_cache == {"pyproject.toml": "FILE BODY"}
 
 
 def test_error_results_are_not_cached():
     config = MockConfig()
     config.read_cache = {}
-    with patch("review_pull_request.stage2.chat", side_effect=_scripted_chat([_tool_call("1", "missing.py")])), \
-         patch("review_pull_request.stage2.execute_read_file", return_value=ReadError("Error: file not found: missing.py")):
-        run_file_review(_chunk(), "o", config)
+
+    _review(config=config, model=_scripted([_tool_call("1", "missing.py")]), reader=StubReader())  # not found
 
     assert config.read_cache == {}
 
@@ -245,37 +194,29 @@ def test_error_results_are_not_cached():
 def test_file_whose_content_starts_with_error_is_still_cached():
     config = MockConfig()
     config.read_cache = {}
-    with patch("review_pull_request.stage2.chat", side_effect=_scripted_chat([_tool_call("1", "TROUBLESHOOTING.md")])), \
-         patch("review_pull_request.stage2.execute_read_file", return_value="Error: connection refused\nfix: restart"):
-        run_file_review(_chunk(), "o", config)
+    body = "Error: connection refused\nfix: restart"
 
-    assert config.read_cache == {"TROUBLESHOOTING.md": "Error: connection refused\nfix: restart"}
+    _review(config=config, model=_scripted([_tool_call("1", "TROUBLESHOOTING.md")]),
+            reader=StubReader({"TROUBLESHOOTING.md": body}))
+
+    assert config.read_cache == {"TROUBLESHOOTING.md": body}
 
 
 def test_read_cache_stops_storing_once_the_size_cap_is_reached():
     config = MockConfig()
     config.read_cache = {}
     config.read_cache_max_bytes = 10
-    chat_stub = _scripted_chat([_tool_call("1", "a.py")], [_tool_call("2", "b.py")])
-    bodies = {"a.py": "x" * 8, "b.py": "y" * 8}  # second would take the cache to 16 > 10
-    seen_tool_messages = []
+    llm = FakeLLM(_scripted([_tool_call("1", "a.py")], [_tool_call("2", "b.py")]))
+    reader = StubReader({"a.py": "x" * 8, "b.py": "y" * 8})  # second would take the cache to 16 > 10
 
-    def capturing(messages, tools, config):
-        seen_tool_messages[:] = [m["content"] for m in messages if m.get("role") == "tool"]
-        return chat_stub(messages, tools, config)
+    _review(config=config, model=llm, reader=reader)
 
-    with patch("review_pull_request.stage2.chat", side_effect=capturing), \
-         patch("review_pull_request.stage2.execute_read_file", side_effect=lambda p, *a: bodies[p]):
-        run_file_review(_chunk(), "o", config)
-
-    assert seen_tool_messages == ["x" * 8, "y" * 8]  # both still served to the model
-    assert config.read_cache == {"a.py": "x" * 8}    # but only the first was stored
+    assert _tool_messages(llm) == ["x" * 8, "y" * 8]  # both still served to the model
+    assert config.read_cache == {"a.py": "x" * 8}     # but only the first was stored
 
 
 def test_read_file_log_line_names_the_file_under_review(capsys):
-    with patch("review_pull_request.stage2.chat", side_effect=_scripted_chat([_tool_call("1", "pyproject.toml")])), \
-         patch("review_pull_request.stage2.execute_read_file", return_value="FILE BODY"):
-        run_file_review(_chunk("src/a.py"), "o", MockConfig())
+    _review(_chunk("src/a.py"), model=_scripted([_tool_call("1", "pyproject.toml")]))
 
     err = capsys.readouterr().err
     assert "read_file: pyproject.toml" in err
@@ -283,31 +224,30 @@ def test_read_file_log_line_names_the_file_under_review(capsys):
 
 
 def test_failed_read_can_be_retried_within_the_same_review():
-    scripted = _scripted_chat([_tool_call("1", "pyproject.toml")], [_tool_call("2", "pyproject.toml")])
-    seen = []
-
-    def capturing(messages, tools, config):
-        seen.append([m["content"] for m in messages if m.get("role") == "tool"])
-        return scripted(messages, tools, config)
-
+    llm = FakeLLM(_scripted([_tool_call("1", "pyproject.toml")], [_tool_call("2", "pyproject.toml")]))
     outcomes = iter([ReadError("Error: GitHub API rate limit exceeded."), "FILE BODY"])
-    with patch("review_pull_request.stage2.chat", side_effect=capturing), \
-         patch("review_pull_request.stage2.execute_read_file", side_effect=lambda *a: next(outcomes)) as ex:
-        run_file_review(_chunk(), "o", MockConfig())
 
-    assert ex.call_count == 2  # the failed read was not treated as "already read"
-    assert seen[-1] == ["Error: GitHub API rate limit exceeded.", "FILE BODY"]
+    class FlakyReader(StubReader):
+        def read_file(self, path, max_lines):
+            self.asked.append(path)
+            return next(outcomes)
+
+    reader = FlakyReader()
+    _review(model=llm, reader=reader)
+
+    assert len(reader.asked) == 2  # the failed read was not treated as "already read"
+    assert _tool_messages(llm) == ["Error: GitHub API rate limit exceeded.", "FILE BODY"]
 
 
 def test_read_cache_bytes_counter_tracks_stored_content():
     config = MockConfig()
     config.read_cache = {}
     config.read_cache_bytes = 0
-    with patch("review_pull_request.stage2.chat", side_effect=_scripted_chat([_tool_call("1", "a.py"), _tool_call("2", "b.py")])), \
-         patch("review_pull_request.stage2.execute_read_file", side_effect=lambda p, *a: {"a.py": "xxx", "b.py": "yy\u00e9"}[p]):
-        run_file_review(_chunk(), "o", config)
 
-    assert config.read_cache_bytes == len("xxx".encode()) + len("yy\u00e9".encode())
+    _review(config=config, model=_scripted([_tool_call("1", "a.py"), _tool_call("2", "b.py")]),
+            reader=StubReader({"a.py": "xxx", "b.py": "yyé"}))
+
+    assert config.read_cache_bytes == len("xxx".encode()) + len("yyé".encode())
 
 
 # --- severity normalisation, incomplete results, JSON extraction ---
@@ -328,8 +268,8 @@ def test_unknown_severities_are_normalised_so_findings_are_not_dropped():
         '{"file":"a","line":8,"severity":"moderate","comment":"c8"},'
         '{"file":"a","line":9,"severity":"minor","comment":"c9"}]'
     )
-    with patch("review_pull_request.stage2.chat", return_value=_final(issues)):
-        result = run_file_review(_chunk(), "o", MockConfig())
+
+    result = _review(model=_final(issues))
 
     # unknown values default to medium (like a missing severity), never silently to low
     assert [i.severity for i in result.issues] == [
@@ -337,27 +277,20 @@ def test_unknown_severities_are_normalised_so_findings_are_not_dropped():
 
 
 def test_unparseable_final_response_marks_the_result_incomplete():
-    with patch("review_pull_request.stage2.chat", return_value=MockLLMResponse(content="not json at all")):
-        result = run_file_review(_chunk(), "o", MockConfig())
-
-    assert result.incomplete is True
+    assert _review(model=MockLLMResponse(content="not json at all")).incomplete is True
 
 
 def test_max_tool_calls_marks_the_result_incomplete():
     config = MockConfig()
     config.max_tool_calls = 1
-    with patch("review_pull_request.stage2.chat", side_effect=_scripted_chat([_tool_call("1", "a.py")])), \
-         patch("review_pull_request.stage2.execute_read_file", return_value="x"):
-        result = run_file_review(_chunk(), "o", config)
+
+    result = _review(config=config, model=_scripted([_tool_call("1", "a.py")]))
 
     assert result.incomplete is True
 
 
 def test_a_normal_result_is_not_incomplete():
-    with patch("review_pull_request.stage2.chat", return_value=_final("[]")):
-        result = run_file_review(_chunk(), "o", MockConfig())
-
-    assert result.incomplete is False
+    assert _review(model=_final("[]")).incomplete is False
 
 
 def test_json_is_found_inside_prose_and_fences():
@@ -370,23 +303,18 @@ def test_json_is_found_inside_prose_and_fences():
     assert _parse_json_response("nothing here") is None
 
 
-def test_model_cannot_read_excluded_files_through_the_read_tool(tmp_path):
-    (tmp_path / ".env").write_text("TOKEN=super-secret-value")
+def test_model_cannot_read_excluded_files_through_the_read_tool():
     config = MockConfig()
-    config.repo_root = str(tmp_path)
     config.exclusions = ["**/.env"]
-    seen = []
-    scripted = _scripted_chat([_tool_call("1", ".env")])
+    llm = FakeLLM(_scripted([_tool_call("1", ".env")]))
+    reader = StubReader({".env": "TOKEN=super-secret-value"})
 
-    def capturing(messages, tools, config):
-        seen.append([m["content"] for m in messages if m.get("role") == "tool"])
-        return scripted(messages, tools, config)
+    _review(config=config, model=llm, reader=reader)
 
-    with patch("review_pull_request.stage2.chat", side_effect=capturing):
-        run_file_review(_chunk(), "o", config)
-
-    assert all("super-secret-value" not in c for batch in seen for c in batch)
-    assert "excluded" in seen[-1][0]
+    assert reader.asked == []  # the policy refused before any read
+    shown = _tool_messages(llm)
+    assert all("super-secret-value" not in c for c in shown)
+    assert "excluded" in shown[0]
 
 
 @pytest.mark.parametrize("payload", [
@@ -395,8 +323,7 @@ def test_model_cannot_read_excluded_files_through_the_read_tool(tmp_path):
     '{"summary": "s", "issues": ["oops", 3, null]}',
 ])
 def test_malformed_issues_payloads_degrade_instead_of_aborting_the_run(payload):
-    with patch("review_pull_request.stage2.chat", return_value=MockLLMResponse(content=payload)):
-        result = run_file_review(_chunk(), "o", MockConfig())
+    result = _review(model=MockLLMResponse(content=payload))
 
     assert result.issues == []
     assert result.incomplete is True  # the model's answer was unusable, so do not report it as clean
@@ -405,11 +332,10 @@ def test_malformed_issues_payloads_degrade_instead_of_aborting_the_run(payload):
 def test_equivalent_path_spellings_share_dedup_and_cache():
     config = MockConfig()
     config.read_cache = {}
-    scripted = _scripted_chat([_tool_call("1", "src/x.py")], [_tool_call("2", "./src/x.py")],
-                              [_tool_call("3", "/src/x.py")])
-    with patch("review_pull_request.stage2.chat", side_effect=scripted), \
-         patch("review_pull_request.stage2.execute_read_file", return_value="BODY") as ex:
-        run_file_review(_chunk(), "o", config)
+    reader = StubReader(default="BODY")
+    model = _scripted([_tool_call("1", "src/x.py")], [_tool_call("2", "./src/x.py")], [_tool_call("3", "/src/x.py")])
 
-    assert ex.call_count == 1
+    _review(config=config, model=model, reader=reader)
+
+    assert len(reader.asked) == 1
     assert list(config.read_cache) == ["src/x.py"]
