@@ -80,3 +80,10 @@ mesh test-alpha-mesh  # broken into test/test/run-all
 - Scripts are pure bash — no build step, no package manager
 - `bin/mesh` dispatches to sub-scripts; call individual scripts directly or via `mesh`
 - `dream` output goes to `memory/sessions/`; learnings are appended to `memory/learnings/<topic>.md`
+
+## review-pull-request agent
+
+- Rule: content of an excluded file never reaches the model, by any path.
+- Everything that reaches the model or reads a file goes through `ReviewSession`
+  (see `agents/review-pull-request/DESIGN-PATTERNS.md`). Stages never call the HTTP client or a reader directly.
+- A new input to the model must be added to `agents/review-pull-request/tests/test_canary.py` first.
