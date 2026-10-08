@@ -3,6 +3,7 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 @.mesh/MEMORY.md
+@~/environment/pmat/architecture/CLAUDE_ENGINEERING.md
 
 ## Project Purpose
 
