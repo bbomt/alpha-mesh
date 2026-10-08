@@ -2,7 +2,7 @@
 
 Covers:
 - find_last_review_comment: identifying review comments by signature
-- get_commits_since: filtering commits by timestamp
+- get_commits_between: commits after the last reviewed SHA
 - build_incremental_diff: diff retrieval (httpx mocking)
 - formatter incremental header integration
 """
@@ -12,30 +12,22 @@ from unittest.mock import MagicMock, patch
 
 from review_pull_request.constants import REVIEW_SIGNATURE
 from review_pull_request.incremental import (
-    _parse_timestamp,
     _next_page_url,
     find_last_review_comment,
-    get_commits_since,
+    get_commits_between,
     build_incremental_diff,
+    reviewed_sha,
 )
 from review_pull_request.formatter import render_report
 
 
 # ─── Helpers ────────────────────────────────────────────────────────────────
 
+BASE = "a" * 40
+HEAD = "b" * 40
+
 def _make_comment(body: str, created_at: str) -> dict:
     return {"body": body, "created_at": created_at, "id": 1}
-
-
-def _make_commit(sha: str, date: str, parents: list[dict] | None = None) -> dict:
-    return {
-        "sha": sha,
-        "commit": {
-            "committer": {"date": date},
-            "author": {"date": date},
-        },
-        "parents": parents or [],
-    }
 
 
 def _mock_response(json_data, status_code: int = 200, link: str = ""):
@@ -70,27 +62,6 @@ class TestNextPageUrl:
     def test_extracts_next_when_only_rel(self):
         link = '<https://api.github.com/page2>; rel="next"'
         assert _next_page_url(link) == "https://api.github.com/page2"
-
-
-# ─── _parse_timestamp ────────────────────────────────────────────────────────
-
-class TestParseTimestamp:
-    def test_parses_z_suffix(self):
-        dt = _parse_timestamp("2024-01-15T10:30:00Z")
-        assert dt.year == 2024
-        assert dt.month == 1
-        assert dt.day == 15
-        assert dt.hour == 10
-
-    def test_parses_plus_offset(self):
-        dt = _parse_timestamp("2024-01-15T10:30:00+00:00")
-        assert dt.year == 2024
-        assert dt.hour == 10
-
-    def test_timestamps_are_comparable(self):
-        earlier = _parse_timestamp("2024-01-15T10:00:00Z")
-        later = _parse_timestamp("2024-01-15T11:00:00Z")
-        assert later > earlier
 
 
 # ─── find_last_review_comment ────────────────────────────────────────────────
@@ -180,87 +151,53 @@ class TestFindLastReviewComment:
         assert "Findings." in result["body"]
 
 
-# ─── get_commits_since ───────────────────────────────────────────────────────
+# ─── get_commits_between ─────────────────────────────────────────────────────
 
-class TestGetCommitsSince:
-    def test_returns_empty_when_no_commits(self):
-        with patch("review_pull_request.incremental.httpx.get") as mock_get:
-            mock_get.return_value = _mock_response([])
-            result = get_commits_since("owner", "repo", 1, "2024-01-01T00:00:00Z", "token")
-        assert result == []
+class TestGetCommitsBetween:
+    def _compare(self, status, shas):
+        return _mock_response({"status": status, "commits": [{"sha": x} for x in shas]})
 
-    def test_filters_out_old_commits(self):
-        commits = [
-            _make_commit("abc1", "2024-01-10T08:00:00Z"),
-            _make_commit("abc2", "2024-01-12T08:00:00Z"),
-        ]
-        since = "2024-01-15T00:00:00Z"
-        with patch("review_pull_request.incremental.httpx.get") as mock_get:
-            mock_get.return_value = _mock_response(commits)
-            result = get_commits_since("owner", "repo", 1, since, "token")
-        assert result == []
+    def test_returns_commits_when_head_is_ahead_of_the_reviewed_commit(self):
+        with patch("review_pull_request.incremental.httpx.get",
+                   return_value=self._compare("ahead", ["c1", "c2"])) as mock_get:
+            result = get_commits_between("o", "r", "base", "head", "token")
+        assert [c["sha"] for c in result] == ["c1", "c2"]
+        assert "base...head" in mock_get.call_args[0][0]
 
-    def test_returns_new_commits_only(self):
-        commits = [
-            _make_commit("old1", "2024-01-10T08:00:00Z"),
-            _make_commit("new1", "2024-01-20T08:00:00Z"),
-            _make_commit("new2", "2024-01-21T08:00:00Z"),
-        ]
-        since = "2024-01-15T00:00:00Z"
-        with patch("review_pull_request.incremental.httpx.get") as mock_get:
-            mock_get.return_value = _mock_response(commits)
-            result = get_commits_since("owner", "repo", 1, since, "token")
-        assert len(result) == 2
-        assert result[0]["sha"] == "new1"
-        assert result[1]["sha"] == "new2"
+    def test_returns_empty_when_nothing_is_new(self):
+        with patch("review_pull_request.incremental.httpx.get",
+                   return_value=self._compare("identical", [])):
+            assert get_commits_between("o", "r", "base", "head", "token") == []
 
-    def test_returns_commits_in_chronological_order(self):
-        # API may return in any order; we sort by date
-        commits = [
-            _make_commit("c3", "2024-01-25T08:00:00Z"),
-            _make_commit("c1", "2024-01-16T08:00:00Z"),
-            _make_commit("c2", "2024-01-20T08:00:00Z"),
-        ]
-        since = "2024-01-15T00:00:00Z"
-        with patch("review_pull_request.incremental.httpx.get") as mock_get:
-            mock_get.return_value = _mock_response(commits)
-            result = get_commits_since("owner", "repo", 1, since, "token")
-        assert [c["sha"] for c in result] == ["c1", "c2", "c3"]
-
-    def test_excludes_commit_exactly_at_cutoff(self):
-        """Commit at exactly the cutoff timestamp is NOT included (strictly after)."""
-        commits = [_make_commit("sha1", "2024-01-15T10:00:00Z")]
-        since = "2024-01-15T10:00:00Z"
-        with patch("review_pull_request.incremental.httpx.get") as mock_get:
-            mock_get.return_value = _mock_response(commits)
-            result = get_commits_since("owner", "repo", 1, since, "token")
-        assert result == []
+    def test_returns_none_when_history_was_rewritten(self):
+        # Force-push or rebase: the reviewed commit is no longer an ancestor of the head.
+        with patch("review_pull_request.incremental.httpx.get",
+                   return_value=self._compare("diverged", ["c1"])):
+            assert get_commits_between("o", "r", "base", "head", "token") is None
 
     def test_returns_none_on_api_error(self):
-        """API error is distinguished from 'no new commits' by returning None."""
-        with patch("review_pull_request.incremental.httpx.get") as mock_get:
-            mock_get.return_value = _mock_response({}, status_code=500)
-            result = get_commits_since("owner", "repo", 1, "2024-01-01T00:00:00Z", "token")
-        assert result is None
+        with patch("review_pull_request.incremental.httpx.get",
+                   return_value=_mock_response({}, status_code=404)):
+            assert get_commits_between("o", "r", "base", "head", "token") is None
 
-    def test_returns_none_on_network_exception(self):
-        with patch("review_pull_request.incremental.httpx.get") as mock_get:
-            mock_get.side_effect = Exception("timeout")
-            result = get_commits_since("owner", "repo", 1, "2024-01-01T00:00:00Z", "token")
-        assert result is None
+    def test_returns_none_on_exception(self):
+        with patch("review_pull_request.incremental.httpx.get", side_effect=Exception("timeout")):
+            assert get_commits_between("o", "r", "base", "head", "token") is None
 
-    def test_skips_commits_without_date(self):
-        """Commits missing date fields are skipped."""
-        commits = [
-            {"sha": "no_date", "commit": {}, "parents": []},
-            _make_commit("with_date", "2024-01-20T08:00:00Z"),
-        ]
-        since = "2024-01-15T00:00:00Z"
-        with patch("review_pull_request.incremental.httpx.get") as mock_get:
-            mock_get.return_value = _mock_response(commits)
-            result = get_commits_since("owner", "repo", 1, since, "token")
-        assert len(result) == 1
-        assert result[0]["sha"] == "with_date"
+
+# ─── reviewed_sha ────────────────────────────────────────────────────────────
+
+class TestReviewedSha:
+    def test_reads_the_commit_a_rendered_report_records(self):
+        report = render_report("overview", [], [], MockConfig(), head_sha=HEAD)
+        assert reviewed_sha(report) == HEAD
+
+    def test_old_comments_without_a_recorded_commit_return_none(self):
+        assert reviewed_sha(f"{REVIEW_SIGNATURE}\nSome findings.") is None
+
+    def test_a_commit_quoted_further_down_the_comment_is_ignored(self):
+        body = f"{REVIEW_SIGNATURE}\n\noverview\n\n> **Reviewed commit:** `{HEAD}`\n"
+        assert reviewed_sha(body) is None
 
 
 # ─── build_incremental_diff ──────────────────────────────────────────────────
@@ -312,21 +249,23 @@ class MockConfig:
 
 class TestFormatterIncrementalHeader:
     def test_full_review_header(self):
-        report = render_report("overview", [], [], MockConfig())
-        assert report.startswith(f"{REVIEW_SIGNATURE}\n")
-        assert "incremental" not in report.split("\n")[0]
+        report = render_report("overview", [], [], MockConfig(), head_sha=HEAD)
+        assert report.split("\n")[0] == f"{REVIEW_SIGNATURE} (full review of bbbbbbb)"
+        assert f"> **Reviewed commit:** `{HEAD}`" in report
 
     def test_incremental_review_header(self):
-        incremental_info = {"commit_count": 3, "since_timestamp": "2024-01-15T10:00:00Z"}
-        report = render_report("overview", [], [], MockConfig(), incremental_info=incremental_info)
-        first_line = report.split("\n")[0]
-        assert REVIEW_SIGNATURE in first_line
-        assert "incremental" in first_line
-        assert "3 commit(s)" in first_line
+        incremental_info = {"base_sha": BASE, "commits": ["c" * 40, "d" * 40, "e" * 40]}
+        report = render_report("overview", [], [], MockConfig(), incremental_info=incremental_info,
+                               head_sha=HEAD)
+        assert report.split("\n")[0] == (
+            f"{REVIEW_SIGNATURE} (since last review: aaaaaaa..bbbbbbb, 3 new commit(s))"
+        )
+        assert "> **New commits:** `ccccccc` · `ddddddd` · `eeeeeee`" in report
+        assert reviewed_sha(report) == HEAD
 
     def test_incremental_header_contains_signature(self):
         """Incremental headers must still be detected by REVIEW_SIGNATURE search."""
-        incremental_info = {"commit_count": 1, "since_timestamp": "2024-01-15T10:00:00Z"}
+        incremental_info = {"base_sha": BASE, "commits": ["c" * 40]}
         report = render_report("overview", [], [], MockConfig(), incremental_info=incremental_info)
         assert REVIEW_SIGNATURE in report
 

@@ -16,6 +16,7 @@ from review_pull_request.review import main
 from tests.helpers import http_llm_factory
 
 CANARY = "CANARY-7f3a9c-do-not-leak"
+LAST_REVIEW = f"# AI Code Review (full review of aaaaaaa)\n\n> **Reviewed commit:** `{'a' * 40}`\n"
 GITHUB_TOKEN = "ghp_0123456789abcdefghijklmnopqrstuvwxyz"  # what `gh auth token` would print
 
 SECRET_PATHS = [".env", ".ENV", "svc/.env.production", ".claude/settings.json",
@@ -84,9 +85,9 @@ def _run(diff, extra_argv=(), incremental=False, exclusions=None):
     if incremental:
         patches += [
             patch("review_pull_request.review.find_last_review_comment",
-                  return_value={"created_at": "2024-01-15T10:00:00Z", "body": "# AI Code Review"}),
-            patch("review_pull_request.review.get_commits_since",
-                  return_value=[{"sha": "abc", "parents": [{"sha": "p"}]}]),
+                  return_value={"created_at": "2024-01-15T10:00:00Z", "body": LAST_REVIEW}),
+            patch("review_pull_request.review.get_commits_between",
+                  return_value=[{"sha": "c" * 40}]),
             patch("review_pull_request.review.build_incremental_diff", return_value=diff),
         ]
     else:

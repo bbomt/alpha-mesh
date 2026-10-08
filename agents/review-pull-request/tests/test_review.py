@@ -281,6 +281,7 @@ def test_incomplete_file_reviews_are_reported_and_fail_the_run(capsys):
     assert "not fully reviewed" in capsys.readouterr().err.lower()
 
 
+LAST_REVIEW = f"# AI Code Review (full review of aaaaaaa)\n\n> **Reviewed commit:** `{'a' * 40}`\n"
 README_DIFF = "diff --git a/README.md b/README.md\n--- a/README.md\n+++ b/README.md\n@@ -1 +1 @@\n+x\n"
 
 
@@ -464,9 +465,9 @@ def test_incremental_run_touching_only_excluded_files_does_not_claim_the_pr_is_u
          patch("review_pull_request.review.get_pr_info", return_value=_mock_pr_info()), \
          patch("review_pull_request.review.get_pr_description", return_value=""), \
          patch("review_pull_request.review.find_last_review_comment",
-               return_value={"created_at": "2024-01-15T10:00:00Z", "body": "# AI Code Review"}), \
-         patch("review_pull_request.review.get_commits_since",
-               return_value=[{"sha": "abc", "parents": [{"sha": "p"}]}]), \
+               return_value={"created_at": "2024-01-15T10:00:00Z", "body": LAST_REVIEW}), \
+         patch("review_pull_request.review.get_commits_between",
+               return_value=[{"sha": "c" * 40}]), \
          patch("review_pull_request.review.build_incremental_diff", return_value=README_DIFF), \
          patch("review_pull_request.review.post_comment") as mock_post, \
          patch("subprocess.run", return_value=MagicMock(returncode=0, stdout="ghtoken")):
@@ -485,9 +486,9 @@ def test_no_unreviewed_notice_when_a_prior_review_exists_even_after_falling_back
          patch("review_pull_request.review.get_pr_info", return_value=_mock_pr_info()), \
          patch("review_pull_request.review.get_pr_description", return_value=""), \
          patch("review_pull_request.review.find_last_review_comment",
-               return_value={"created_at": "2024-01-15T10:00:00Z", "body": "# AI Code Review"}), \
-         patch("review_pull_request.review.get_commits_since",
-               return_value=[{"sha": "abc", "parents": [{"sha": "p"}]}]), \
+               return_value={"created_at": "2024-01-15T10:00:00Z", "body": LAST_REVIEW}), \
+         patch("review_pull_request.review.get_commits_between",
+               return_value=[{"sha": "c" * 40}]), \
          patch("review_pull_request.review.build_incremental_diff", return_value=""), \
          patch("review_pull_request.review.get_diff", return_value=README_DIFF), \
          patch("review_pull_request.review.post_comment") as mock_post, \
@@ -497,3 +498,52 @@ def test_no_unreviewed_notice_when_a_prior_review_exists_even_after_falling_back
 
     assert rc == 0
     mock_post.assert_not_called()
+
+
+def _since_last_review(last_review_body, head_sha="b" * 40, commits=None, diff=README_DIFF):
+    """Run --since-last-review on a README-only change; returns (rc, mocks, stderr)."""
+    cfg = Config(model="m", api_url="http://x", api_token=SECRET, exclusions=["**/README.md"])
+    with patch("review_pull_request.review.load_config", return_value=cfg), \
+         patch("review_pull_request.review.parse_pr_url", return_value=("owner", "repo", 42)), \
+         patch("review_pull_request.review.get_pr_info", return_value=_mock_pr_info(head_sha=head_sha)), \
+         patch("review_pull_request.review.get_pr_description", return_value=""), \
+         patch("review_pull_request.review.find_last_review_comment",
+               return_value={"created_at": "2024-01-15T10:00:00Z", "body": last_review_body}), \
+         patch("review_pull_request.review.get_commits_between", return_value=commits) as between, \
+         patch("review_pull_request.review.build_incremental_diff", return_value=diff) as inc_diff, \
+         patch("review_pull_request.review.get_diff", return_value=diff) as full_diff, \
+         patch("review_pull_request.review.post_comment") as post, \
+         patch("subprocess.run", return_value=MagicMock(returncode=0, stdout="ghtoken")):
+        sys.argv = ["review", "https://github.com/owner/repo/pull/42", "--since-last-review"]
+        rc = main()
+    return rc, {"between": between, "inc_diff": inc_diff, "full_diff": full_diff, "post": post}
+
+
+def test_since_last_review_reviews_from_the_recorded_commit_to_the_head():
+    rc, m = _since_last_review(LAST_REVIEW, commits=[{"sha": "c" * 40}])
+    assert m["between"].call_args[0][2:4] == ("a" * 40, "b" * 40)
+    assert m["inc_diff"].call_args[0][2:4] == ("a" * 40, "b" * 40)
+    m["full_diff"].assert_not_called()
+
+
+def test_since_last_review_with_no_new_commits_does_nothing(capsys):
+    rc, m = _since_last_review(LAST_REVIEW, head_sha="a" * 40)
+    assert rc == 0
+    m["between"].assert_not_called()
+    m["full_diff"].assert_not_called()
+    m["post"].assert_not_called()
+    assert "no new commits since last review (aaaaaaa)" in capsys.readouterr().err.lower()
+
+
+def test_since_last_review_falls_back_to_full_review_when_the_last_review_has_no_commit(capsys):
+    rc, m = _since_last_review("# AI Code Review\nOld-format comment.")
+    m["between"].assert_not_called()
+    m["full_diff"].assert_called_once()
+    assert "full review" in capsys.readouterr().err.lower()
+
+
+def test_since_last_review_falls_back_to_full_review_when_history_was_rewritten(capsys):
+    rc, m = _since_last_review(LAST_REVIEW, commits=None)  # compare: diverged or API error
+    m["inc_diff"].assert_not_called()
+    m["full_diff"].assert_called_once()
+    assert "full review" in capsys.readouterr().err.lower()

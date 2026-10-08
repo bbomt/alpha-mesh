@@ -20,8 +20,9 @@ from review_pull_request.github import _get_github_token, post_comment
 from review_pull_request.llm import LLMError
 from review_pull_request.incremental import (
     find_last_review_comment,
-    get_commits_since,
+    get_commits_between,
     build_incremental_diff,
+    reviewed_sha,
 )
 from review_pull_request.session import ReviewSession
 from review_pull_request.stage1 import run_overview
@@ -256,56 +257,57 @@ Examples:
                     print(f"ERROR: failed to get diff: {e}", file=sys.stderr)
                     return 1
             else:
-                review_ts = last_review["created_at"]
-                new_commits = get_commits_since(owner, repo, pr_number, review_ts, _token)
-                if new_commits is None:
-                    # API error — fall back to full review rather than silently skipping
+                last_sha = reviewed_sha(last_review.get("body", ""))
+                new_commits = None
+                if not last_sha:
                     print(
-                        "WARNING: failed to fetch commits, falling back to full review.",
+                        "The last review does not record its commit — running full review.",
                         file=sys.stderr,
                     )
+                elif last_sha == head_sha:
+                    print(
+                        f"No new commits since last review ({last_sha[:7]}). Nothing to review.",
+                        file=sys.stderr,
+                    )
+                    return 0
+                else:
+                    new_commits = get_commits_between(owner, repo, last_sha, head_sha, _token)
+                    if new_commits is None:
+                        print(
+                            "WARNING: cannot list commits since the last review — running full review.",
+                            file=sys.stderr,
+                        )
+                    elif not new_commits:
+                        print(
+                            f"No new commits since last review ({last_sha[:7]}). Nothing to review.",
+                            file=sys.stderr,
+                        )
+                        return 0
+
+                if new_commits:
+                    print(
+                        f"Building diff since last review ({last_sha[:7]}..{head_sha[:7]}, "
+                        f"{len(new_commits)} new commit(s))...",
+                        file=sys.stderr,
+                    )
+                    diff = build_incremental_diff(owner, repo, last_sha, head_sha, _token)
+                    if diff:
+                        incremental_info = {
+                            "base_sha": last_sha,
+                            "commits": [c["sha"] for c in new_commits],
+                        }
+                    else:
+                        print(
+                            "WARNING: incremental diff is empty — running full review.",
+                            file=sys.stderr,
+                        )
+                if not incremental_info:
                     print("Fetching full diff...", file=sys.stderr)
                     try:
                         diff = get_diff(owner, repo, pr_number)
                     except Exception as e:
                         print(f"ERROR: failed to get diff: {e}", file=sys.stderr)
                         return 1
-                elif not new_commits:
-                    from datetime import datetime
-                    dt = datetime.fromisoformat(review_ts.replace("Z", "+00:00"))
-                    formatted = dt.strftime("%Y-%m-%d %H:%M")
-                    print(
-                        f"No new commits since last review ({formatted}). Nothing to review.",
-                        file=sys.stderr,
-                    )
-                    return 0
-                else:
-                    # New commits found — build diff from parent of first new commit to head
-                    head_sha = pr_info.get("headRefOid", "")
-                    parents = new_commits[0].get("parents", [])
-                    base_sha = parents[0]["sha"] if parents else new_commits[0]["sha"]
-
-                    print(
-                        f"Building incremental diff ({len(new_commits)} new commit(s) "
-                        f"since {review_ts[:10]})...",
-                        file=sys.stderr,
-                    )
-                    diff = build_incremental_diff(owner, repo, base_sha, head_sha, _token)
-                    if not diff:
-                        print(
-                            "WARNING: incremental diff is empty, falling back to full review.",
-                            file=sys.stderr,
-                        )
-                        try:
-                            diff = get_diff(owner, repo, pr_number)
-                        except Exception as e:
-                            print(f"ERROR: failed to get diff: {e}", file=sys.stderr)
-                            return 1
-                    else:
-                        incremental_info = {
-                            "commit_count": len(new_commits),
-                            "since_timestamp": review_ts,
-                        }
         else:
             print("Fetching diff...", file=sys.stderr)
             try:
@@ -387,6 +389,7 @@ Examples:
             config=config,
             model=model,
             incremental_info=incremental_info,
+            head_sha=head_sha,
             incomplete=incomplete_files,
             excluded=excluded_files,
         )

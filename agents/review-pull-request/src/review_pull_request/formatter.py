@@ -36,6 +36,7 @@ def render_report(
     incremental_info: dict | None = None,
     incomplete: list[str] | None = None,
     excluded: list[str] | None = None,
+    head_sha: str | None = None,
 ) -> str:
     """Build a Markdown review report.
 
@@ -45,12 +46,13 @@ def render_report(
         summaries: list of (file_path, summary) pairs
         config: Config instance
         model: effective model name (for the header)
-        incremental_info: dict with 'commit_count' and 'since_timestamp' for incremental
-            reviews; if None, this is a full review.
+        incremental_info: dict with 'base_sha' (the last reviewed commit) and 'commits'
+            (SHAs reviewed since) for --since-last-review; if None, this is a full review.
         incomplete: files whose review did not complete; they are listed and the
             all-clear is withheld.
         excluded: changed files skipped by exclusion patterns; listed so the report
             does not imply coverage it does not have.
+        head_sha: the PR head commit this report covers; recorded for --since-last-review.
     """
     if summaries is None:
         summaries = []
@@ -63,10 +65,20 @@ def render_report(
         # No REVIEW_SIGNATURE: a partial review must never become a --since-last-review baseline.
         lines.append("# Partial pull request review\n")
     elif incremental_info:
-        n = incremental_info.get("commit_count", 0)
-        lines.append(f"{REVIEW_SIGNATURE} (incremental — {n} commit(s) since last review)\n")
+        commits = incremental_info["commits"]
+        lines.append(
+            f"{REVIEW_SIGNATURE} (since last review: {incremental_info['base_sha'][:7]}.."
+            f"{(head_sha or '')[:7]}, {len(commits)} new commit(s))\n"
+        )
     else:
-        lines.append(f"{REVIEW_SIGNATURE}\n")
+        lines.append(f"{REVIEW_SIGNATURE} (full review of {head_sha[:7]})\n" if head_sha
+                     else f"{REVIEW_SIGNATURE} (full review)\n")
+
+    # The next --since-last-review run starts from this commit (see incremental.reviewed_sha).
+    if head_sha:
+        lines.append(f"> **Reviewed commit:** `{head_sha}`")
+    if incremental_info:
+        lines.append("> **New commits:** " + " · ".join(f"`{c[:7]}`" for c in commits))
 
     files_reviewed = max(0, len(summaries) - len(incomplete or []))  # summaries include incomplete files
     files_reviewed_text = (

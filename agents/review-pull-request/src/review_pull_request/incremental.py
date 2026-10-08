@@ -2,25 +2,19 @@
 
 Provides helpers to:
 - Find the most recent AI review comment on a PR
-- List commits on the PR branch added after a given timestamp
+- Read the commit a review comment recorded, and list the commits added after it
 - Fetch the unified diff between two commit SHAs
 """
 
 import re
 import sys
-from datetime import datetime
 
 import httpx
 
 from review_pull_request.constants import REVIEW_SIGNATURE
 
 
-def _parse_timestamp(ts: str) -> datetime:
-    """Parse an ISO 8601 timestamp string to a timezone-aware datetime.
-
-    Handles both 'Z' suffix and '+00:00' offset forms.
-    """
-    return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+_REVIEWED_COMMIT = re.compile(r"^> \*\*Reviewed commit:\*\* `([0-9a-f]{40})`$")
 
 
 def _next_page_url(link_header: str) -> str | None:
@@ -102,55 +96,57 @@ def find_last_review_comment(
     return max(review_comments, key=lambda c: c["created_at"])
 
 
-def get_commits_since(
+def reviewed_sha(comment_body: str) -> str | None:
+    """Return the commit SHA a review comment records, or None if it records none.
+
+    Only the header block (the heading and the quoted lines under it) is read, so a SHA
+    quoted further down, e.g. in the overview, is never taken as the baseline.
+    """
+    for line in comment_body.lstrip().split("\n")[1:]:
+        if line.strip() and not line.startswith(">"):
+            return None
+        match = _REVIEWED_COMMIT.match(line.strip())
+        if match:
+            return match.group(1)
+    return None
+
+
+def get_commits_between(
     owner: str,
     repo: str,
-    pr_number: int,
-    since_timestamp: str,
+    base_sha: str,
+    head_sha: str,
     token: str,
 ) -> list[dict] | None:
-    """Return PR commits whose committer date is strictly after since_timestamp.
+    """Return the commits after base_sha up to head_sha, oldest first.
 
-    Args:
-        since_timestamp: ISO 8601 string (e.g. "2024-01-15T10:30:00Z")
-
-    Returns:
-        List of commit dicts in chronological order (oldest first), or None on
-        API/network error. An empty list means no new commits exist (not an error).
+    Returns [] when head_sha is base_sha, and None on an API error or when base_sha is
+    not an ancestor of head_sha (force-push or rebase); the caller then reviews in full.
     """
     headers = {
         "Authorization": f"Bearer {token}",
         "Accept": "application/vnd.github.v3+json",
         "User-Agent": "review-pull-request/1.0",
     }
-
-    url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/commits"
-    commits = _paginate_get(url, headers, params={"per_page": 100})
-    if commits is None:
+    url = f"https://api.github.com/repos/{owner}/{repo}/compare/{base_sha}...{head_sha}"
+    try:
+        resp = httpx.get(url, headers=headers, timeout=30.0)
+        if resp.status_code != 200:
+            print(f"WARNING: GitHub compare API returned {resp.status_code}", file=sys.stderr)
+            return None
+        data = resp.json()
+    except Exception as e:
+        print(f"WARNING: failed to compare commits: {e}", file=sys.stderr)
         return None
 
-    cutoff = _parse_timestamp(since_timestamp)
-
-    new_commits = []
-    for commit in commits:
-        # Prefer committer date, fall back to author date
-        commit_date_str = (
-            commit.get("commit", {}).get("committer", {}).get("date", "")
-            or commit.get("commit", {}).get("author", {}).get("date", "")
-        )
-        if not commit_date_str:
-            continue
-        if _parse_timestamp(commit_date_str) > cutoff:
-            new_commits.append(commit)
-
-    # Return in chronological order (oldest first)
-    return sorted(
-        new_commits,
-        key=lambda c: (
-            c.get("commit", {}).get("committer", {}).get("date", "")
-            or c.get("commit", {}).get("author", {}).get("date", "")
-        ),
-    )
+    status = data.get("status")
+    if status == "identical":
+        return []
+    if status != "ahead":
+        print(f"WARNING: the last reviewed commit is not an ancestor of the head ({status}).",
+              file=sys.stderr)
+        return None
+    return data.get("commits", [])
 
 
 def build_incremental_diff(
