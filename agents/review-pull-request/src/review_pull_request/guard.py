@@ -15,7 +15,9 @@ TOKEN_PATTERNS = [
     r"AKIA[0-9A-Z]{16}",                  # AWS access key ids
     r"xox[baprs]-[A-Za-z0-9\-]{10,}",     # Slack tokens
     # Whole block; the gap is bounded so many unmatched headers cannot make scrubbing quadratic.
-    r"-----BEGIN [A-Z ]*PRIVATE KEY-----(?:[\s\S]{0,16384}?-----END [A-Z ]*PRIVATE KEY-----)?",
+    # Without an END marker in reach (a truncated hunk), the base64 body that follows is redacted too.
+    r"-----BEGIN [A-Z ]*PRIVATE KEY-----(?:[\s\S]{0,16384}?-----END [A-Z ]*PRIVATE KEY-----"
+    r"|[\sA-Za-z0-9+/=-]{0,16384})",
 ]
 
 

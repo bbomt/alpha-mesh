@@ -1,5 +1,6 @@
 """Split a unified diff into per-file chunks, applying exclusion patterns."""
 
+import re
 from dataclasses import dataclass
 
 from review_pull_request.policy import PathPolicy
@@ -94,7 +95,11 @@ def build_chunks(raw_diff: str, exclusions: list[str]) -> list[FileChunk]:
         return []
 
     sections: list[list[str]] = []
-    for line in raw_diff.splitlines(keepends=True):
+    # Split on "\n" only: splitlines() also breaks on \f, \r, \x85, U+2028..., which would let
+    # content inside a file's hunk start a forged "diff --git" section.
+    for line in re.split(r"(?<=\n)", raw_diff):
+        if not line:
+            continue
         if line.startswith("diff --git "):
             sections.append([line])
         elif sections:

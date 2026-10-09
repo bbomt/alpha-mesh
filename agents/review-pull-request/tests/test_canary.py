@@ -162,7 +162,14 @@ _QUOTED = (  # git quotes paths with special characters
 )
 
 
-@pytest.mark.parametrize("shape", [_RENAMED_OUT, _SPACED, _QUOTED], ids=["renamed-out", "spaced", "quoted"])
+_FORGED_SECTION = (  # a form feed inside .env's hunk: splitlines() would start a new "file" there
+    f"diff --git a/.env b/.env\n--- a/.env\n+++ b/.env\n@@ -1,2 +1,2 @@\n"
+    f"+x\x0cdiff --git a/decoy.py b/decoy.py\n+TOKEN={CANARY}\n"
+)
+
+
+@pytest.mark.parametrize("shape", [_RENAMED_OUT, _SPACED, _QUOTED, _FORGED_SECTION],
+                         ids=["renamed-out", "spaced", "quoted", "forged-section"])
 def test_canary_never_reaches_the_model_through_unusual_diff_headers(shape):
     model = _run(shape + _file_diff("src/app.py", "x = 1"))
 
@@ -170,7 +177,8 @@ def test_canary_never_reaches_the_model_through_unusual_diff_headers(shape):
     assert not [m for m in model.seen if CANARY in m]
 
 
-@pytest.mark.parametrize("shape", [_RENAMED_OUT, _SPACED, _QUOTED], ids=["renamed-out", "spaced", "quoted"])
+@pytest.mark.parametrize("shape", [_RENAMED_OUT, _SPACED, _QUOTED, _FORGED_SECTION],
+                         ids=["renamed-out", "spaced", "quoted", "forged-section"])
 def test_the_harness_detects_unusual_header_leaks_when_protection_is_off(shape):
     model = _run(shape + _file_diff("src/app.py", "x = 1"), exclusions=[])
 

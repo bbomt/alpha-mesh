@@ -7,4 +7,4 @@
 **/.env
 **/.env.*
 **/.envrc
-config/active.json
+**/config/active.json

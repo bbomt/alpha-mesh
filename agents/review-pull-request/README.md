@@ -115,7 +115,7 @@ Default list:
 **/.env
 **/.env.*
 **/.envrc
-config/active.json
+**/config/active.json
 ```
 
 ## read_file caching
@@ -137,7 +137,7 @@ While reviewing a file the model can call `read_file` to look at other files. Re
 See [DESIGN-PATTERNS.md](DESIGN-PATTERNS.md) for how this is enforced in one place (PathPolicy, SafeDiff, PolicyFileReader, GuardedLLM, ReviewSession) and how the end-to-end canary test proves it.
 
 
-Exclusion matching is case-insensitive (`.ENV` is excluded like `.env`). Exclusion patterns apply to the diff **and** to the `read_file` tool: if the model asks for an excluded path (including tricks like `src/../.env`), it gets a refusal instead of the content, so a prompt-injected instruction cannot pull `.env` or `.claude/settings.json` into the conversation. Token-bearing paths (`**/.env`, `**/.env.*` (so `.env.example` too), `**/.envrc`, `**/.claude/*`, `**/.mesh/*`, `config/active.json`) are built in and always excluded, even if `.pr-review-ignore` is missing or misplaced. Lines in `.pr-review-ignore` may use gitignore-style `dir/` (matched at any depth), bare names (`secrets.json`, `node_modules`: file or directory, at any depth), a leading `/` or a slash inside the pattern (relative to the repo root; a literal path also covers the directory's contents) and trailing ` # comments`. Excluded files are also left out of the overview prompt, not only the per-file reviews.
+Exclusion matching is case-insensitive (`.ENV` is excluded like `.env`). Exclusion patterns apply to the diff **and** to the `read_file` tool: if the model asks for an excluded path (including tricks like `src/../.env`), it gets a refusal instead of the content, so a prompt-injected instruction cannot pull `.env` or `.claude/settings.json` into the conversation. Token-bearing paths (`**/.env`, `**/.env.*` (so `.env.example` too), `**/.envrc`, `**/.claude/*`, `**/.mesh/*`, `**/config/active.json`) are built in and always excluded, even if `.pr-review-ignore` is missing or misplaced. Lines in `.pr-review-ignore` may use gitignore-style `dir/` (matched at any depth), bare names (`secrets.json`, `node_modules`: file or directory, at any depth), a leading `/` or a slash inside the pattern (relative to the repo root; a literal path also covers the directory's contents) and trailing ` # comments`. Excluded files are also left out of the overview prompt, not only the per-file reviews.
 
 ## Report size
 

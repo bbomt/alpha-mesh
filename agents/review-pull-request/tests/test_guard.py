@@ -77,3 +77,12 @@ def test_many_unmatched_private_key_headers_scrub_quickly():
     start = time.monotonic()
     Redactor([]).scrub([{"role": "user", "content": text}])
     assert time.monotonic() - start < 2.0
+
+
+def test_an_unterminated_private_key_body_is_redacted():
+    body = "MIIEowIBAAKCAQEAunterminatedkeybody"
+    text = f"+-----BEGIN RSA PRIVATE KEY-----\n+{body}\n+{body}2\n"
+
+    out = Redactor([]).scrub([{"role": "user", "content": text}])[0]["content"]
+
+    assert body not in out

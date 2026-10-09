@@ -16,7 +16,7 @@ from dotenv import load_dotenv
 REQUIRED_ENV_VARS = ["CODE_REVIEW_URL", "CODE_REVIEW_TOKEN", "CODE_REVIEW_MODEL"]
 
 # Always excluded, even if .pr-review-ignore is missing or misplaced: token-bearing paths.
-SENSITIVE_PATTERNS = ["**/.env", "**/.env.*", "**/.envrc", "**/.claude/*", "**/.mesh/*", "config/active.json"]
+SENSITIVE_PATTERNS = ["**/.env", "**/.env.*", "**/.envrc", "**/.claude/*", "**/.mesh/*", "**/config/active.json"]
 
 # Global list of files excluded from review, at the alpha-mesh root.
 IGNORE_FILE = Path(__file__).resolve().parents[4] / ".pr-review-ignore"
@@ -53,7 +53,8 @@ def normalise_patterns(lines: list[str]) -> list[str]:
             line = line.lstrip("/")
             # a literal path may name a directory: cover its contents too
             for variant in _zero_dir_variants(line):
-                patterns.extend([variant] if _has_glob(variant) else [variant, f"{variant}/*"])
+                # a glob may name a directory too ("x/*" already covers everything below x/)
+                patterns.extend([variant] if variant.endswith("*") else [variant, f"{variant}/*"])
     return patterns
 
 

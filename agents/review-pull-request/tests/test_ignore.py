@@ -27,7 +27,7 @@ def test_load_ignore_patterns_skips_comments_and_blank_lines(tmp_path):
     f = tmp_path / ".pr-review-ignore"
     f.write_text("# docs\nCLAUDE.md\n\n  .mesh/*  \n**/README.md\n")
 
-    assert load_ignore_patterns(f) == ["**/CLAUDE.md", "**/CLAUDE.md/*", ".mesh/*", "**/README.md"]
+    assert load_ignore_patterns(f) == ["**/CLAUDE.md", "**/CLAUDE.md/*", ".mesh/*", "**/README.md", "**/README.md/*"]
 
 
 def test_load_ignore_patterns_missing_file_returns_empty(tmp_path):
@@ -226,3 +226,20 @@ def test_an_explicit_config_path_that_does_not_exist_aborts(tmp_path, monkeypatc
 
     assert exc.value.code != 0
     assert "typo.toml" in capsys.readouterr().err
+
+
+def test_a_glob_that_names_a_directory_also_covers_its_contents(tmp_path):
+    f = tmp_path / ".pr-review-ignore"
+    f.write_text("**/secrets\na/**/b\n")
+    diff = _diff("x/secrets/key.pem", "secrets/k", "a/x/b/c.txt", "a/b/d.txt", "src/a.py")
+
+    assert [c.file_path for c in build_chunks(diff, load_ignore_patterns(f))] == ["src/a.py"]
+
+
+def test_active_config_is_excluded_at_any_depth():
+    from review_pull_request.config import SENSITIVE_PATTERNS
+
+    diff = _diff("config/active.json", "agents/dream/config/active.json", "src/a.py")
+    assert [c.file_path for c in build_chunks(diff, SENSITIVE_PATTERNS)] == ["src/a.py"]
+    shipped = load_ignore_patterns(IGNORE_FILE)
+    assert [c.file_path for c in build_chunks(diff, shipped)] == ["src/a.py"]
