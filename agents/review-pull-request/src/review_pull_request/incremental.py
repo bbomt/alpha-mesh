@@ -102,6 +102,8 @@ def find_last_review_comment(
     # claiming the head was already reviewed. Unknown identity means no baseline (full review).
     me = _viewer_login(headers)
     if me is None:
+        print("WARNING: could not determine which GitHub account this token belongs to (GET /user); "
+              "no earlier review can be trusted as a baseline.", file=sys.stderr)
         return None
     # The marker must open the comment: a report that merely quotes it (e.g. in the overview
     # of a diff that mentions it) is not a review baseline.

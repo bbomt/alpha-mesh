@@ -14,7 +14,8 @@ TOKEN_PATTERNS = [
     r"github_pat_[A-Za-z0-9_]{30,}",      # GitHub fine-grained tokens
     r"AKIA[0-9A-Z]{16}",                  # AWS access key ids
     r"xox[baprs]-[A-Za-z0-9\-]{10,}",     # Slack tokens
-    r"-----BEGIN [A-Z ]*PRIVATE KEY-----(?:[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----)?",  # whole block
+    # Whole block; the gap is bounded so many unmatched headers cannot make scrubbing quadratic.
+    r"-----BEGIN [A-Z ]*PRIVATE KEY-----(?:[\s\S]{0,16384}?-----END [A-Z ]*PRIVATE KEY-----)?",
 ]
 
 

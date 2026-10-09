@@ -328,3 +328,12 @@ def test_viewer_login_reads_the_token_owner():
     assert g.call_args[0][0] == "https://api.github.com/user"
     with patch("review_pull_request.incremental.httpx.get", side_effect=Exception("down")):
         assert _viewer_login({}) is None
+
+
+def test_an_unknown_token_identity_is_reported_not_silent(capsys):
+    ours = _make_comment(f"{REVIEW_SIGNATURE}\nFindings.", "2024-01-15T10:00:00Z")
+    with patch("review_pull_request.incremental._viewer_login", return_value=None), \
+         patch("review_pull_request.incremental.httpx.get", return_value=_mock_response([ours])):
+        find_last_review_comment("o", "r", 1, "tok")
+
+    assert "could not determine" in capsys.readouterr().err.lower()

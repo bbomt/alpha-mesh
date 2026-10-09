@@ -68,3 +68,12 @@ def test_a_private_key_body_is_redacted_not_just_its_header():
 
     assert "MIIEowIBAAKCAQEA1234secretkeybody" not in out
     assert out.endswith("after")
+
+
+def test_many_unmatched_private_key_headers_scrub_quickly():
+    import time
+
+    text = "-----BEGIN RSA PRIVATE KEY-----" * 3000 + "x" * 200_000
+    start = time.monotonic()
+    Redactor([]).scrub([{"role": "user", "content": text}])
+    assert time.monotonic() - start < 2.0
