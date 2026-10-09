@@ -3,6 +3,7 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 @.mesh/MEMORY.md
+@~/environment/pmat/architecture/CLAUDE_ENGINEERING.md
 
 ## Project Purpose
 
@@ -21,10 +22,10 @@ alpha-mesh/
 │   │   └── repo              # find_repo_root, get_active_model_from_settings
 │   └── install              # One-time setup (run after clone)
 ├── agents/
-│   ├── dream/               # Dream agent (mirrors pr-review pattern)
+│   ├── dream/               # Dream agent
 │   │   ├── dream/           # Python package with dream logic
 │   │   └── tests/           # Dream tests
-│   └── pr-review/          # PR review agent
+│   └── review-pull-request/ # PR review agent — LLM-powered, two-stage review
 ├── test/
 │   ├── run-all              # Runs all test suites
 │   └── test-*               # Individual test suites
@@ -58,6 +59,10 @@ mesh bootstrap-memory --dry-run
 # Validation
 mesh test-alpha-mesh  # broken into test/test/run-all
 ```
+## Jira Items
+
+- When creating a new Jira item in this project add label `ALPHA-MESH`
+
 
 ## Model Configuration
 
@@ -76,3 +81,10 @@ mesh test-alpha-mesh  # broken into test/test/run-all
 - Scripts are pure bash — no build step, no package manager
 - `bin/mesh` dispatches to sub-scripts; call individual scripts directly or via `mesh`
 - `dream` output goes to `memory/sessions/`; learnings are appended to `memory/learnings/<topic>.md`
+
+## review-pull-request agent
+
+- Rule: content of an excluded file never reaches the model, by any path.
+- Everything that reaches the model or reads a file goes through `ReviewSession`
+  (see `agents/review-pull-request/DESIGN-PATTERNS.md`). Stages never call the HTTP client or a reader directly.
+- A new input to the model must be added to `agents/review-pull-request/tests/test_canary.py` first.

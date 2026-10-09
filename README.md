@@ -10,17 +10,19 @@ alpha-mesh/
 │   ├── mesh                 # Unified CLI entry point (wraps all commands)
 │   ├── model                # Switch/check model config
 │   ├── dream                # End-of-session memory consolidation (delegates to agents/dream/)
+│   ├── review-pull-request # PR review agent (delegates to agents/review-pull-request/)
 │   ├── bootstrap-memory     # One-time: extract from existing Claude Code logs
 │   ├── install              # One-time setup
 │   └── lib/repo             # Shared bash functions: find_repo_root, get_active_model
 ├── agents/
-│   └── dream/               # Dream agent (mirrors pr-review pattern)
-│       ├── dream/           # Python package
-│       │   ├── __init__.py  # All dream logic: session extraction, LLM calls, memory synthesis
-│       │   ├── __main__.py  # Entry point for: python3 -m dream
-│       │   └── bin/dream    # Shell entry point
-│       └── tests/
-│           └── test_dream_core.py  # Python tests for dream module
+│   ├── dream/               # Dream agent
+│   │   ├── dream/           # Python package
+│   │   │   ├── __init__.py  # All dream logic: session extraction, LLM calls, memory synthesis
+│   │   │   ├── __main__.py  # Entry point for: python3 -m dream
+│   │   │   └── bin/dream    # Shell entry point
+│   │   └── tests/
+│   │       └── test_dream_core.py  # Python tests for dream module
+│   └── review-pull-request/ # PR review agent — LLM-powered, two-stage review (see below)
 ├── config/
 │   └── models.json          # All model profiles
 ├── memory/
@@ -156,67 +158,21 @@ Dream does not touch CLAUDE.md — this is a manual step.
 - LLM unreachable: writes raw extracted content as fallback, exits 0
 - Model not configured: exits with error (run `mesh model use` first)
 
-## PR Review Agent
+## Review Pull Request Agent
 
-`mesh pr-review` runs AI-powered code reviews using Claude Code with full repository context.
-
-### Quick Start
-
-```bash
-# Review a PR (from any directory)
-mesh pr-review https://github.com/org/repo/pull/123
-
-# Auto-fix mode (apply fixes and push)
-mesh pr-review https://github.com/org/repo/pull/123 --auto-fix
-
-# Dry run (see what would be posted)
-mesh pr-review https://github.com/org/repo/pull/123 --dry-run --verbose
-```
-
-### Prerequisites
-
-1. **Claude Code CLI** - Must be installed and authenticated
-2. **GitHub CLI (`gh`)** - For GitHub API authentication
-   ```bash
-   gh auth login
-   ```
-3. **Atlassian MCP Plugin** - For JIRA ticket lookups (optional)
-   - Run `claude` in your terminal
-   - Activate the Atlassian plugin
-   - Complete the OAuth flow
-
-### Documentation
-
-- Full documentation: `agents/pr-review/README.md`
-- Implementation notes: `agents/pr-review/NOTES.md`
-- Unit tests: `agents/pr-review/tests/`
-
-### Exit Codes
-
-| Code | Meaning |
-|------|----------|
-| `0` | Review completed successfully |
-| `1` | General error |
-| `2` | GitHub API error |
-| `3` | Atlassian MCP auth not available |
-| `4` | Claude Code subprocess failed |
-| `5` | Git error |
-
-## PR Review Performance Agent
-
-`mesh pr-review-performance` runs LLM-powered code review using a fast inference API. It reviews each changed file in two stages (overview + per-file analysis) and posts findings as a PR comment.
+`mesh review-pull-request` runs LLM-powered code review using a fast inference API. It reviews each changed file in two stages (overview + per-file analysis) and posts findings as a PR comment.
 
 ### Quick Start
 
 ```bash
 # Full review — all changed files
-mesh pr-review-performance https://github.com/org/repo/pull/123
+mesh review-pull-request https://github.com/org/repo/pull/123
 
 # Incremental review — only changes since the last AI review
-mesh pr-review-performance https://github.com/org/repo/pull/123 --since-last-review
+mesh review-pull-request https://github.com/org/repo/pull/123 --since-last-review
 
 # Dry run (mocked LLM, no PR comment posted)
-mesh pr-review-performance https://github.com/org/repo/pull/123 --dry-run
+mesh review-pull-request https://github.com/org/repo/pull/123 --dry-run
 ```
 
 ### --since-last-review flag
@@ -230,4 +186,4 @@ When iterating on a PR, use `--since-last-review` to review only the new commits
 
 ### Documentation
 
-Full documentation: `agents/pr-review-performance/README.md`
+Full documentation: `agents/review-pull-request/README.md`

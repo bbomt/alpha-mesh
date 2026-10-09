@@ -1,8 +1,7 @@
 # secrets — never commit
 config/active.json
 
-# local DB — back up separately, don't commit
-tasks/task-log.db
+# legacy task-log data (feature removed): keep any leftover local DB out of git
 tasks/*.db
 
 # Python bytecode
@@ -22,6 +21,6 @@ uv.lock
 *.swp
 .env
 
-# Claude Code and alpha-mesh runtime dirs
+# Claude Code and alpha-mesh runtime dirs (settings.json can hold tokens; MEMORY.md holds session text)
 .claude/
 .mesh/

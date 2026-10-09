@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# agents/review-pull-request/bin/review-pull-request
+# Actual bash runner — loads .env, tee logs, calls Python.
+
+set -euo pipefail
+
+# Capture PWD before any cd — used as fallback REPO_PATH
+ORIG_PWD="$(pwd)"
+
+# Parse --repo-path from args (explicit arg overrides default)
+REPO_PATH=""
+for ((i=1; i<=$#; i++)); do
+    arg="${!i}"
+    if [[ "$arg" == "--repo-path" ]] && [[ $((i+1)) -le $# ]]; then
+        j=$((i+1))
+        REPO_PATH="${!j}"
+        break
+    fi
+done
+
+if [[ -z "$REPO_PATH" ]]; then
+    REPO_PATH="$ORIG_PWD"
+fi
+
+export REPO_PATH
+
+SCRIPT_REALPATH="$(readlink -f "${BASH_SOURCE[0]}")"
+AGENT_DIR="$(cd "$(dirname "$SCRIPT_REALPATH")/.." && pwd)"
+MESH_DIR="$(cd "$AGENT_DIR/../.." && pwd)"
+ENV_FILE="$MESH_DIR/.env"
+
+# Load .env for CODE_REVIEW_* vars
+if [[ -f "$ENV_FILE" ]]; then
+  set -a
+  source "$ENV_FILE"
+  set +a
+fi
+
+# Tee all output to the log file
+LOG_DIR="${ALPHA_MESH_LOG_DIR:-${HOME}/environment/logs/ai/claude}"
+LOG_FILE="${LOG_DIR}/alpha-mesh-review-pull-request-$(date +%Y-%m-%d).log"
+mkdir -p "$LOG_DIR"
+LOG_DIR="$(cd "$LOG_DIR" && pwd)"   # absolute, because we cd below before tee opens the file
+LOG_FILE="${LOG_DIR}/$(basename "$LOG_FILE")"
+
+cd "$AGENT_DIR"
+
+exec uv run python -m review_pull_request --repo-path "$REPO_PATH" "$@" 2>&1 | tee -a "$LOG_FILE"
