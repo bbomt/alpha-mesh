@@ -160,7 +160,7 @@ On failure it:
 
 When iterating on a PR, re-running a full review after each fix is slow and noisy — it re-flags issues you already addressed. The `--since-last-review` flag solves this:
 
-1. **Finds the last review comment** — scans PR comments for the `# AI Code Review` signature
+1. **Finds the last review comment** — scans PR comments for the `# AI Code Review` signature, posted by the same GitHub account the tool posts as (a look-alike comment from anyone else is ignored)
 2. **Reads the commit it reviewed** — from its `Reviewed commit` line
 3. **Builds an incremental diff** — from that commit to the PR head, so every commit after it is covered, whenever it was made
 4. **Reviews the incremental diff** — same Stage 1 + Stage 2 pipeline on the smaller diff
@@ -189,7 +189,7 @@ mesh review-pull-request https://github.com/org/repo/pull/42 --since-last-review
 
 ## Configuration
 
-`review_config.toml` controls exclusion patterns, per-file line limits, and model overrides:
+`review_config.toml` (next to the agent; `--config` overrides it, and a `--config` path that does not exist aborts the run) controls exclusion patterns, per-file line limits, and model overrides:
 
 ```toml
 [limits]

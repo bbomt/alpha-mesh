@@ -23,6 +23,10 @@ SECRET_PATHS = [".env", ".ENV", "svc/.env.production", ".claude/settings.json",
                 ".Claude/settings.local.json", ".mesh/MEMORY.md", "config/active.json"]
 
 
+READ_ATTEMPTS = (".env", "./.env", "/.env", ".ENV", "svc/../.env",
+                 ".claude/settings.json", "config/active.json", "src/app.py")
+
+
 def _file_diff(path, body):
     return f"diff --git a/{path} b/{path}\n--- a/{path}\n+++ b/{path}\n@@ -1 +1 @@\n+{body}\n"
 
@@ -50,6 +54,7 @@ class RecordingModel:
 
     def __init__(self):
         self.seen = []  # every message list the model was shown
+        self.requested = []  # every path the model asked to read
         self._asked = {}
 
     def __call__(self, messages, tools):
@@ -58,11 +63,11 @@ class RecordingModel:
         self.seen.append(json.dumps(messages))
         if tools is None:  # overview pass
             return SimpleNamespace(content="Overview text.", tool_calls=[])
-        key = id(messages[0])
-        paths = self._asked.setdefault(key, [".env", "./.env", "/.env", ".ENV", "svc/../.env",
-                                             ".claude/settings.json", "config/active.json", "src/app.py"])
+        key = messages[0]["content"]  # the per-file prompt: stable within a conversation (ids are not)
+        paths = self._asked.setdefault(key, list(READ_ATTEMPTS))
         if paths:
             p = paths.pop(0)
+            self.requested.append(p)
             call = SimpleNamespace(id=f"c-{p}", name="read_file", arguments={"path": p, "reason": "canary"})
             return SimpleNamespace(content=None, tool_calls=[call])
         return SimpleNamespace(content='{"summary": "ok", "issues": []}', tool_calls=[])
@@ -106,6 +111,7 @@ def test_canary_never_reaches_the_model_through_a_full_review():
     model = _run(_diff_with_secrets())
 
     assert model.seen, "the fake model was never called, so the test proves nothing"
+    assert set(model.requested) == set(READ_ATTEMPTS), "every read attempt must actually be exercised"
     leaked = [m for m in model.seen if CANARY in m]
     assert not leaked, f"{len(leaked)} model call(s) contained the canary"
 
@@ -120,7 +126,9 @@ def test_canary_never_reaches_the_model_through_an_incremental_review():
 def test_the_ordinary_file_is_still_reviewed_and_readable():
     model = _run(_diff_with_secrets())
 
-    assert any("src/app.py" in m for m in model.seen)
+    per_file = model.seen[1:]  # seen[0] is the overview, which names every kept file anyway
+    assert any("src/app.py" in m for m in per_file)
+    assert "src/app.py" in model.requested
 
 
 def test_the_harness_itself_detects_a_leak_when_protection_is_off():

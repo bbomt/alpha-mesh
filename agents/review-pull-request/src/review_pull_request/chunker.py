@@ -85,13 +85,6 @@ def _chunk(header_rest: str, lines: list[str]) -> FileChunk:
     return FileChunk(file_path=file_path, diff_text="".join(lines), paths=paths)
 
 
-def chunk_exists(file_path: str, exclusions: list[str]) -> tuple[bool, bool]:
-    # The comparison itself lives in PathPolicy.
-    if PathPolicy(exclusions).is_excluded(file_path):
-        return True, True
-    return False, False
-
-
 def build_chunks(raw_diff: str, exclusions: list[str]) -> list[FileChunk]:
     """Split a diff into per-file chunks; a chunk is dropped if any path it names is excluded.
 

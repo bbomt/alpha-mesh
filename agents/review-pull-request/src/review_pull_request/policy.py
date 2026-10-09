@@ -28,6 +28,8 @@ class PathPolicy:
 
     def is_excluded(self, path: str) -> bool:
         target = normalise(path).lower()
+        if target == ".." or target.startswith("../"):
+            return True  # escapes the repo root: never matchable, so fail closed
         for raw in self._patterns:
             pattern = raw.lower()
             if fnmatch.fnmatchcase(target, pattern):

@@ -98,3 +98,13 @@ def test_a_text_file_with_a_multibyte_character_at_the_sniff_boundary_is_not_bin
     text = LocalFileReader(str(tmp_path)).read_file("t.txt", 100)
 
     assert not isinstance(text, ReadError) and text.endswith("end\n")
+
+
+def test_local_reader_caps_bytes_as_well_as_lines(tmp_path):
+    from review_pull_request.readers import MAX_READ_BYTES
+
+    (tmp_path / "min.js").write_text("x" * (MAX_READ_BYTES * 3) + "\n")  # one enormous line
+
+    text = LocalFileReader(str(tmp_path)).read_file("min.js", 100)
+
+    assert len(text) < MAX_READ_BYTES + 500 and "TRUNCATED" in text

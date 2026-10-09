@@ -15,6 +15,9 @@ class ReadError(str):
     """A failed read, as text for the model. Content that merely starts with 'Error:' is not one."""
 
 
+MAX_READ_BYTES = 1024 * 1024  # a file of a few huge lines is still bounded
+
+
 class LocalFileReader:
     """Reads files under a local repo root, with a traversal guard and truncation."""
 
@@ -47,11 +50,15 @@ class LocalFileReader:
             return ReadError(f"Error: could not read file: {e}")
 
         try:
-            with open(target, "r", encoding="utf-8") as f:
-                lines = list(itertools.islice(f, max_lines + 1))  # never load more than needed
+            with open(target, "rb") as f:
+                raw = f.read(MAX_READ_BYTES + 1)  # never load more than needed
+            text = codecs.getincrementaldecoder("utf-8")(errors="replace").decode(raw[:MAX_READ_BYTES], final=False)
         except Exception as e:
             return ReadError(f"Error: could not read file: {e}")
 
+        lines = list(itertools.islice(text.splitlines(keepends=True), max_lines + 1))
+        if len(raw) > MAX_READ_BYTES and len(lines) <= max_lines:
+            return "".join(lines) + f"\n[TRUNCATED — file exceeds {MAX_READ_BYTES} bytes.]\n"
         if len(lines) > max_lines:
             truncated = "".join(lines[:max_lines])
             truncated += f"\n[TRUNCATED — file exceeds {max_lines} lines. Showing first {max_lines} lines only.]\n"

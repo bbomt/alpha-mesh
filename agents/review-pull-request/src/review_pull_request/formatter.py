@@ -79,7 +79,7 @@ def render_report(
     if head_sha:
         lines.append(f"> **Reviewed commit:** `{head_sha}`")
     if incremental_info:
-        lines.append("> **New commits:** " + " · ".join(f"`{c[:7]}`" for c in commits))
+        lines.append("> **New commits:** " + " · ".join(f"`{c[:7]}`" for c in incremental_info["commits"]))
 
     files_reviewed = max(0, len(summaries) - len(incomplete or []))  # summaries include incomplete files
     files_reviewed_text = (

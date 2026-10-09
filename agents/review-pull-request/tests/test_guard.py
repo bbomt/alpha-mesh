@@ -59,3 +59,12 @@ def test_fine_grained_github_tokens_are_replaced():
     out = Redactor([]).scrub([{"role": "tool", "content": f"TOKEN={token}"}])[0]["content"]
 
     assert "github_pat_11ABC" not in out
+
+
+def test_a_private_key_body_is_redacted_not_just_its_header():
+    pem = "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA1234secretkeybody\n-----END RSA PRIVATE KEY-----"
+
+    out = Redactor([]).scrub([{"role": "user", "content": f"key:\n{pem}\nafter"}])[0]["content"]
+
+    assert "MIIEowIBAAKCAQEA1234secretkeybody" not in out
+    assert out.endswith("after")

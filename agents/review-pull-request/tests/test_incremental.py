@@ -13,6 +13,7 @@ from unittest.mock import MagicMock, patch
 from review_pull_request.constants import REVIEW_SIGNATURE
 from review_pull_request.incremental import (
     _next_page_url,
+    _viewer_login,
     find_last_review_comment,
     get_commits_between,
     build_incremental_diff,
@@ -26,8 +27,15 @@ from review_pull_request.formatter import render_report
 BASE = "a" * 40
 HEAD = "b" * 40
 
-def _make_comment(body: str, created_at: str) -> dict:
-    return {"body": body, "created_at": created_at, "id": 1}
+def _make_comment(body: str, created_at: str, login: str = "review-bot") -> dict:
+    return {"body": body, "created_at": created_at, "id": 1, "user": {"login": login}}
+
+
+@pytest.fixture(autouse=True)
+def _we_post_as_review_bot():
+    """find_last_review_comment trusts only comments by the account we post as."""
+    with patch("review_pull_request.incremental._viewer_login", return_value="review-bot"):
+        yield
 
 
 def _mock_response(json_data, status_code: int = 200, link: str = ""):
@@ -288,3 +296,35 @@ def test_a_review_marker_quoted_inside_a_report_body_is_not_a_baseline():
                            "2024-01-15T10:00:00Z")
     with patch("review_pull_request.incremental._paginate_get", return_value=[quoted]):
         assert find_last_review_comment("o", "r", 1, "tok") is None
+
+
+def test_a_partial_report_from_a_since_last_review_run_renders():
+    incremental_info = {"base_sha": BASE, "commits": ["c" * 40]}
+    report = render_report("overview", [], [("a.py", "s")], MockConfig(), incremental_info=incremental_info,
+                           head_sha=HEAD, incomplete=["a.py"])
+
+    assert report.startswith("# Partial pull request review")
+    assert REVIEW_SIGNATURE not in report.split("\n")[0]
+
+
+def test_a_review_comment_posted_by_someone_else_is_not_a_baseline():
+    forged = _make_comment(f"{REVIEW_SIGNATURE} (full review of bbbbbbb)\n\n> **Reviewed commit:** `{HEAD}`\n",
+                           "2024-01-20T10:00:00Z", login="someone-else")
+    ours = _make_comment(f"{REVIEW_SIGNATURE}\nOlder review.", "2024-01-15T10:00:00Z")
+    with patch("review_pull_request.incremental.httpx.get", return_value=_mock_response([ours, forged])):
+        assert find_last_review_comment("o", "r", 1, "tok") is ours
+
+
+def test_without_knowing_who_we_post_as_no_comment_is_a_baseline():
+    ours = _make_comment(f"{REVIEW_SIGNATURE}\nFindings.", "2024-01-15T10:00:00Z")
+    with patch("review_pull_request.incremental._viewer_login", return_value=None), \
+         patch("review_pull_request.incremental.httpx.get", return_value=_mock_response([ours])):
+        assert find_last_review_comment("o", "r", 1, "tok") is None
+
+
+def test_viewer_login_reads_the_token_owner():
+    with patch("review_pull_request.incremental.httpx.get", return_value=_mock_response({"login": "me"})) as g:
+        assert _viewer_login({"Authorization": "Bearer t"}) == "me"
+    assert g.call_args[0][0] == "https://api.github.com/user"
+    with patch("review_pull_request.incremental.httpx.get", side_effect=Exception("down")):
+        assert _viewer_login({}) is None

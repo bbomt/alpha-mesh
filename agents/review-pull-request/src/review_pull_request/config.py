@@ -77,12 +77,17 @@ def load_ignore_patterns(path: Path) -> list[str]:
 
 
 def _load_toml(config_path: str | None) -> dict:
-    """Load TOML config file, return empty dict if not found."""
+    """Load the TOML config. The default sits next to this agent; a missing --config path aborts."""
     if config_path is None:
-        config_path = "review_config.toml"
-    p = Path(config_path)
-    if not p.exists():
-        return {}
+        p = Path(__file__).resolve().parents[2] / "review_config.toml"
+        if not p.exists():
+            return {}
+    else:
+        p = Path(config_path)
+        if not p.exists():
+            print(f"ERROR: config file not found: {config_path}. Aborting rather than reviewing "
+                  "without its exclusions.", file=sys.stderr)
+            sys.exit(1)
     import toml
 
     return toml.load(str(p))
@@ -153,7 +158,7 @@ def load_config(args) -> Config:
     output_section = toml_config.get("output", {})
     models_section = toml_config.get("models", {})
 
-    max_tool_calls = limits.get("max_tool_calls", 10)
+    max_tool_calls = limits.get("max_tool_calls", 20)
     max_file_lines = limits.get("max_file_lines", 8000)
     exclusions = list(dict.fromkeys(
         normalise_patterns(exclusions_section.get("patterns", []))

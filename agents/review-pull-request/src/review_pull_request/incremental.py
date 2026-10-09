@@ -61,6 +61,18 @@ def _paginate_get(url: str, headers: dict, params: dict | None = None) -> list |
     return items
 
 
+def _viewer_login(headers: dict) -> str | None:
+    """The login of the account the token belongs to (the one that posts our reviews), or None."""
+    try:
+        resp = httpx.get("https://api.github.com/user", headers=headers, timeout=30.0)
+        if resp.status_code != 200:
+            return None
+        login = resp.json().get("login")
+        return login if isinstance(login, str) and login else None
+    except Exception:
+        return None
+
+
 def find_last_review_comment(
     owner: str,
     repo: str,
@@ -69,8 +81,8 @@ def find_last_review_comment(
 ) -> dict | None:
     """Find the most recent AI review comment on the PR.
 
-    Fetches all issue-level comments (paginated) and returns the one whose body
-    contains REVIEW_SIGNATURE with the latest created_at timestamp.
+    Fetches all issue-level comments (paginated) and returns the latest one that starts with
+    REVIEW_SIGNATURE and was posted by the token's own account.
 
     Returns:
         Comment dict (with 'created_at', 'body', etc.) or None if not found.
@@ -86,9 +98,18 @@ def find_last_review_comment(
     if comments is None:
         return None
 
+    # Only our own comments count: anyone who can comment could otherwise post a fake review
+    # claiming the head was already reviewed. Unknown identity means no baseline (full review).
+    me = _viewer_login(headers)
+    if me is None:
+        return None
     # The marker must open the comment: a report that merely quotes it (e.g. in the overview
     # of a diff that mentions it) is not a review baseline.
-    review_comments = [c for c in comments if c.get("body", "").lstrip().startswith(REVIEW_SIGNATURE)]
+    review_comments = [
+        c for c in comments
+        if (c.get("user") or {}).get("login") == me
+        and c.get("body", "").lstrip().startswith(REVIEW_SIGNATURE)
+    ]
     if not review_comments:
         return None
 

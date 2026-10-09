@@ -1,7 +1,8 @@
 """Tests for chunker.py — build_chunks."""
 import pytest
 
-from review_pull_request.chunker import build_chunks, chunk_exists, FileChunk
+from review_pull_request.chunker import build_chunks, FileChunk
+from review_pull_request.policy import PathPolicy
 
 
 class TestBuildChunks:
@@ -110,18 +111,18 @@ diff --git a/file-b.py b/file-b.py
         assert chunks[0].file_path == "new/path.py"
 
 
-class TestChunkExists:
+class TestExclusionPatterns:
     def test_no_match(self):
-        assert not chunk_exists("src/main.py", ["package-lock.json", "*/dist/*"])[0]
+        assert not PathPolicy(["package-lock.json", "*/dist/*"]).is_excluded("src/main.py")
 
     def test_fnmatch_dist(self):
-        assert chunk_exists("dist/bundle.js", ["*/dist/*"])[0]
+        assert PathPolicy(["*/dist/*"]).is_excluded("dist/bundle.js")
 
     def test_fnmatch_node_modules(self):
-        assert chunk_exists("node_modules/foo/bar.js", ["*/node_modules/*"])[0]
+        assert PathPolicy(["*/node_modules/*"]).is_excluded("node_modules/foo/bar.js")
 
     def test_exact_lockfile(self):
-        assert chunk_exists("package-lock.json", ["package-lock.json"])[0]
+        assert PathPolicy(["package-lock.json"]).is_excluded("package-lock.json")
 
 
 def test_exclusion_matching_ignores_case():

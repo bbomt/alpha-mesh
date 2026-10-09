@@ -212,3 +212,17 @@ def test_a_double_star_in_the_middle_also_matches_zero_directories(tmp_path):
     diff = _diff("src/x.tmp", "src/a/b/y.tmp", "other/z.tmp")
 
     assert [c.file_path for c in build_chunks(diff, load_ignore_patterns(f))] == ["other/z.tmp"]
+
+
+def test_an_explicit_config_path_that_does_not_exist_aborts(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(config_module, "load_dotenv", lambda *a, **k: None)
+    for var, val in [("CODE_REVIEW_URL", "http://x"), ("CODE_REVIEW_TOKEN", "t"), ("CODE_REVIEW_MODEL", "m")]:
+        monkeypatch.setenv(var, val)
+    args = SimpleNamespace(config=str(tmp_path / "typo.toml"), model=None, base=None, repo_path=None,
+                           dry_run=False, verbose=False, hide_pr_comment=False)
+
+    with pytest.raises(SystemExit) as exc:
+        load_config(args)
+
+    assert exc.value.code != 0
+    assert "typo.toml" in capsys.readouterr().err

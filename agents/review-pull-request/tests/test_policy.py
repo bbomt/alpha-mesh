@@ -32,3 +32,9 @@ def test_policies_combine_with_or():
 
 def test_empty_policy_excludes_nothing():
     assert not PathPolicy([]).is_excluded(".env")
+
+
+@pytest.mark.parametrize("path", ["../.env", "../../.env", "svc/../../.env", ".."])
+def test_paths_that_escape_the_root_are_excluded(path):
+    assert PathPolicy(["**/.env"]).is_excluded(path)
+    assert PathPolicy([]).is_excluded(path)  # fail closed even with no patterns

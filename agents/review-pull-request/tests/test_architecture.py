@@ -14,7 +14,8 @@ def _source(name):
     return (SRC / name).read_text(encoding="utf-8")
 
 
-STAGE_FORBIDDEN = {"llm", "HttpLLM", "GitHubFileReader", "LocalFileReader", "github_reader",
+STAGE_FORBIDDEN = {"_inner", "open", "read_text", "read_bytes", "Path", "os",
+                   "llm", "HttpLLM", "GitHubFileReader", "LocalFileReader", "github_reader",
                    "httpx", "requests", "urllib", "socket", "subprocess", "importlib", "__import__"}
 
 
