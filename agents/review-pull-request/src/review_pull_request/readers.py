@@ -92,23 +92,33 @@ class PolicyFileReader:
         clean = normalise(path)
         if clean == ".." or clean.startswith("../"):
             return ReadError("Error: access denied — path is outside the repository root.")
-        if self._policy.is_excluded(clean):
+        if self._is_excluded(clean):
             return self._refused(path)
+        return self._inner.read_file(clean, max_lines)
+
+    def list_files(self) -> list[str] | None:
+        """The repo's files minus excluded ones, or None if the inner reader cannot list.
+
+        Names reach the model too, so ones with control characters (a newline could forge
+        prompt text) are dropped along with excluded files.
+        """
+        inner = getattr(self._inner, "list_files", None)
+        files = inner() if inner is not None else None
+        if files is None:
+            return None
+        return [p for p in files
+                if not any(ord(c) < 32 or ord(c) == 127 for c in p) and not self._is_excluded(normalise(p))]
+
+    def _is_excluded(self, clean: str) -> bool:
+        if self._policy.is_excluded(clean):
+            return True
         # A symlink (or case alias) can resolve to an excluded file: check the real target too.
         canonical = getattr(self._inner, "canonical_path", None)
         if canonical is not None:
             real = canonical(clean)
             if real is not None and self._policy.is_excluded(real):
-                return self._refused(path)
-        return self._inner.read_file(clean, max_lines)
-
-    def list_files(self) -> list[str] | None:
-        """The repo's files minus excluded ones, or None if the inner reader cannot list."""
-        inner = getattr(self._inner, "list_files", None)
-        files = inner() if inner is not None else None
-        if files is None:
-            return None
-        return [p for p in files if not self._policy.is_excluded(p)]
+                return True
+        return False
 
     def close(self) -> None:
         close = getattr(self._inner, "close", None)

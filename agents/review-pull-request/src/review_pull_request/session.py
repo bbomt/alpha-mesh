@@ -19,6 +19,8 @@ from review_pull_request.policy import PathPolicy, normalise
 from review_pull_request.readers import PolicyFileReader
 from review_pull_request.safe_diff import SafeDiff
 
+MAX_LISTING_ATTEMPTS = 3  # per run: a GitHub outage must not cost a call on every lookup
+
 
 class ReviewSession:
     def __init__(self, config, policy, review_llm, reader) -> None:
@@ -27,6 +29,7 @@ class ReviewSession:
         self.review_llm = review_llm
         self.reader = reader
         self._files: list[str] | None = None  # repo tree minus excluded files, loaded once
+        self._listing_attempts = 0
 
     @classmethod
     def create(cls, config, inner_reader, llm_factory=None, secrets=()) -> "ReviewSession":
@@ -46,13 +49,13 @@ class ReviewSession:
     def _tree(self) -> list[str]:
         # Through the PolicyFileReader, so excluded files are already gone; folders are derived
         # only from the files that remain, so a folder of excluded files never shows up either.
-        if self._files is None:
-            files = self.reader.list_files()
-            if files is None:
+        if self._files is None and self._listing_attempts < MAX_LISTING_ATTEMPTS:
+            self._listing_attempts += 1  # a failure (None) may be transient: later callers retry
+            self._files = self.reader.list_files()
+            if self._files is None and self._listing_attempts == 1:
                 print("  (file listing unavailable: reviews continue without folder hints)",
                       file=sys.stderr, flush=True)
-            self._files = files or []
-        return self._files
+        return self._files or []
 
     def folder_listing(self, folder: str, limit: int = 50) -> list[str]:
         """Names directly in a folder ('' is the root): files, then sub-folders ending in '/'."""
@@ -68,8 +71,8 @@ class ReviewSession:
 
     def nearest_folder(self, path: str) -> str:
         """The deepest parent folder of path that has files in the tree ('' is the root)."""
-        folder = posixpath.dirname(normalise(path))
-        while folder and not any(p.startswith(f"{folder}/") for p in self._tree()):
+        folder, tree = posixpath.dirname(normalise(path)), self._tree()
+        while folder and not any(p.startswith(f"{folder}/") for p in tree):
             folder = posixpath.dirname(folder)
         return folder
 

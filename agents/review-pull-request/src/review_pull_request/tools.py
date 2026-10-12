@@ -78,13 +78,16 @@ class GitHubFileReader:
             pass
 
     def list_files(self) -> list[str] | None:
-        """Every file path in the repo at the PR head SHA (one API call), or None on failure."""
+        """Every file path in the repo at the PR head SHA (one API call), or None on failure or truncation."""
         url = f"{self._GITHUB_API}/repos/{self._owner}/{self._repo}/git/trees/{self._ref}?recursive=1"
         try:
             response = self._client.get(url, headers={"Accept": "application/vnd.github+json"})
             if response.status_code != 200:
                 return None
-            return [e["path"] for e in response.json().get("tree", []) if e.get("type") == "blob"]
+            payload = response.json()
+            if payload.get("truncated"):
+                return None  # a partial tree would give wrong hints; none is better
+            return [e["path"] for e in payload.get("tree", []) if e.get("type") == "blob"]
         except Exception:
             return None
 

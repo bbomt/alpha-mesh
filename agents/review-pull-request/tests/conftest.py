@@ -1,4 +1,5 @@
-"""No test reaches GitHub: main() gets an empty stub reader unless a test patches its own."""
+"""main() never builds a real GitHubFileReader in tests: it gets an empty stub reader
+(no file reads or tree fetch over the network) unless a test patches its own."""
 
 from unittest.mock import patch
 

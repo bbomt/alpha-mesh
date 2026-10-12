@@ -102,6 +102,14 @@ class TestGitHubFileReader:
         assert "owner/repo/git/trees/abc123sha?recursive=1" in MockClient.return_value.get.call_args[0][0]
 
     @patch("review_pull_request.tools.httpx.Client")
+    def test_file_listing_is_none_when_github_truncates_the_tree(self, MockClient):
+        resp = _make_http_response(200)
+        resp.json.return_value = {"truncated": True, "tree": [{"path": "a.py", "type": "blob"}]}
+        MockClient.return_value.get.return_value = resp
+
+        assert self._reader().list_files() is None
+
+    @patch("review_pull_request.tools.httpx.Client")
     def test_file_listing_is_none_when_the_tree_cannot_be_fetched(self, MockClient):
         MockClient.return_value.get.return_value = _make_http_response(404)
 

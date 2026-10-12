@@ -307,6 +307,40 @@ def test_without_a_file_listing_the_review_still_runs(capsys):
     assert "file listing unavailable" in capsys.readouterr().err
 
 
+def test_a_failed_file_listing_is_retried_by_the_next_file_review(capsys):
+    class FlakyListing(StubReader):
+        calls = 0
+
+        def list_files(self):
+            FlakyListing.calls += 1
+            return None if FlakyListing.calls == 1 else ["pkg/a.py", "pkg/b.py"]
+
+    llm = FakeLLM(_scripted())
+    session = make_session(MockConfig(), llm=llm, reader=FlakyListing())
+    run_file_review(_chunk("pkg/a.py"), "Overview", session)
+    run_file_review(_chunk("pkg/b.py"), "Overview", session)
+
+    assert "(`pkg/`): a.py, b.py" in llm.calls[-1][0][0]["content"]  # the second review got the listing
+    assert FlakyListing.calls == 2
+    assert capsys.readouterr().err.count("file listing unavailable") == 1
+
+
+def test_a_file_listing_that_keeps_failing_is_tried_at_most_three_times_per_run():
+    class DownListing(StubReader):
+        calls = 0
+
+        def list_files(self):
+            DownListing.calls += 1
+            return None
+
+    llm = FakeLLM(_scripted(*[[_tool_call(str(i), f"pkg/missing{i}.py")] for i in range(4)]))
+    session = make_session(MockConfig(), llm=llm, reader=DownListing())
+    for name in ("a.py", "b.py", "c.py"):
+        run_file_review(_chunk(f"pkg/{name}"), "Overview", session)
+
+    assert DownListing.calls == 3
+
+
 def test_other_failed_reads_are_printed(capsys):
     _review(model=_scripted([_tool_call("1", "a.py")]),
             reader=StubReader({"a.py": ReadError("Error: GitHub API rate limit exceeded.")}))
