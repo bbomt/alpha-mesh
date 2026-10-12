@@ -11,14 +11,35 @@ cd "$MESH_DIR"
 FAILED=0
 
 # model use -g writes to $HOME/.claude/settings.json, so every global run below uses a
-# throwaway HOME. The real settings are checksummed now and checked at the end.
+# throwaway HOME. The real settings are checksummed now and checked on every exit path.
 FAKE_HOME="$(mktemp -d)"
-trap 'rm -rf "$FAKE_HOME"' EXIT
 REAL_SETTINGS="$HOME/.claude/settings.json"
 REAL_BACKUP="$REAL_SETTINGS.pre-alpha-mesh.bak"
-checksum() { [[ -e "$1" ]] && cksum < "$1" || echo none; }
+# "none" only when the file is absent; an unreadable file is an error, never "none".
+checksum() { if [[ -e "$1" ]]; then cksum < "$1"; else echo none; fi; }
 settings_before="$(checksum "$REAL_SETTINGS")"
 backup_before="$(checksum "$REAL_BACKUP")"
+
+# Runs from the EXIT trap, so an abort under set -e or a Ctrl-C still checks the real files.
+guard() {
+  local status=$?
+  rm -rf "$FAKE_HOME"
+  echo "[guard] real ~/.claude/settings.json and its backup are unchanged..."
+  local settings_after backup_after
+  if ! settings_after="$(checksum "$REAL_SETTINGS")" || ! backup_after="$(checksum "$REAL_BACKUP")"; then
+    echo "  FAIL: could not read $REAL_SETTINGS or $REAL_BACKUP to verify them"
+    exit 1
+  fi
+  if [[ "$settings_after" != "$settings_before" || "$backup_after" != "$backup_before" ]]; then
+    echo "  FAIL: a test modified $REAL_SETTINGS or $REAL_BACKUP"
+    exit 1
+  fi
+  echo "  PASS"
+  exit "$status"
+}
+trap guard EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 echo "=== model tests ==="
 echo ""
@@ -139,15 +160,6 @@ fi
 # Clean up
 rm -rf "$tmp_dir"
 cd "$MESH_DIR"
-
-# ─── guard: the real global settings were not touched ───────────────────────────
-echo "[guard] real ~/.claude/settings.json and its backup are unchanged..."
-if [[ "$(checksum "$REAL_SETTINGS")" == "$settings_before" && "$(checksum "$REAL_BACKUP")" == "$backup_before" ]]; then
-  echo "  PASS"
-else
-  echo "  FAIL: a test modified $REAL_SETTINGS or $REAL_BACKUP"
-  FAILED=1
-fi
 
 # ─── summary ────────────────────────────────────────────────────────────────────
 echo ""
