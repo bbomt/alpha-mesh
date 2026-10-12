@@ -203,9 +203,6 @@ patterns = [
     "*/node_modules/*",
     "*/dist/*",
 ]
-
-[models]
-overview_model = "anthropic/claude-3-5-haiku"
 ```
 
 ## Environment Variables (`.env`)
@@ -214,9 +211,9 @@ overview_model = "anthropic/claude-3-5-haiku"
 |----------|-------------|
 | `CODE_REVIEW_URL` | Base URL of the LLM API (e.g. OpenRouter endpoint) |
 | `CODE_REVIEW_TOKEN` | API token / bearer token |
-| `CODE_REVIEW_MODEL` | Default model name (e.g. `deepseek/deepseek-r1`) |
+| `CODE_REVIEW_MODEL` | Model used for the whole review, both the overview pass and the per-file reviews (e.g. `deepseek/deepseek-r1`); `--model` overrides it |
 
-At startup the agent prints the model (and overview model) and API URL it is using to stderr, so you can confirm which `.env` values took effect. The token is never printed.
+At startup the agent prints the model and API URL it is using to stderr, so you can confirm which `.env` values took effect. The token is never printed.
 
 ## Tests
 

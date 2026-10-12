@@ -20,7 +20,6 @@ class MockConfig:
     model = "dry-run-model"
     api_url = "https://example.com/api"
     api_token = "test-token"
-    overview_model = ""
     base_branch = "master"
     max_tool_calls = 10
     max_file_lines = 8000
@@ -29,10 +28,6 @@ class MockConfig:
     github_repo = ""
     github_token_env_var = "GITHUB_TOKEN"
     repo_root = "/tmp"
-
-    @property
-    def effective_overview_model(self):
-        return self.overview_model or self.model
 
 
 def _chunk(path="src/a.py"):

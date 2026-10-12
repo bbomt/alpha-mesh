@@ -99,7 +99,6 @@ class Config:
     model: str
     api_url: str
     api_token: str
-    overview_model: str = ""
     base_branch: str = "master"
     max_tool_calls: int = 20
     max_file_lines: int = 8000
@@ -115,10 +114,6 @@ class Config:
     read_cache: dict[str, str] = field(default_factory=dict)
     read_cache_max_bytes: int = 50 * 1024 * 1024
     read_cache_bytes: int = 0  # running total of read_cache contents
-
-    @property
-    def effective_overview_model(self) -> str:
-        return self.overview_model or self.model
 
 
 def load_config(args) -> Config:
@@ -157,7 +152,6 @@ def load_config(args) -> Config:
     exclusions_section = toml_config.get("exclusions", {})
     github_section = toml_config.get("github", {})
     output_section = toml_config.get("output", {})
-    models_section = toml_config.get("models", {})
 
     max_tool_calls = limits.get("max_tool_calls", 20)
     max_file_lines = limits.get("max_file_lines", 8000)
@@ -167,7 +161,6 @@ def load_config(args) -> Config:
     ))
     github_repo = github_section.get("repo", "")
     output_file = output_section.get("file", "review_output.md")
-    overview_model = models_section.get("overview_model", "")
 
     repo_root = args.repo_path or os.getcwd()
 
@@ -182,7 +175,6 @@ def load_config(args) -> Config:
         model=model,
         api_url=api_url,
         api_token=api_token,
-        overview_model=overview_model,
         base_branch=base_branch,
         max_tool_calls=max_tool_calls,
         max_file_lines=max_file_lines,

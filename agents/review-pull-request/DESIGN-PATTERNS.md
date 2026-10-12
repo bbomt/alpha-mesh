@@ -67,7 +67,7 @@ Policies combine with `|` (`PathPolicy(a) | PathPolicy(b)`), which is the compos
 
 ### 5. Facade: `ReviewSession` (`session.py`)
 
-**What it is:** one object built once per run. It creates the policy and hands out only the protected pieces: `review_llm`, `overview_llm`, `reader` and `safe_diff()`.
+**What it is:** one object built once per run. It creates the policy and hands out only the protected pieces: `review_llm`, `reader` and `safe_diff()`.
 
 **Why:** the stages receive the session, not the raw tools. `stage1.py` and `stage2.py` don't import the HTTP client or the file readers at all, and a test enforces that. So the only way for a stage to talk to the model or read a file is through the protections.
 

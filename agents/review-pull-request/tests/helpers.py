@@ -42,13 +42,12 @@ class StubReader:
         pass
 
 
-def make_session(config, llm=None, overview_llm=None, reader=None):
+def make_session(config, llm=None, reader=None):
     """Build a ReviewSession whose model and file reader are fakes (policy/guard stay real)."""
     review_llm = llm or FakeLLM(content='{"summary": "ok", "issues": []}')
-    overview = overview_llm or FakeLLM(content="Overview.")
 
     def factory(cfg, model):
-        return overview if model == cfg.effective_overview_model and overview_llm is not None else review_llm
+        return review_llm
 
     return ReviewSession.create(config, inner_reader=reader or StubReader(), llm_factory=factory)
 

@@ -182,7 +182,7 @@ Examples:
 
     config = load_config(args)
     print(
-        f"Model: {config.model} (overview: {config.effective_overview_model})\n"
+        f"Model: {config.model}\n"
         f"API URL: {_safe_url(config.api_url)}",
         file=sys.stderr,
     )
@@ -424,10 +424,9 @@ Examples:
             host = urlparse(config.api_url).hostname or "(invalid URL)"
         except ValueError:
             host = "(invalid URL)"
-        failed_model = config.effective_overview_model if current_step == "overview pass" else config.model
         print(
             f"ERROR: LLM API call failed during {current_step}: {e}\n"
-            f"  model: {failed_model}\n"
+            f"  model: {config.model}\n"
             f"  api host: {host}\n"
             "  The model API is unusable, so the review was aborted and nothing was posted.\n"
             "  Check CODE_REVIEW_MODEL / CODE_REVIEW_URL / CODE_REVIEW_TOKEN in .env.",

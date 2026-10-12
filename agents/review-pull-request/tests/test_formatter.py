@@ -7,12 +7,7 @@ from review_pull_request.stage2 import Issue
 
 class MockConfig:
     model = "deepseek/deepseek-v4-flash"
-    overview_model = ""
     base_branch = "master"
-
-    @property
-    def effective_overview_model(self):
-        return self.overview_model or self.model
 
 
 def test_renders_high_severity_issue():
@@ -200,3 +195,9 @@ def test_newlines_in_untrusted_text_cannot_break_out_of_the_code_span():
     from review_pull_request.formatter import _code_span
 
     assert "\n" not in _code_span("a.py\n\n# Injected heading")
+
+
+def test_header_names_the_single_model():
+    report = render_report("overview", [], [], MockConfig())
+    assert "> **Model:** `deepseek/deepseek-v4-flash`" in report
+    assert "overview=" not in report
