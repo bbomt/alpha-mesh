@@ -24,7 +24,9 @@ SECRET_PATHS = [".env", ".ENV", "svc/.env.production", ".claude/settings.json",
 
 
 READ_ATTEMPTS = (".env", "./.env", "/.env", ".ENV", "svc/../.env",
-                 ".claude/settings.json", "config/active.json", "src/app.py")
+                 ".claude/settings.json", "config/active.json", "src/app.py",
+                 # not found: the "did you mean" hint must never name an excluded file
+                 "missing/settings.json", "missing/active.json", "missing/app.py")
 
 
 def _file_diff(path, body):
@@ -42,7 +44,11 @@ class FakeReader:
         self.asked = []
 
     def read_file(self, path, max_lines):
+        from review_pull_request.readers import NotFound
+
         self.asked.append(path)
+        if path.startswith("missing/"):
+            return NotFound(f"Error: file not found: {path}")
         return "x = 1\n" if path == "src/app.py" else f"TOKEN={CANARY}"
 
     def close(self):
@@ -136,6 +142,24 @@ def test_the_harness_itself_detects_a_leak_when_protection_is_off():
     model = _run(_diff_with_secrets(), exclusions=[])
 
     assert any(CANARY in m for m in model.seen)
+
+
+def _tool_results(model):
+    return [m["content"] for seen in model.seen for m in json.loads(seen) if m.get("role") == "tool"]
+
+
+def test_not_found_hints_never_name_an_excluded_file():
+    model = _run(_diff_with_secrets())
+
+    hints = [t for t in _tool_results(model) if "not found" in t]
+    assert any("src/app.py" in h for h in hints), "the allowed file should be suggested, or this proves nothing"
+    assert not [h for h in hints if ".claude/settings.json" in h or "config/active.json" in h]
+
+
+def test_the_harness_detects_an_excluded_hint_when_protection_is_off():
+    model = _run(_diff_with_secrets(), exclusions=[])
+
+    assert any(".claude/settings.json" in t for t in _tool_results(model) if "not found" in t)
 
 
 def test_credentials_are_redacted_even_when_they_sit_in_an_allowed_file():

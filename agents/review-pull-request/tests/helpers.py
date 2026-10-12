@@ -29,14 +29,14 @@ class StubReader:
         self.asked = []
 
     def read_file(self, path, max_lines):
-        from review_pull_request.readers import ReadError
+        from review_pull_request.readers import NotFound
 
         self.asked.append(path)
         if path in self.files:
             return self.files[path]
         if self.default is not None:
             return self.default
-        return ReadError(f"Error: file not found: {path}")
+        return NotFound(f"Error: file not found: {path}")
 
     def close(self):
         pass

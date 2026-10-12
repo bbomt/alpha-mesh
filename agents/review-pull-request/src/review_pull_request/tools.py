@@ -4,7 +4,7 @@ from urllib.parse import quote
 
 import httpx
 
-from review_pull_request.readers import ReadError
+from review_pull_request.readers import NotFound, ReadError
 
 READ_FILE_TOOL_SCHEMA = {
     "type": "function",
@@ -95,7 +95,7 @@ class GitHubFileReader:
             return ReadError(f"Error: failed to fetch file from GitHub: {e}")
 
         if response.status_code == 404:
-            return ReadError(f"Error: file not found: {path}")
+            return NotFound(f"Error: file not found: {path}")
 
         _rate_limit_phrases = ("rate limit", "secondary rate limit", "you have exceeded")
         if response.status_code == 429 or (

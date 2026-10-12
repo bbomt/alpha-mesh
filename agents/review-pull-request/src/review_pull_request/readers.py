@@ -15,6 +15,10 @@ class ReadError(str):
     """A failed read, as text for the model. Content that merely starts with 'Error:' is not one."""
 
 
+class NotFound(ReadError):
+    """The path does not exist: unlike a transient error, retrying it cannot help."""
+
+
 MAX_READ_BYTES = 1024 * 1024  # a file of a few huge lines is still bounded
 
 
@@ -38,7 +42,7 @@ class LocalFileReader:
         target = os.path.join(self._root, real)
 
         if not os.path.isfile(target):
-            return ReadError(f"Error: file not found: {path}")
+            return NotFound(f"Error: file not found: {path}")
 
         try:
             with open(target, "rb") as f:

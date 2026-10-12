@@ -9,7 +9,7 @@ import sys
 from dataclasses import dataclass, field
 
 from review_pull_request.policy import normalise
-from review_pull_request.readers import ReadError
+from review_pull_request.readers import NotFound, ReadError
 from review_pull_request.tools import READ_FILE_TOOL_SCHEMA
 
 
@@ -150,6 +150,17 @@ ALREADY_READ_NOTE = (
     "Do not request it again. Continue the review or return your JSON answer."
 )
 
+NOT_FOUND_AGAIN_NOTE = (
+    "You already requested this path and it does not exist. Do not request it again. "
+    "Try a different path or return your JSON answer."
+)
+
+
+def _with_hint(result: NotFound, suggestions: list[str]) -> NotFound:
+    if not suggestions:
+        return result
+    return NotFound(f"{result}\nFiles with the same name in this PR: {', '.join(suggestions)}")
+
 
 def run_file_review(chunk, overview: str, session) -> FileReviewResult:
     """Run agentic review for a single file chunk.
@@ -168,6 +179,7 @@ def run_file_review(chunk, overview: str, session) -> FileReviewResult:
     tools = [READ_FILE_TOOL_SCHEMA]
     read_cache = getattr(config, "read_cache", None)
     paths_read: set[str] = set()  # paths already shown to the model in this review
+    paths_missing: set[str] = set()  # paths that came back "not found" in this review
 
     for iteration in range(max_iterations):
         response = session.review_llm.chat(messages, tools=tools)
@@ -191,6 +203,9 @@ def run_file_review(chunk, overview: str, session) -> FileReviewResult:
                     key = normalise(path)  # one spelling per file, for dedup and the cache
                     if key in paths_read:
                         result = ALREADY_READ_NOTE
+                    elif key in paths_missing:
+                        result = NotFound(NOT_FOUND_AGAIN_NOTE)
+                        print("     (not found, repeated — not re-read)", file=sys.stderr, flush=True)
                     elif read_cache is not None and key in read_cache:
                         result = read_cache[key]
                         print("     (cached)", file=sys.stderr, flush=True)
@@ -202,6 +217,14 @@ def run_file_review(chunk, overview: str, session) -> FileReviewResult:
                             if getattr(config, "read_cache_bytes", 0) + size <= cap:
                                 read_cache[key] = result
                                 config.read_cache_bytes = getattr(config, "read_cache_bytes", 0) + size
+                        if isinstance(result, NotFound):
+                            paths_missing.add(key)  # retrying cannot help, unlike a transient error
+                            suggestions = session.suggest_paths(path)
+                            result = _with_hint(result, suggestions)
+                            hint = f"; suggested: {', '.join(suggestions)}" if suggestions else ""
+                            print(f"     (not found{hint})", file=sys.stderr, flush=True)
+                        elif isinstance(result, ReadError):
+                            print(f"     (failed: {result})", file=sys.stderr, flush=True)
                     if not isinstance(result, ReadError):
                         paths_read.add(key)  # failed reads stay retryable
                     messages.append({

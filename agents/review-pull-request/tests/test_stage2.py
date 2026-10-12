@@ -50,10 +50,11 @@ def _scripted(*tool_call_rounds):
     return respond
 
 
-def _review(chunk=None, overview="Overview", config=None, model=None, reader=None):
+def _review(chunk=None, overview="Overview", config=None, model=None, reader=None, diff=None):
     """Run one file review through a session whose model and reader are fakes.
 
     model: a FakeLLM, a callable(messages, tools) -> response, a response, or an Exception.
+    diff: the PR diff the session has seen (the source of not-found hints).
     """
     config = config or MockConfig()
     if isinstance(model, FakeLLM):
@@ -67,6 +68,8 @@ def _review(chunk=None, overview="Overview", config=None, model=None, reader=Non
     else:
         llm = FakeLLM(lambda messages, tools: model)
     session = make_session(config, llm=llm, reader=reader or StubReader(default="FILE BODY"))
+    if diff is not None:
+        session.safe_diff(diff)
     return run_file_review(chunk or _chunk(), overview, session)
 
 
@@ -232,6 +235,50 @@ def test_failed_read_can_be_retried_within_the_same_review():
 
     assert len(reader.asked) == 2  # the failed read was not treated as "already read"
     assert _tool_messages(llm) == ["Error: GitHub API rate limit exceeded.", "FILE BODY"]
+
+
+def test_a_repeated_missing_path_gets_a_note_instead_of_a_fresh_read(capsys):
+    llm = FakeLLM(_scripted(*[[_tool_call(str(i), "pkg/x.py")] for i in range(3)]))
+    reader = StubReader()
+
+    _review(model=llm, reader=reader)
+
+    assert reader.asked == ["pkg/x.py"]  # read once; the repeats never reach the reader
+    first, *repeats = _tool_messages(llm)
+    assert "not found" in first
+    assert all("does not exist" in m and "do not request it again" in m.lower() for m in repeats)
+    err = capsys.readouterr().err
+    assert "(not found)" in err and err.count("not re-read") == 2
+
+
+def test_not_found_suggests_the_same_file_name_from_the_pr():
+    llm = FakeLLM(_scripted([_tool_call("1", "pkg/x.py")]))
+    diff = "".join(f"diff --git a/{p} b/{p}\n+++ b/{p}\n@@ -1 +1 @@\n+x\n" for p in ("src/pkg/x.py", "src/y.py"))
+
+    _review(model=llm, reader=StubReader(), diff=diff)
+
+    [msg] = _tool_messages(llm)
+    assert "not found" in msg and "src/pkg/x.py" in msg
+    assert "src/y.py" not in msg
+
+
+def test_an_excluded_file_is_never_suggested():
+    config = MockConfig()
+    config.exclusions = ["**/secrets/*"]
+    llm = FakeLLM(_scripted([_tool_call("1", "pkg/keys.py")]))
+    diff = "diff --git a/secrets/keys.py b/secrets/keys.py\n+++ b/secrets/keys.py\n@@ -1 +1 @@\n+x\n"
+
+    _review(config=config, model=llm, reader=StubReader(), diff=diff)
+
+    [msg] = _tool_messages(llm)
+    assert "not found" in msg and "secrets/keys.py" not in msg
+
+
+def test_other_failed_reads_are_printed(capsys):
+    _review(model=_scripted([_tool_call("1", "a.py")]),
+            reader=StubReader({"a.py": ReadError("Error: GitHub API rate limit exceeded.")}))
+
+    assert "(failed: Error: GitHub API rate limit exceeded.)" in capsys.readouterr().err
 
 
 def test_read_cache_bytes_counter_tracks_stored_content():
