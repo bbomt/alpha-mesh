@@ -231,6 +231,7 @@ def run_file_review(chunk, overview: str, session) -> FileReviewResult:
                                 config.read_cache_bytes = getattr(config, "read_cache_bytes", 0) + size
                         if isinstance(result, NotFound):
                             paths_missing.add(key)  # retrying cannot help, unlike a transient error
+                            session.note_missing(key, chunk.file_path)
                             suggestions = session.suggest_paths(path)
                             folder = session.nearest_folder(path)
                             result = _with_hints(result, suggestions, folder, session.folder_listing(folder))

@@ -7,6 +7,7 @@ It builds the PathPolicy once and hands the stages only wrapped collaborators:
   * folder_listing(folder)    : a folder's entries, from the policy-filtered repo tree
   * nearest_folder(path)      : the closest folder of a path that exists in that tree
   * suggest_paths(path)       : files anywhere in that tree with the same name as a missing path
+  * note_missing(path, file)  : records a path the model asked for that does not exist (for the report)
 Stages receive the session, not the raw pieces, so they have no way around the policy.
 """
 
@@ -19,8 +20,6 @@ from review_pull_request.policy import PathPolicy, normalise
 from review_pull_request.readers import PolicyFileReader
 from review_pull_request.safe_diff import SafeDiff
 
-MAX_LISTING_ATTEMPTS = 3  # per run: a GitHub outage must not cost a call on every lookup
-
 
 class ReviewSession:
     def __init__(self, config, policy, review_llm, reader) -> None:
@@ -29,7 +28,8 @@ class ReviewSession:
         self.review_llm = review_llm
         self.reader = reader
         self._files: list[str] | None = None  # repo tree minus excluded files, loaded once
-        self._listing_attempts = 0
+        self._listed = False
+        self.missing_paths: dict[str, list[str]] = {}  # missing path -> files whose review asked for it
 
     @classmethod
     def create(cls, config, inner_reader, llm_factory=None, secrets=()) -> "ReviewSession":
@@ -49,13 +49,30 @@ class ReviewSession:
     def _tree(self) -> list[str]:
         # Through the PolicyFileReader, so excluded files are already gone; folders are derived
         # only from the files that remain, so a folder of excluded files never shows up either.
-        if self._files is None and self._listing_attempts < MAX_LISTING_ATTEMPTS:
-            self._listing_attempts += 1  # a failure (None) may be transient: later callers retry
+        # Fetched once per run, even on failure: a truncated tree stays truncated, and the
+        # listing is only an aid (the report notes when it was missing).
+        if not self._listed:
+            self._listed = True
             self._files = self.reader.list_files()
-            if self._files is None and self._listing_attempts == 1:
+            if self._files is None:
                 print("  (file listing unavailable: reviews continue without folder hints)",
                       file=sys.stderr, flush=True)
         return self._files or []
+
+    @property
+    def listing_failed(self) -> bool:
+        """True if the repo file listing was fetched and could not be had."""
+        return self._listed and self._files is None
+
+    def symlinks(self) -> list[str]:
+        """Symlinks in the repo (excluded names dropped), for the report to warn about."""
+        self._tree()
+        return self.reader.symlinks
+
+    def note_missing(self, path: str, reviewing: str) -> None:
+        files = self.missing_paths.setdefault(normalise(path), [])
+        if reviewing not in files:
+            files.append(reviewing)
 
     def folder_listing(self, folder: str, limit: int = 50) -> list[str]:
         """Names directly in a folder ('' is the root): files, then sub-folders ending in '/'."""

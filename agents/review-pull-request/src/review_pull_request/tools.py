@@ -54,6 +54,7 @@ class GitHubFileReader:
         self._owner = owner
         self._repo = repo
         self._ref = head_sha
+        self.symlinks: list[str] = []  # filled by list_files()
         self._headers = {
             "Authorization": f"Bearer {token}",
             "Accept": "application/vnd.github.raw",
@@ -87,7 +88,10 @@ class GitHubFileReader:
             payload = response.json()
             if payload.get("truncated"):
                 return None  # a partial tree would give wrong hints; none is better
-            return [e["path"] for e in payload.get("tree", []) if e.get("type") == "blob"]
+            blobs = [e for e in payload.get("tree", []) if e.get("type") == "blob"]
+            # A symlink is a blob with mode 120000: not listed, but kept for the report to warn about.
+            self.symlinks = [e["path"] for e in blobs if e.get("mode") == "120000"]
+            return [e["path"] for e in blobs if e.get("mode") in ("100644", "100755")]
         except Exception:
             return None
 

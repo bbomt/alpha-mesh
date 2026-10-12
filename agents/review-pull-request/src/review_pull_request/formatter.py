@@ -38,6 +38,9 @@ def render_report(
     incomplete: list[str] | None = None,
     excluded: list[str] | None = None,
     head_sha: str | None = None,
+    missing: dict[str, list[str]] | None = None,
+    listing_failed: bool = False,
+    symlinks: list[str] | None = None,
 ) -> str:
     """Build a Markdown review report.
 
@@ -54,6 +57,9 @@ def render_report(
         excluded: changed files skipped by exclusion patterns; listed so the report
             does not imply coverage it does not have.
         head_sha: the PR head commit this report covers; recorded for --since-last-review.
+        missing: paths the model asked to read that do not exist -> the files whose review asked.
+        listing_failed: the repo file listing was unavailable, so the model got no path hints.
+        symlinks: symlinks in the repo; warned about as a hidden dependency.
     """
     if summaries is None:
         summaries = []
@@ -151,6 +157,34 @@ def render_report(
         lines.extend(f"- {_code_span(path)}" for path in shown)
         if len(excluded) > len(shown):
             lines.append(f"- … and {len(excluded) - len(shown)} more")
+        lines.append("")
+
+    if symlinks:
+        lines.append("\n## ⚠️ Symlinks in the repository\n")
+        lines.append(
+            "The repository depends on these symlinks. A symlink is a hidden dependency: it can "
+            "point outside the repository or at a file that is missing on another machine, and "
+            "the review does not follow it:\n"
+        )
+        lines.extend(f"- {_code_span(p)}" for p in symlinks[:MAX_LISTED_FILES])
+        if len(symlinks) > MAX_LISTED_FILES:
+            lines.append(f"- … and {len(symlinks) - MAX_LISTED_FILES} more")
+        lines.append("")
+
+    if missing or listing_failed:
+        lines.append("\n## Paths not found\n")
+        if listing_failed:
+            lines.append(
+                "The repository file listing was unavailable, so the model was given no "
+                "folder listings or suggestions for paths it could not find.\n"
+            )
+        if missing:
+            lines.append("The model asked to read these paths, which do not exist at the reviewed commit:\n")
+            for path, files in list(missing.items())[:MAX_LISTED_FILES]:
+                asked = ", ".join(_code_span(f) for f in files)
+                lines.append(f"- {_code_span(path)} (asked while reviewing {asked})")
+            if len(missing) > MAX_LISTED_FILES:
+                lines.append(f"- … and {len(missing) - MAX_LISTED_FILES} more")
         lines.append("")
 
     lines.append(

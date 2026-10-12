@@ -393,6 +393,9 @@ Examples:
             head_sha=head_sha,
             incomplete=incomplete_files,
             excluded=excluded_files,
+            missing=session.missing_paths,
+            listing_failed=session.listing_failed,
+            symlinks=[] if args.dry_run else session.symlinks(),
         )
 
         # stdout: hide_pr_comment means print body to stdout only if NOT hiding

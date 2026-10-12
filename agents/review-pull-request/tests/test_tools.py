@@ -95,11 +95,23 @@ class TestGitHubFileReader:
     def test_lists_repo_files_from_the_tree_at_the_head_sha(self, MockClient):
         resp = _make_http_response(200)
         resp.json.return_value = {"tree": [{"path": "src", "type": "tree"},
-                                           {"path": "src/a.py", "type": "blob"}]}
+                                           {"path": "src/a.py", "type": "blob", "mode": "100644"}]}
         MockClient.return_value.get.return_value = resp
 
         assert self._reader().list_files() == ["src/a.py"]
         assert "owner/repo/git/trees/abc123sha?recursive=1" in MockClient.return_value.get.call_args[0][0]
+
+    @patch("review_pull_request.tools.httpx.Client")
+    def test_symlinks_in_the_tree_are_reported_not_listed(self, MockClient):
+        resp = _make_http_response(200)
+        resp.json.return_value = {"tree": [{"path": "a.py", "type": "blob", "mode": "100644"},
+                                           {"path": "run.sh", "type": "blob", "mode": "100755"},
+                                           {"path": "link.py", "type": "blob", "mode": "120000"}]}
+        MockClient.return_value.get.return_value = resp
+        reader = self._reader()
+
+        assert reader.list_files() == ["a.py", "run.sh"]
+        assert reader.symlinks == ["link.py"]
 
     @patch("review_pull_request.tools.httpx.Client")
     def test_file_listing_is_none_when_github_truncates_the_tree(self, MockClient):

@@ -7,6 +7,7 @@ wrapped in PolicyFileReader (Decorator), which refuses excluded paths before any
 import codecs
 import itertools
 import os
+import unicodedata
 
 from review_pull_request.policy import PathPolicy, normalise
 
@@ -27,6 +28,7 @@ class LocalFileReader:
 
     def __init__(self, repo_root: str) -> None:
         self._root = os.path.realpath(repo_root)
+        self.symlinks: list[str] = []  # filled by list_files()
 
     def canonical_path(self, path: str) -> str | None:
         """Repo-relative path after resolving symlinks, or None if it escapes the root."""
@@ -36,12 +38,21 @@ class LocalFileReader:
         return os.path.relpath(target, self._root).replace(os.sep, "/")
 
     def list_files(self) -> list[str]:
-        """Every file under the root, repo-relative ('.git' skipped)."""
-        files = []
+        """Every regular file under the root, repo-relative ('.git' skipped).
+
+        Symlinks (files or folders) are not listed, and not walked into; they are kept in
+        self.symlinks for the report to warn about.
+        """
+        files, self.symlinks = [], []
         for top, dirs, names in os.walk(self._root):
             dirs[:] = [d for d in dirs if d != ".git"]
             rel = os.path.relpath(top, self._root)
-            files += [n if rel == "." else f"{rel}/{n}".replace(os.sep, "/") for n in names]
+            for n in names + dirs:  # os.walk puts a symlinked folder in dirs but never enters it
+                path = n if rel == "." else f"{rel}/{n}".replace(os.sep, "/")
+                if os.path.islink(os.path.join(top, n)):
+                    self.symlinks.append(path)
+                elif n in names:
+                    files.append(path)
         return files
 
     def read_file(self, path: str, max_lines: int) -> str:
@@ -79,6 +90,12 @@ class LocalFileReader:
         return "".join(lines)
 
 
+def _safe_name(path: str) -> bool:
+    """False for names with control, format or line-separator characters (a newline or a
+    bidi override could forge or disguise prompt text)."""
+    return not any(unicodedata.category(c) in ("Cc", "Cf", "Zl", "Zp") for c in path)
+
+
 class PolicyFileReader:
     """Decorator: same read_file() interface, but excluded or out-of-root paths are refused."""
 
@@ -99,15 +116,20 @@ class PolicyFileReader:
     def list_files(self) -> list[str] | None:
         """The repo's files minus excluded ones, or None if the inner reader cannot list.
 
-        Names reach the model too, so ones with control characters (a newline could forge
-        prompt text) are dropped along with excluded files.
+        Names reach the model too, so unsafe ones (see _safe_name) are dropped along with
+        excluded files.
         """
         inner = getattr(self._inner, "list_files", None)
         files = inner() if inner is not None else None
         if files is None:
             return None
-        return [p for p in files
-                if not any(ord(c) < 32 or ord(c) == 127 for c in p) and not self._is_excluded(normalise(p))]
+        return [p for p in files if _safe_name(p) and not self._is_excluded(normalise(p))]
+
+    @property
+    def symlinks(self) -> list[str]:
+        """Symlinks the last listing found, minus excluded and unsafe names (for the report)."""
+        return [p for p in getattr(self._inner, "symlinks", [])
+                if _safe_name(p) and not self._policy.is_excluded(normalise(p))]
 
     def _is_excluded(self, clean: str) -> bool:
         if self._policy.is_excluded(clean):
