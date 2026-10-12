@@ -12,13 +12,14 @@ FAILED=0
 
 # model use -g writes to $HOME/.claude/settings.json, so every global run below uses a
 # throwaway HOME. The real settings are checksummed now and checked on every exit path.
-FAKE_HOME="$(mktemp -d)"
 REAL_SETTINGS="$HOME/.claude/settings.json"
 REAL_BACKUP="$REAL_SETTINGS.pre-alpha-mesh.bak"
 # "none" only when the file is absent; an unreadable file is an error, never "none".
 checksum() { if [[ -e "$1" ]]; then cksum < "$1"; else echo none; fi; }
+# Baseline first: if it can't be read the suite stops here, before anything needs cleaning up.
 settings_before="$(checksum "$REAL_SETTINGS")"
 backup_before="$(checksum "$REAL_BACKUP")"
+FAKE_HOME="$(mktemp -d)"
 
 # Runs from the EXIT trap, so an abort under set -e or a Ctrl-C still checks the real files.
 guard() {
