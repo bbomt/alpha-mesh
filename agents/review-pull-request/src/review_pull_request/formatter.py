@@ -86,8 +86,7 @@ def render_report(
         f"{files_reviewed} of {len(summaries)}" if incomplete else str(files_reviewed)
     )
     lines.append(
-        f"> **Models:** per-file=`{effective_model}` · "
-        f"overview=`{config.effective_overview_model}`"
+        f"> **Model:** `{effective_model}`"
     )
     lines.append(
         f"> **Base branch:** `{config.base_branch}` · "

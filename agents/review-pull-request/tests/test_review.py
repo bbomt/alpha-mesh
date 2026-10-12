@@ -310,11 +310,8 @@ def test_safe_url_survives_unparseable_urls():
     assert _safe_url("http://[::1") == "(invalid URL)"
 
 
-def test_overview_failure_names_the_overview_model(capsys):
-    from review_pull_request.llm import LLMError
-
-    cfg = Config(model="file-model", api_url="https://llm.example.com", api_token=SECRET,
-                 overview_model="overview-model")
+def test_overview_failure_names_the_configured_model(capsys):
+    cfg = Config(model="file-model", api_url="https://llm.example.com", api_token=SECRET)
     with patch("review_pull_request.review.load_config", return_value=cfg), \
          patch("review_pull_request.review.parse_pr_url", return_value=("owner", "repo", 42)), \
          patch("review_pull_request.review.get_pr_info", return_value=_mock_pr_info()), \
@@ -326,7 +323,7 @@ def test_overview_failure_names_the_overview_model(capsys):
         main()
 
     err = capsys.readouterr().err
-    assert "model: overview-model" in err
+    assert "model: file-model" in err
 
 
 def test_failed_post_of_the_excluded_notice_fails_the_run(capsys):

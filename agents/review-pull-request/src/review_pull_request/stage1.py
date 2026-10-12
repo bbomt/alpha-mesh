@@ -25,7 +25,7 @@ Output plain text only. Do not add headings, section titles, or markdown formatt
 def run_overview(diff: SafeDiff, pr_description: str, session) -> str:
     """Perform the overview pass.
 
-    Takes a SafeDiff (never a raw diff string) and the session's overview model client.
+    Takes a SafeDiff (never a raw diff string) and uses the session's model client.
     Returns the overview text. LLMError propagates: an unusable model API is fatal.
     """
     if pr_description:
@@ -40,7 +40,7 @@ def run_overview(diff: SafeDiff, pr_description: str, session) -> str:
 
     messages = [{"role": "user", "content": prompt}]
 
-    response = session.overview_llm.chat(messages, tools=None)
+    response = session.review_llm.chat(messages, tools=None)
     if response.content:
         return response.content.strip()
     return "Overview not available."

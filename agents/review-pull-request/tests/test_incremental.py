@@ -247,12 +247,7 @@ class TestBuildIncrementalDiff:
 
 class MockConfig:
     model = "test-model"
-    overview_model = ""
     base_branch = "master"
-
-    @property
-    def effective_overview_model(self):
-        return self.overview_model or self.model
 
 
 class TestFormatterIncrementalHeader:

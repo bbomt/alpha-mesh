@@ -23,24 +23,23 @@ def test_run_overview_raises_on_llm_error():
     def raiser(messages, tools):
         raise LLMError("API returned 404")
 
-    session = make_session(_config(), overview_llm=FakeLLM(raiser))
+    session = make_session(_config(), llm=FakeLLM(raiser))
 
     with pytest.raises(LLMError):
         run_overview(DIFF, "desc", session)
 
 
-def test_run_overview_uses_the_overview_client_not_the_review_client():
+def test_run_overview_uses_the_single_review_client():
     review_llm = FakeLLM(content="from the review model")
-    overview_llm = FakeLLM(content="from the overview model")
-    session = make_session(_config(overview_model="overview-model"), llm=review_llm, overview_llm=overview_llm)
+    session = make_session(_config(), llm=review_llm)
 
-    assert run_overview(DIFF, "desc", session) == "from the overview model"
-    assert review_llm.calls == []
+    assert run_overview(DIFF, "desc", session) == "from the review model"
+    assert len(review_llm.calls) == 1
 
 
 def test_run_overview_prompt_contains_the_safe_diff_text():
     llm = FakeLLM(content="ok")
-    session = make_session(_config(), overview_llm=llm)
+    session = make_session(_config(), llm=llm)
 
     run_overview(DIFF, "desc", session)
 
