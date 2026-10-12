@@ -92,6 +92,22 @@ class TestGitHubFileReader:
         return GitHubFileReader("owner", "repo", "abc123sha", "token123")
 
     @patch("review_pull_request.tools.httpx.Client")
+    def test_lists_repo_files_from_the_tree_at_the_head_sha(self, MockClient):
+        resp = _make_http_response(200)
+        resp.json.return_value = {"tree": [{"path": "src", "type": "tree"},
+                                           {"path": "src/a.py", "type": "blob"}]}
+        MockClient.return_value.get.return_value = resp
+
+        assert self._reader().list_files() == ["src/a.py"]
+        assert "owner/repo/git/trees/abc123sha?recursive=1" in MockClient.return_value.get.call_args[0][0]
+
+    @patch("review_pull_request.tools.httpx.Client")
+    def test_file_listing_is_none_when_the_tree_cannot_be_fetched(self, MockClient):
+        MockClient.return_value.get.return_value = _make_http_response(404)
+
+        assert self._reader().list_files() is None
+
+    @patch("review_pull_request.tools.httpx.Client")
     def test_fetches_file_content(self, MockClient):
         content = "def hello():\n    return 1\n"
         MockClient.return_value.get.return_value = _make_http_response(200, text=content)

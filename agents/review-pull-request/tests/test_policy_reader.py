@@ -108,3 +108,27 @@ def test_local_reader_caps_bytes_as_well_as_lines(tmp_path):
     text = LocalFileReader(str(tmp_path)).read_file("min.js", 100)
 
     assert len(text) < MAX_READ_BYTES + 500 and "TRUNCATED" in text
+
+
+def test_file_listing_drops_excluded_paths():
+    inner = StubReader({".env": "", "svc/.ENV": "", "src/a.py": ""})
+
+    assert _guarded(inner).list_files() == ["src/a.py"]
+
+
+def test_file_listing_is_none_when_the_inner_reader_cannot_list():
+    class NoListing:
+        def read_file(self, path, max_lines):
+            return ""
+
+    assert _guarded(NoListing()).list_files() is None
+
+
+def test_local_reader_lists_files_and_skips_git(tmp_path):
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".git" / "HEAD").write_text("ref")
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "a.py").write_text("x")
+    (tmp_path / "README.md").write_text("x")
+
+    assert sorted(LocalFileReader(str(tmp_path)).list_files()) == ["README.md", "src/a.py"]

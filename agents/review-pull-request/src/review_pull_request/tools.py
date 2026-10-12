@@ -77,6 +77,17 @@ class GitHubFileReader:
         except Exception:
             pass
 
+    def list_files(self) -> list[str] | None:
+        """Every file path in the repo at the PR head SHA (one API call), or None on failure."""
+        url = f"{self._GITHUB_API}/repos/{self._owner}/{self._repo}/git/trees/{self._ref}?recursive=1"
+        try:
+            response = self._client.get(url, headers={"Accept": "application/vnd.github+json"})
+            if response.status_code != 200:
+                return None
+            return [e["path"] for e in response.json().get("tree", []) if e.get("type") == "blob"]
+        except Exception:
+            return None
+
     def read_file(self, path: str, max_lines: int) -> str:
         """Fetch file content at the PR head SHA. Returns content or an error string."""
         cache_key = (path, max_lines)

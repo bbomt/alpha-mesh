@@ -38,6 +38,9 @@ class StubReader:
             return self.default
         return NotFound(f"Error: file not found: {path}")
 
+    def list_files(self):
+        return list(self.files)
+
     def close(self):
         pass
 

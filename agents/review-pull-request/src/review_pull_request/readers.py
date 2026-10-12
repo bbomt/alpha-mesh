@@ -35,6 +35,15 @@ class LocalFileReader:
             return None
         return os.path.relpath(target, self._root).replace(os.sep, "/")
 
+    def list_files(self) -> list[str]:
+        """Every file under the root, repo-relative ('.git' skipped)."""
+        files = []
+        for top, dirs, names in os.walk(self._root):
+            dirs[:] = [d for d in dirs if d != ".git"]
+            rel = os.path.relpath(top, self._root)
+            files += [n if rel == "." else f"{rel}/{n}".replace(os.sep, "/") for n in names]
+        return files
+
     def read_file(self, path: str, max_lines: int) -> str:
         real = self.canonical_path(path)
         if real is None:
@@ -92,6 +101,14 @@ class PolicyFileReader:
             if real is not None and self._policy.is_excluded(real):
                 return self._refused(path)
         return self._inner.read_file(clean, max_lines)
+
+    def list_files(self) -> list[str] | None:
+        """The repo's files minus excluded ones, or None if the inner reader cannot list."""
+        inner = getattr(self._inner, "list_files", None)
+        files = inner() if inner is not None else None
+        if files is None:
+            return None
+        return [p for p in files if not self._policy.is_excluded(p)]
 
     def close(self) -> None:
         close = getattr(self._inner, "close", None)

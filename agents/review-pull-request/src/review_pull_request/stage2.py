@@ -5,6 +5,7 @@ parses JSON response, returns FileReviewResult.
 """
 
 import json as _json
+import posixpath
 import sys
 from dataclasses import dataclass, field
 
@@ -21,6 +22,7 @@ Review this file's diff for real bugs, security issues, performance problems, an
 
 ## Tool use
 Before forming a verdict on any issue, if you need to understand a type, interface, base class, imported symbol, or existing pattern that the diff references but does not define, call the read_file tool to inspect the relevant file. You may call it multiple times for different files. Only call it when it would materially change your verdict. You MUST provide a "reason" argument explaining why you need to read the file — e.g. "checking how AuthService is implemented to verify the diff does not break the login flow".
+{folder_listing}
 
 ## Mandatory checks
 You must explicitly audit the diff for ALL of the following. Do not skip a category because it seems unlikely — check each one.
@@ -112,8 +114,15 @@ def _normalise_severity(value) -> str:
     return sev if sev in ("high", "medium", "low") else "medium"  # unknown: do not understate
 
 
-def _build_per_file_prompt(chunk, overview: str) -> str:
-    return PER_FILE_PROMPT.format(overview=overview, diff_text=chunk.diff_text)
+def _folder_name(folder: str) -> str:
+    return f"`{folder}/`" if folder else "the repository root"
+
+
+def _build_per_file_prompt(chunk, overview: str, session) -> str:
+    folder = posixpath.dirname(chunk.file_path)
+    entries = session.folder_listing(folder)
+    listing = f"Files in the folder of the file under review ({_folder_name(folder)}): {', '.join(entries)}" if entries else ""
+    return PER_FILE_PROMPT.format(overview=overview, diff_text=chunk.diff_text, folder_listing=listing)
 
 
 def _parse_json_response(text: str) -> dict | None:
@@ -156,10 +165,13 @@ NOT_FOUND_AGAIN_NOTE = (
 )
 
 
-def _with_hint(result: NotFound, suggestions: list[str]) -> NotFound:
-    if not suggestions:
-        return result
-    return NotFound(f"{result}\nFiles with the same name in this PR: {', '.join(suggestions)}")
+def _with_hints(result: NotFound, suggestions: list[str], folder: str, entries: list[str]) -> NotFound:
+    lines = [str(result)]
+    if suggestions:
+        lines.append(f"Files with the same name: {', '.join(suggestions)}")
+    if entries:
+        lines.append(f"Nearest existing folder {_folder_name(folder)} contains: {', '.join(entries)}")
+    return NotFound("\n".join(lines))
 
 
 def run_file_review(chunk, overview: str, session) -> FileReviewResult:
@@ -171,7 +183,7 @@ def run_file_review(chunk, overview: str, session) -> FileReviewResult:
     """
     config = session.config
     messages = [
-        {"role": "user", "content": _build_per_file_prompt(chunk, overview)}
+        {"role": "user", "content": _build_per_file_prompt(chunk, overview, session)}
     ]
 
     tool_calls_made = 0
@@ -220,7 +232,8 @@ def run_file_review(chunk, overview: str, session) -> FileReviewResult:
                         if isinstance(result, NotFound):
                             paths_missing.add(key)  # retrying cannot help, unlike a transient error
                             suggestions = session.suggest_paths(path)
-                            result = _with_hint(result, suggestions)
+                            folder = session.nearest_folder(path)
+                            result = _with_hints(result, suggestions, folder, session.folder_listing(folder))
                             hint = f"; suggested: {', '.join(suggestions)}" if suggestions else ""
                             print(f"     (not found{hint})", file=sys.stderr, flush=True)
                         elif isinstance(result, ReadError):

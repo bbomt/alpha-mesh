@@ -50,11 +50,10 @@ def _scripted(*tool_call_rounds):
     return respond
 
 
-def _review(chunk=None, overview="Overview", config=None, model=None, reader=None, diff=None):
+def _review(chunk=None, overview="Overview", config=None, model=None, reader=None):
     """Run one file review through a session whose model and reader are fakes.
 
     model: a FakeLLM, a callable(messages, tools) -> response, a response, or an Exception.
-    diff: the PR diff the session has seen (the source of not-found hints).
     """
     config = config or MockConfig()
     if isinstance(model, FakeLLM):
@@ -68,8 +67,6 @@ def _review(chunk=None, overview="Overview", config=None, model=None, reader=Non
     else:
         llm = FakeLLM(lambda messages, tools: model)
     session = make_session(config, llm=llm, reader=reader or StubReader(default="FILE BODY"))
-    if diff is not None:
-        session.safe_diff(diff)
     return run_file_review(chunk or _chunk(), overview, session)
 
 
@@ -251,27 +248,63 @@ def test_a_repeated_missing_path_gets_a_note_instead_of_a_fresh_read(capsys):
     assert "(not found)" in err and err.count("not re-read") == 2
 
 
-def test_not_found_suggests_the_same_file_name_from_the_pr():
+def test_not_found_suggests_the_same_file_name_from_the_repo():
     llm = FakeLLM(_scripted([_tool_call("1", "pkg/x.py")]))
-    diff = "".join(f"diff --git a/{p} b/{p}\n+++ b/{p}\n@@ -1 +1 @@\n+x\n" for p in ("src/pkg/x.py", "src/y.py"))
 
-    _review(model=llm, reader=StubReader(), diff=diff)
+    _review(model=llm, reader=StubReader({"src/pkg/x.py": "x", "src/y.py": "y"}))
 
     [msg] = _tool_messages(llm)
-    assert "not found" in msg and "src/pkg/x.py" in msg
+    assert "not found" in msg and "Files with the same name: src/pkg/x.py" in msg
     assert "src/y.py" not in msg
 
 
-def test_an_excluded_file_is_never_suggested():
-    config = MockConfig()
-    config.exclusions = ["**/secrets/*"]
-    llm = FakeLLM(_scripted([_tool_call("1", "pkg/keys.py")]))
-    diff = "diff --git a/secrets/keys.py b/secrets/keys.py\n+++ b/secrets/keys.py\n@@ -1 +1 @@\n+x\n"
+def test_not_found_lists_the_nearest_existing_folder():
+    """PR #9 shape: `src/` dropped from the path. The nearest real folder shows `src/`."""
+    llm = FakeLLM(_scripted([_tool_call("1", "agent/pkg/missing.py")]))
 
-    _review(config=config, model=llm, reader=StubReader(), diff=diff)
+    _review(model=llm, reader=StubReader({"agent/src/pkg/a.py": "", "agent/README.md": ""}))
 
     [msg] = _tool_messages(llm)
-    assert "not found" in msg and "secrets/keys.py" not in msg
+    assert "Nearest existing folder `agent/` contains: README.md, src/" in msg
+
+
+def test_the_prompt_lists_the_folder_of_the_file_under_review():
+    """PR #11 shape: the model guessed stages.py; the real stage files sit beside the reviewed file."""
+    llm = FakeLLM(_scripted())
+    reader = StubReader({"pkg/session.py": "", "pkg/stage1.py": "", "pkg/stage2.py": "", "pkg/sub/x.py": ""})
+
+    _review(_chunk("pkg/session.py"), model=llm, reader=reader)
+
+    prompt = llm.calls[0][0][0]["content"]
+    assert "Files in the folder of the file under review (`pkg/`): session.py, stage1.py, stage2.py, sub/" in prompt
+
+
+def test_an_excluded_file_is_never_suggested_or_listed():
+    config = MockConfig()
+    config.exclusions = ["**/secrets/*", "**/.env"]
+    llm = FakeLLM(_scripted([_tool_call("1", "pkg/keys.py")]))
+    reader = StubReader({"secrets/keys.py": "", "pkg/.env": "", "pkg/a.py": ""})
+
+    _review(_chunk("pkg/a.py"), config=config, model=llm, reader=reader)
+
+    [msg] = _tool_messages(llm)
+    prompt = llm.calls[0][0][0]["content"]
+    assert "Nearest existing folder `pkg/` contains: a.py" in msg
+    for text in (msg, prompt):
+        assert "secrets" not in text and ".env" not in text
+
+
+def test_without_a_file_listing_the_review_still_runs(capsys):
+    class NoListing(StubReader):
+        def list_files(self):
+            return None
+
+    llm = FakeLLM(_scripted([_tool_call("1", "pkg/x.py")]))
+    result = _review(model=llm, reader=NoListing())
+
+    assert result.summary == "ok"
+    assert _tool_messages(llm) == ["Error: file not found: pkg/x.py"]
+    assert "file listing unavailable" in capsys.readouterr().err
 
 
 def test_other_failed_reads_are_printed(capsys):
