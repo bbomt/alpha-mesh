@@ -10,6 +10,38 @@ cd "$MESH_DIR"
 
 FAILED=0
 
+# model use -g writes to $HOME/.claude/settings.json, so every global run below uses a
+# throwaway HOME. The real settings are checksummed now and checked on every exit path.
+REAL_SETTINGS="$HOME/.claude/settings.json"
+REAL_BACKUP="$REAL_SETTINGS.pre-alpha-mesh.bak"
+# "none" only when the file is absent; an unreadable file is an error, never "none".
+checksum() { if [[ -e "$1" ]]; then cksum < "$1"; else echo none; fi; }
+# Baseline first: if it can't be read the suite stops here, before anything needs cleaning up.
+settings_before="$(checksum "$REAL_SETTINGS")"
+backup_before="$(checksum "$REAL_BACKUP")"
+FAKE_HOME="$(mktemp -d)"
+
+# Runs from the EXIT trap, so an abort under set -e or a Ctrl-C still checks the real files.
+guard() {
+  local status=$?
+  rm -rf "$FAKE_HOME"
+  echo "[guard] real ~/.claude/settings.json and its backup are unchanged..."
+  local settings_after backup_after
+  if ! settings_after="$(checksum "$REAL_SETTINGS")" || ! backup_after="$(checksum "$REAL_BACKUP")"; then
+    echo "  FAIL: could not read $REAL_SETTINGS or $REAL_BACKUP to verify them"
+    exit 1
+  fi
+  if [[ "$settings_after" != "$settings_before" || "$backup_after" != "$backup_before" ]]; then
+    echo "  FAIL: a test modified $REAL_SETTINGS or $REAL_BACKUP"
+    exit 1
+  fi
+  echo "  PASS"
+  exit "$status"
+}
+trap guard EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
 echo "=== model tests ==="
 echo ""
 
@@ -72,17 +104,14 @@ fi
 
 # ─── test: model use -g writes to global settings and backs up ─────────────────
 echo "[6/7] model use -g writes to global settings and backs up..."
-global_settings="$HOME/.claude/settings.json"
+global_settings="$FAKE_HOME/.claude/settings.json"
 backup_file="$global_settings.pre-alpha-mesh.bak"
-
-# Clean up any previous test artifacts
-rm -f "$global_settings" "$backup_file"
 
 # Create a pre-existing settings file so there's something to back up
 mkdir -p "$(dirname "$global_settings")"
 echo '{"env": {"ANTHROPIC_MODEL": "old-model"}}' > "$global_settings"
 
-model use -g minimax >/dev/null 2>&1
+HOME="$FAKE_HOME" model use -g minimax >/dev/null 2>&1
 if [[ -f "$global_settings" ]]; then
   echo "  PASS: global settings file created"
 else
@@ -111,14 +140,6 @@ if [[ -f "$backup_file" ]] && jq -r '.env.ANTHROPIC_MODEL' "$backup_file" | grep
 else
   echo "  FAIL: backup does not contain previous model"
   FAILED=1
-fi
-
-# Restore previous state if it existed, else clean up
-if [[ -f "$backup_file" ]]; then
-  cp "$backup_file" "$global_settings"
-  rm -f "$backup_file"
-else
-  rm -f "$global_settings"
 fi
 
 # ─── test: model use -l writes to local settings ────────────────────────────────
