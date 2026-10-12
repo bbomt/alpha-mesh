@@ -10,6 +10,16 @@ cd "$MESH_DIR"
 
 FAILED=0
 
+# model use -g writes to $HOME/.claude/settings.json, so every global run below uses a
+# throwaway HOME. The real settings are checksummed now and checked at the end.
+FAKE_HOME="$(mktemp -d)"
+trap 'rm -rf "$FAKE_HOME"' EXIT
+REAL_SETTINGS="$HOME/.claude/settings.json"
+REAL_BACKUP="$REAL_SETTINGS.pre-alpha-mesh.bak"
+checksum() { [[ -e "$1" ]] && cksum < "$1" || echo none; }
+settings_before="$(checksum "$REAL_SETTINGS")"
+backup_before="$(checksum "$REAL_BACKUP")"
+
 echo "=== model tests ==="
 echo ""
 
@@ -72,17 +82,14 @@ fi
 
 # ─── test: model use -g writes to global settings and backs up ─────────────────
 echo "[6/7] model use -g writes to global settings and backs up..."
-global_settings="$HOME/.claude/settings.json"
+global_settings="$FAKE_HOME/.claude/settings.json"
 backup_file="$global_settings.pre-alpha-mesh.bak"
-
-# Clean up any previous test artifacts
-rm -f "$global_settings" "$backup_file"
 
 # Create a pre-existing settings file so there's something to back up
 mkdir -p "$(dirname "$global_settings")"
 echo '{"env": {"ANTHROPIC_MODEL": "old-model"}}' > "$global_settings"
 
-model use -g minimax >/dev/null 2>&1
+HOME="$FAKE_HOME" model use -g minimax >/dev/null 2>&1
 if [[ -f "$global_settings" ]]; then
   echo "  PASS: global settings file created"
 else
@@ -113,14 +120,6 @@ else
   FAILED=1
 fi
 
-# Restore previous state if it existed, else clean up
-if [[ -f "$backup_file" ]]; then
-  cp "$backup_file" "$global_settings"
-  rm -f "$backup_file"
-else
-  rm -f "$global_settings"
-fi
-
 # ─── test: model use -l writes to local settings ────────────────────────────────
 echo "[7/7] model use -l writes to local settings..."
 # Use a temp directory for local test — create a fake .git so no confirmation prompt
@@ -140,6 +139,15 @@ fi
 # Clean up
 rm -rf "$tmp_dir"
 cd "$MESH_DIR"
+
+# ─── guard: the real global settings were not touched ───────────────────────────
+echo "[guard] real ~/.claude/settings.json and its backup are unchanged..."
+if [[ "$(checksum "$REAL_SETTINGS")" == "$settings_before" && "$(checksum "$REAL_BACKUP")" == "$backup_before" ]]; then
+  echo "  PASS"
+else
+  echo "  FAIL: a test modified $REAL_SETTINGS or $REAL_BACKUP"
+  FAILED=1
+fi
 
 # ─── summary ────────────────────────────────────────────────────────────────────
 echo ""
