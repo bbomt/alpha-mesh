@@ -24,7 +24,9 @@ SECRET_PATHS = [".env", ".ENV", "svc/.env.production", ".claude/settings.json",
 
 
 READ_ATTEMPTS = (".env", "./.env", "/.env", ".ENV", "svc/../.env",
-                 ".claude/settings.json", "config/active.json", "src/app.py")
+                 ".claude/settings.json", "config/active.json", "src/app.py",
+                 # not found: the "did you mean" hint must never name an excluded file
+                 "missing/settings.json", "missing/active.json", "missing/app.py")
 
 
 def _file_diff(path, body):
@@ -35,6 +37,11 @@ def _diff_with_secrets():
     return "".join(_file_diff(p, f"TOKEN={CANARY}") for p in SECRET_PATHS) + _file_diff("src/app.py", "x = 1")
 
 
+# The repo tree the fake reader lists: every secret path, plus excluded files beside src/app.py.
+TREE = [*SECRET_PATHS, "src/app.py", "src/util.py", "src/.env", "src/.claude/settings.json"]
+EXCLUDED_NAMES = (".env", ".ENV", ".claude", ".Claude", ".mesh", "active.json", "svc/", "config/")
+
+
 class FakeReader:
     """Stands in for the GitHub file reader: serves the canary for every path except src/app.py."""
 
@@ -42,8 +49,15 @@ class FakeReader:
         self.asked = []
 
     def read_file(self, path, max_lines):
+        from review_pull_request.readers import NotFound
+
         self.asked.append(path)
+        if path.startswith("missing/"):
+            return NotFound(f"Error: file not found: {path}")
         return "x = 1\n" if path == "src/app.py" else f"TOKEN={CANARY}"
+
+    def list_files(self):
+        return list(TREE)
 
     def close(self):
         pass
@@ -136,6 +150,54 @@ def test_the_harness_itself_detects_a_leak_when_protection_is_off():
     model = _run(_diff_with_secrets(), exclusions=[])
 
     assert any(CANARY in m for m in model.seen)
+
+
+def _tool_results(model):
+    return [m["content"] for seen in model.seen for m in json.loads(seen) if m.get("role") == "tool"]
+
+
+def _not_found_hints(model):
+    """Everything after the "file not found: <requested path>" line: the hints and folder listings."""
+    return [t.split("\n", 1)[1] for t in _tool_results(model) if "not found" in t and "\n" in t]
+
+
+def _folder_listings(model):
+    """The upfront folder listing line of every per-file prompt."""
+    prompts = [json.loads(seen)[0]["content"] for seen in model.seen[1:]]  # seen[0] is the overview
+    return [line for p in prompts for line in p.splitlines() if line.startswith("Files in the folder")]
+
+
+def _names_an_excluded_file(text):
+    return any(name in text for name in EXCLUDED_NAMES)
+
+
+def test_not_found_hints_never_name_an_excluded_file():
+    model = _run(_diff_with_secrets())
+
+    hints = _not_found_hints(model)
+    assert any("src/app.py" in h for h in hints), "the allowed file should be suggested, or this proves nothing"
+    assert any("Nearest existing folder" in h for h in hints), "a folder listing should be offered, or this proves nothing"
+    assert not [h for h in hints if _names_an_excluded_file(h)]
+
+
+def test_the_harness_detects_an_excluded_hint_when_protection_is_off():
+    model = _run(_diff_with_secrets(), exclusions=[])
+
+    assert any(_names_an_excluded_file(h) for h in _not_found_hints(model))
+
+
+def test_the_upfront_folder_listing_never_names_an_excluded_file():
+    model = _run(_diff_with_secrets())
+
+    listings = _folder_listings(model)
+    assert listings and all("app.py" in line and "util.py" in line for line in listings)
+    assert not [line for line in listings if _names_an_excluded_file(line)]
+
+
+def test_the_harness_detects_an_excluded_folder_listing_when_protection_is_off():
+    model = _run(_diff_with_secrets(), exclusions=[])
+
+    assert any(_names_an_excluded_file(line) for line in _folder_listings(model))
 
 
 def test_credentials_are_redacted_even_when_they_sit_in_an_allowed_file():

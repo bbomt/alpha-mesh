@@ -201,3 +201,38 @@ def test_header_names_the_single_model():
     report = render_report("overview", [], [], MockConfig())
     assert "> **Model:** `deepseek/deepseek-v4-flash`" in report
     assert "overview=" not in report
+
+
+def test_paths_the_model_looked_for_that_do_not_exist_are_listed():
+    from review_pull_request.config import Config
+
+    cfg = Config(model="m", api_url="http://x", api_token="t")
+    body = render_report("ov", [], summaries=[("a.py", "s")], config=cfg, model="m",
+                         missing={"src/cli.py": ["a.py"], "src/loop.py": ["a.py", "b.py"]})
+
+    assert "Paths not found" in body
+    assert "`src/cli.py` (asked while reviewing `a.py`)" in body
+    assert "`src/loop.py` (asked while reviewing `a.py`, `b.py`)" in body
+    assert "listing was unavailable" not in body
+
+
+def test_an_unavailable_file_listing_is_noted_so_missing_hints_are_explained():
+    from review_pull_request.config import Config
+
+    cfg = Config(model="m", api_url="http://x", api_token="t")
+    body = render_report("ov", [], summaries=[("a.py", "s")], config=cfg, model="m",
+                         missing={"src/cli.py": ["a.py"]}, listing_failed=True)
+
+    assert "listing was unavailable" in body
+
+
+def test_symlinks_in_the_repository_are_warned_about():
+    from review_pull_request.config import Config
+
+    cfg = Config(model="m", api_url="http://x", api_token="t")
+    body = render_report("ov", [], summaries=[("a.py", "s")], config=cfg, model="m",
+                         symlinks=["docs/link.md"])
+    plain = render_report("ov", [], summaries=[("a.py", "s")], config=cfg, model="m")
+
+    assert "Symlinks" in body and "`docs/link.md`" in body
+    assert "Symlinks" not in plain and "Paths not found" not in plain

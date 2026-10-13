@@ -4,7 +4,7 @@ from urllib.parse import quote
 
 import httpx
 
-from review_pull_request.readers import ReadError
+from review_pull_request.readers import NotFound, ReadError
 
 READ_FILE_TOOL_SCHEMA = {
     "type": "function",
@@ -54,6 +54,7 @@ class GitHubFileReader:
         self._owner = owner
         self._repo = repo
         self._ref = head_sha
+        self.symlinks: list[str] = []  # filled by list_files()
         self._headers = {
             "Authorization": f"Bearer {token}",
             "Accept": "application/vnd.github.raw",
@@ -77,6 +78,23 @@ class GitHubFileReader:
         except Exception:
             pass
 
+    def list_files(self) -> list[str] | None:
+        """Every file path in the repo at the PR head SHA (one API call), or None on failure or truncation."""
+        url = f"{self._GITHUB_API}/repos/{self._owner}/{self._repo}/git/trees/{self._ref}?recursive=1"
+        try:
+            response = self._client.get(url, headers={"Accept": "application/vnd.github+json"})
+            if response.status_code != 200:
+                return None
+            payload = response.json()
+            if payload.get("truncated"):
+                return None  # a partial tree would give wrong hints; none is better
+            blobs = [e for e in payload.get("tree", []) if e.get("type") == "blob"]
+            # A symlink is a blob with mode 120000: not listed, but kept for the report to warn about.
+            self.symlinks = [e["path"] for e in blobs if e.get("mode") == "120000"]
+            return [e["path"] for e in blobs if e.get("mode") in ("100644", "100755")]
+        except Exception:
+            return None
+
     def read_file(self, path: str, max_lines: int) -> str:
         """Fetch file content at the PR head SHA. Returns content or an error string."""
         cache_key = (path, max_lines)
@@ -95,7 +113,7 @@ class GitHubFileReader:
             return ReadError(f"Error: failed to fetch file from GitHub: {e}")
 
         if response.status_code == 404:
-            return ReadError(f"Error: file not found: {path}")
+            return NotFound(f"Error: file not found: {path}")
 
         _rate_limit_phrases = ("rate limit", "secondary rate limit", "you have exceeded")
         if response.status_code == 429 or (

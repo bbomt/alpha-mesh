@@ -5,11 +5,12 @@ parses JSON response, returns FileReviewResult.
 """
 
 import json as _json
+import posixpath
 import sys
 from dataclasses import dataclass, field
 
 from review_pull_request.policy import normalise
-from review_pull_request.readers import ReadError
+from review_pull_request.readers import NotFound, ReadError
 from review_pull_request.tools import READ_FILE_TOOL_SCHEMA
 
 
@@ -21,6 +22,7 @@ Review this file's diff for real bugs, security issues, performance problems, an
 
 ## Tool use
 Before forming a verdict on any issue, if you need to understand a type, interface, base class, imported symbol, or existing pattern that the diff references but does not define, call the read_file tool to inspect the relevant file. You may call it multiple times for different files. Only call it when it would materially change your verdict. You MUST provide a "reason" argument explaining why you need to read the file — e.g. "checking how AuthService is implemented to verify the diff does not break the login flow".
+{folder_listing}
 
 ## Mandatory checks
 You must explicitly audit the diff for ALL of the following. Do not skip a category because it seems unlikely — check each one.
@@ -112,8 +114,15 @@ def _normalise_severity(value) -> str:
     return sev if sev in ("high", "medium", "low") else "medium"  # unknown: do not understate
 
 
-def _build_per_file_prompt(chunk, overview: str) -> str:
-    return PER_FILE_PROMPT.format(overview=overview, diff_text=chunk.diff_text)
+def _folder_name(folder: str) -> str:
+    return f"`{folder}/`" if folder else "the repository root"
+
+
+def _build_per_file_prompt(chunk, overview: str, session) -> str:
+    folder = posixpath.dirname(chunk.file_path)
+    entries = session.folder_listing(folder)
+    listing = f"Files in the folder of the file under review ({_folder_name(folder)}): {', '.join(entries)}" if entries else ""
+    return PER_FILE_PROMPT.format(overview=overview, diff_text=chunk.diff_text, folder_listing=listing)
 
 
 def _parse_json_response(text: str) -> dict | None:
@@ -150,6 +159,20 @@ ALREADY_READ_NOTE = (
     "Do not request it again. Continue the review or return your JSON answer."
 )
 
+NOT_FOUND_AGAIN_NOTE = (
+    "You already requested this path and it does not exist. Do not request it again. "
+    "Try a different path or return your JSON answer."
+)
+
+
+def _with_hints(result: NotFound, suggestions: list[str], folder: str, entries: list[str]) -> NotFound:
+    lines = [str(result)]
+    if suggestions:
+        lines.append(f"Files with the same name: {', '.join(suggestions)}")
+    if entries:
+        lines.append(f"Nearest existing folder {_folder_name(folder)} contains: {', '.join(entries)}")
+    return NotFound("\n".join(lines))
+
 
 def run_file_review(chunk, overview: str, session) -> FileReviewResult:
     """Run agentic review for a single file chunk.
@@ -160,7 +183,7 @@ def run_file_review(chunk, overview: str, session) -> FileReviewResult:
     """
     config = session.config
     messages = [
-        {"role": "user", "content": _build_per_file_prompt(chunk, overview)}
+        {"role": "user", "content": _build_per_file_prompt(chunk, overview, session)}
     ]
 
     tool_calls_made = 0
@@ -168,6 +191,7 @@ def run_file_review(chunk, overview: str, session) -> FileReviewResult:
     tools = [READ_FILE_TOOL_SCHEMA]
     read_cache = getattr(config, "read_cache", None)
     paths_read: set[str] = set()  # paths already shown to the model in this review
+    paths_missing: set[str] = set()  # paths that came back "not found" in this review
 
     for iteration in range(max_iterations):
         response = session.review_llm.chat(messages, tools=tools)
@@ -191,6 +215,9 @@ def run_file_review(chunk, overview: str, session) -> FileReviewResult:
                     key = normalise(path)  # one spelling per file, for dedup and the cache
                     if key in paths_read:
                         result = ALREADY_READ_NOTE
+                    elif key in paths_missing:
+                        result = NotFound(NOT_FOUND_AGAIN_NOTE)
+                        print("     (not found, repeated — not re-read)", file=sys.stderr, flush=True)
                     elif read_cache is not None and key in read_cache:
                         result = read_cache[key]
                         print("     (cached)", file=sys.stderr, flush=True)
@@ -202,6 +229,16 @@ def run_file_review(chunk, overview: str, session) -> FileReviewResult:
                             if getattr(config, "read_cache_bytes", 0) + size <= cap:
                                 read_cache[key] = result
                                 config.read_cache_bytes = getattr(config, "read_cache_bytes", 0) + size
+                        if isinstance(result, NotFound):
+                            paths_missing.add(key)  # retrying cannot help, unlike a transient error
+                            session.note_missing(key, chunk.file_path)
+                            suggestions = session.suggest_paths(path)
+                            folder = session.nearest_folder(path)
+                            result = _with_hints(result, suggestions, folder, session.folder_listing(folder))
+                            hint = f"; suggested: {', '.join(suggestions)}" if suggestions else ""
+                            print(f"     (not found{hint})", file=sys.stderr, flush=True)
+                        elif isinstance(result, ReadError):
+                            print(f"     (failed: {result})", file=sys.stderr, flush=True)
                     if not isinstance(result, ReadError):
                         paths_read.add(key)  # failed reads stay retryable
                     messages.append({

@@ -12,6 +12,8 @@ File content can reach the model three ways:
 2. the **per-file prompts** (one file's diff)
 3. the **`read_file` tool** (the model asks to open a file)
 
+File *names* also reach the model, in folder listings and "did you mean" hints. They come only from `PolicyFileReader.list_files()`, which removes excluded paths, via `ReviewSession`.
+
 Each of these once had its own copy of the exclusion check, so a fix in one place left a hole in another. The design below means the rule is enforced in one place, and code cannot get round it by accident.
 
 ```

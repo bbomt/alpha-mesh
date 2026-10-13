@@ -8,7 +8,7 @@ from review_pull_request.review import main
 
 import pytest
 
-from tests.helpers import FakeLLM, http_llm_factory
+from tests.helpers import FakeLLM, StubReader, http_llm_factory
 
 
 @pytest.fixture(autouse=True)
@@ -544,3 +544,39 @@ def test_since_last_review_falls_back_to_full_review_when_history_was_rewritten(
     m["inc_diff"].assert_not_called()
     m["full_diff"].assert_called_once()
     assert "full review" in capsys.readouterr().err.lower()
+
+
+def test_report_lists_missing_paths_and_warns_about_symlinks():
+    from review_pull_request.stage2 import FileReviewResult
+
+    class LinkedRepo(StubReader):
+        symlinks = ["docs/link.md", ".env"]
+
+    def review(chunk, overview, session):
+        session.note_missing("src/cli.py", chunk.file_path)
+        return FileReviewResult(chunk.file_path, "s", [], 0)
+
+    with patch("review_pull_request.review.GitHubFileReader", lambda *a, **k: LinkedRepo({"src/a.py": ""})):
+        rc, mock_post = _run_main_with_results(review, DIFF, exclusions=["**/.env"])
+
+    body = mock_post.call_args[0][0]
+    assert rc == 0
+    assert "Paths not found" in body and "`src/cli.py` (asked while reviewing `src/a.py`)" in body
+    assert "`docs/link.md`" in body and ".env" not in body  # excluded names are not reported either
+
+
+def test_report_notes_an_unavailable_listing_even_if_it_is_first_fetched_for_the_report():
+    from review_pull_request.stage2 import FileReviewResult
+
+    class NoListing(StubReader):
+        def list_files(self):
+            return None
+
+    def review(chunk, overview, session):  # never touches the tree, so the report fetches it
+        session.note_missing("src/cli.py", chunk.file_path)
+        return FileReviewResult(chunk.file_path, "s", [], 0)
+
+    with patch("review_pull_request.review.GitHubFileReader", lambda *a, **k: NoListing()):
+        rc, mock_post = _run_main_with_results(review, DIFF)
+
+    assert "listing was unavailable" in mock_post.call_args[0][0]

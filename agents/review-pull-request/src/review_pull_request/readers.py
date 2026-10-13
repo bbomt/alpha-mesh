@@ -7,12 +7,17 @@ wrapped in PolicyFileReader (Decorator), which refuses excluded paths before any
 import codecs
 import itertools
 import os
+import unicodedata
 
 from review_pull_request.policy import PathPolicy, normalise
 
 
 class ReadError(str):
     """A failed read, as text for the model. Content that merely starts with 'Error:' is not one."""
+
+
+class NotFound(ReadError):
+    """The path does not exist: unlike a transient error, retrying it cannot help."""
 
 
 MAX_READ_BYTES = 1024 * 1024  # a file of a few huge lines is still bounded
@@ -23,6 +28,7 @@ class LocalFileReader:
 
     def __init__(self, repo_root: str) -> None:
         self._root = os.path.realpath(repo_root)
+        self.symlinks: list[str] = []  # filled by list_files()
 
     def canonical_path(self, path: str) -> str | None:
         """Repo-relative path after resolving symlinks, or None if it escapes the root."""
@@ -31,6 +37,24 @@ class LocalFileReader:
             return None
         return os.path.relpath(target, self._root).replace(os.sep, "/")
 
+    def list_files(self) -> list[str]:
+        """Every regular file under the root, repo-relative ('.git' skipped).
+
+        Symlinks (files or folders) are not listed, and not walked into; they are kept in
+        self.symlinks for the report to warn about.
+        """
+        files, self.symlinks = [], []
+        for top, dirs, names in os.walk(self._root):
+            dirs[:] = [d for d in dirs if d != ".git"]
+            rel = os.path.relpath(top, self._root)
+            for n in names + dirs:  # os.walk puts a symlinked folder in dirs but never enters it
+                path = n if rel == "." else f"{rel}/{n}".replace(os.sep, "/")
+                if os.path.islink(os.path.join(top, n)):
+                    self.symlinks.append(path)
+                elif n in names:
+                    files.append(path)
+        return files
+
     def read_file(self, path: str, max_lines: int) -> str:
         real = self.canonical_path(path)
         if real is None:
@@ -38,7 +62,7 @@ class LocalFileReader:
         target = os.path.join(self._root, real)
 
         if not os.path.isfile(target):
-            return ReadError(f"Error: file not found: {path}")
+            return NotFound(f"Error: file not found: {path}")
 
         try:
             with open(target, "rb") as f:
@@ -66,6 +90,13 @@ class LocalFileReader:
         return "".join(lines)
 
 
+def _safe_name(path: str) -> bool:
+    """False for names with control, format or line-separator characters (a newline or a
+    bidi override could forge or disguise prompt text), or lone surrogates (an undecodable
+    local file name, which cannot be sent to the model as JSON)."""
+    return not any(unicodedata.category(c) in ("Cc", "Cf", "Cs", "Zl", "Zp") for c in path)
+
+
 class PolicyFileReader:
     """Decorator: same read_file() interface, but excluded or out-of-root paths are refused."""
 
@@ -79,15 +110,38 @@ class PolicyFileReader:
         clean = normalise(path)
         if clean == ".." or clean.startswith("../"):
             return ReadError("Error: access denied — path is outside the repository root.")
-        if self._policy.is_excluded(clean):
+        if self._is_excluded(clean):
             return self._refused(path)
+        return self._inner.read_file(clean, max_lines)
+
+    def list_files(self) -> list[str] | None:
+        """The repo's files minus excluded ones, or None if the inner reader cannot list.
+
+        Names reach the model too, so unsafe ones (see _safe_name) are dropped along with
+        excluded files.
+        """
+        inner = getattr(self._inner, "list_files", None)
+        files = inner() if inner is not None else None
+        if files is None:
+            return None
+        return [p for p in files if _safe_name(p) and not self._is_excluded(normalise(p))]
+
+    @property
+    def symlinks(self) -> list[str]:
+        """Symlinks the last listing found, minus excluded and unsafe names (for the report)."""
+        return [p for p in getattr(self._inner, "symlinks", [])
+                if _safe_name(p) and not self._policy.is_excluded(normalise(p))]
+
+    def _is_excluded(self, clean: str) -> bool:
+        if self._policy.is_excluded(clean):
+            return True
         # A symlink (or case alias) can resolve to an excluded file: check the real target too.
         canonical = getattr(self._inner, "canonical_path", None)
         if canonical is not None:
             real = canonical(clean)
             if real is not None and self._policy.is_excluded(real):
-                return self._refused(path)
-        return self._inner.read_file(clean, max_lines)
+                return True
+        return False
 
     def close(self) -> None:
         close = getattr(self._inner, "close", None)

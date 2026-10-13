@@ -234,6 +234,113 @@ def test_failed_read_can_be_retried_within_the_same_review():
     assert _tool_messages(llm) == ["Error: GitHub API rate limit exceeded.", "FILE BODY"]
 
 
+def test_a_repeated_missing_path_gets_a_note_instead_of_a_fresh_read(capsys):
+    llm = FakeLLM(_scripted(*[[_tool_call(str(i), "pkg/x.py")] for i in range(3)]))
+    reader = StubReader()
+
+    _review(model=llm, reader=reader)
+
+    assert reader.asked == ["pkg/x.py"]  # read once; the repeats never reach the reader
+    first, *repeats = _tool_messages(llm)
+    assert "not found" in first
+    assert all("does not exist" in m and "do not request it again" in m.lower() for m in repeats)
+    err = capsys.readouterr().err
+    assert "(not found)" in err and err.count("not re-read") == 2
+
+
+def test_not_found_suggests_the_same_file_name_from_the_repo():
+    llm = FakeLLM(_scripted([_tool_call("1", "pkg/x.py")]))
+
+    _review(model=llm, reader=StubReader({"src/pkg/x.py": "x", "src/y.py": "y"}))
+
+    [msg] = _tool_messages(llm)
+    assert "not found" in msg and "Files with the same name: src/pkg/x.py" in msg
+    assert "src/y.py" not in msg
+
+
+def test_not_found_lists_the_nearest_existing_folder():
+    """PR #9 shape: `src/` dropped from the path. The nearest real folder shows `src/`."""
+    llm = FakeLLM(_scripted([_tool_call("1", "agent/pkg/missing.py")]))
+
+    _review(model=llm, reader=StubReader({"agent/src/pkg/a.py": "", "agent/README.md": ""}))
+
+    [msg] = _tool_messages(llm)
+    assert "Nearest existing folder `agent/` contains: README.md, src/" in msg
+
+
+def test_the_prompt_lists_the_folder_of_the_file_under_review():
+    """PR #11 shape: the model guessed stages.py; the real stage files sit beside the reviewed file."""
+    llm = FakeLLM(_scripted())
+    reader = StubReader({"pkg/session.py": "", "pkg/stage1.py": "", "pkg/stage2.py": "", "pkg/sub/x.py": ""})
+
+    _review(_chunk("pkg/session.py"), model=llm, reader=reader)
+
+    prompt = llm.calls[0][0][0]["content"]
+    assert "Files in the folder of the file under review (`pkg/`): session.py, stage1.py, stage2.py, sub/" in prompt
+
+
+def test_an_excluded_file_is_never_suggested_or_listed():
+    config = MockConfig()
+    config.exclusions = ["**/secrets/*", "**/.env"]
+    llm = FakeLLM(_scripted([_tool_call("1", "pkg/keys.py")]))
+    reader = StubReader({"secrets/keys.py": "", "pkg/.env": "", "pkg/a.py": ""})
+
+    _review(_chunk("pkg/a.py"), config=config, model=llm, reader=reader)
+
+    [msg] = _tool_messages(llm)
+    prompt = llm.calls[0][0][0]["content"]
+    assert "Nearest existing folder `pkg/` contains: a.py" in msg
+    for text in (msg, prompt):
+        assert "secrets" not in text and ".env" not in text
+
+
+def test_without_a_file_listing_the_review_still_runs(capsys):
+    class NoListing(StubReader):
+        def list_files(self):
+            return None
+
+    llm = FakeLLM(_scripted([_tool_call("1", "pkg/x.py")]))
+    result = _review(model=llm, reader=NoListing())
+
+    assert result.summary == "ok"
+    assert _tool_messages(llm) == ["Error: file not found: pkg/x.py"]
+    assert "file listing unavailable" in capsys.readouterr().err
+
+
+def test_the_file_listing_is_fetched_once_per_run_even_when_it_fails(capsys):
+    class DownListing(StubReader):
+        calls = 0
+
+        def list_files(self):
+            DownListing.calls += 1
+            return None  # e.g. a truncated tree: fetching again cannot help
+
+    llm = FakeLLM(_scripted(*[[_tool_call(str(i), f"pkg/missing{i}.py")] for i in range(4)]))
+    session = make_session(MockConfig(), llm=llm, reader=DownListing())
+    for name in ("a.py", "b.py", "c.py", "d.py"):
+        run_file_review(_chunk(f"pkg/{name}"), "Overview", session)
+
+    assert DownListing.calls == 1
+    assert session.listing_failed
+    assert capsys.readouterr().err.count("file listing unavailable") == 1
+
+
+def test_missing_paths_are_recorded_once_for_the_report():
+    llm = FakeLLM(_scripted([_tool_call("1", "pkg/x.py")], [_tool_call("2", "./pkg/x.py")]))
+    session = make_session(MockConfig(), llm=llm, reader=StubReader({"pkg/a.py": ""}))
+    run_file_review(_chunk("pkg/a.py"), "Overview", session)
+
+    assert session.missing_paths == {"pkg/x.py": ["pkg/a.py"]}
+    assert not session.listing_failed
+
+
+def test_other_failed_reads_are_printed(capsys):
+    _review(model=_scripted([_tool_call("1", "a.py")]),
+            reader=StubReader({"a.py": ReadError("Error: GitHub API rate limit exceeded.")}))
+
+    assert "(failed: Error: GitHub API rate limit exceeded.)" in capsys.readouterr().err
+
+
 def test_read_cache_bytes_counter_tracks_stored_content():
     config = MockConfig()
     config.read_cache = {}
