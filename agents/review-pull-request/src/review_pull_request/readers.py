@@ -92,8 +92,9 @@ class LocalFileReader:
 
 def _safe_name(path: str) -> bool:
     """False for names with control, format or line-separator characters (a newline or a
-    bidi override could forge or disguise prompt text)."""
-    return not any(unicodedata.category(c) in ("Cc", "Cf", "Zl", "Zp") for c in path)
+    bidi override could forge or disguise prompt text), or lone surrogates (an undecodable
+    local file name, which cannot be sent to the model as JSON)."""
+    return not any(unicodedata.category(c) in ("Cc", "Cf", "Cs", "Zl", "Zp") for c in path)
 
 
 class PolicyFileReader:

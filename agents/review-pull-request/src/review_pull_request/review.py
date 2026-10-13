@@ -383,6 +383,8 @@ Examples:
                 )
             model = config.model
 
+        # Before listing_failed is read: this may be the first (and only) fetch of the repo tree.
+        repo_symlinks = [] if args.dry_run else session.symlinks()
         report = render_report(
             overview=overview,
             issues=all_issues,
@@ -395,7 +397,7 @@ Examples:
             excluded=excluded_files,
             missing=session.missing_paths,
             listing_failed=session.listing_failed,
-            symlinks=[] if args.dry_run else session.symlinks(),
+            symlinks=repo_symlinks,
         )
 
         # stdout: hide_pr_comment means print body to stdout only if NOT hiding

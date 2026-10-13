@@ -563,3 +563,20 @@ def test_report_lists_missing_paths_and_warns_about_symlinks():
     assert rc == 0
     assert "Paths not found" in body and "`src/cli.py` (asked while reviewing `src/a.py`)" in body
     assert "`docs/link.md`" in body and ".env" not in body  # excluded names are not reported either
+
+
+def test_report_notes_an_unavailable_listing_even_if_it_is_first_fetched_for_the_report():
+    from review_pull_request.stage2 import FileReviewResult
+
+    class NoListing(StubReader):
+        def list_files(self):
+            return None
+
+    def review(chunk, overview, session):  # never touches the tree, so the report fetches it
+        session.note_missing("src/cli.py", chunk.file_path)
+        return FileReviewResult(chunk.file_path, "s", [], 0)
+
+    with patch("review_pull_request.review.GitHubFileReader", lambda *a, **k: NoListing()):
+        rc, mock_post = _run_main_with_results(review, DIFF)
+
+    assert "listing was unavailable" in mock_post.call_args[0][0]
