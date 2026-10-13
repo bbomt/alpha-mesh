@@ -565,6 +565,40 @@ def test_report_lists_missing_paths_and_warns_about_symlinks():
     assert "`docs/link.md`" in body and ".env" not in body  # excluded names are not reported either
 
 
+def test_report_lists_only_the_missing_paths_the_model_did_not_recover_from():
+    """PMAT-263, PR #11 shape: a miss followed by a read of the suggested path is noise."""
+    asks = ["util.py", "lib/util.py", "nowhere.py"]  # miss (hinted), recovery, miss (no hint)
+
+    def responder(messages, tools):
+        if tools is None:  # the overview call
+            return MagicMock(content="An overview.", tool_calls=[])
+        done = sum(1 for m in messages if m.get("role") == "tool")
+        if done < len(asks):
+            call = MagicMock(id=str(done), arguments={"path": asks[done], "reason": "r"})
+            call.name = "read_file"
+            return MagicMock(content=None, tool_calls=[call])
+        return MagicMock(content='{"summary": "ok", "issues": []}', tool_calls=[])
+
+    config = Config(model="m", api_url="http://x", api_token=SECRET)
+    repo = StubReader({"src/a.py": "", "lib/util.py": "u"})
+    with patch("review_pull_request.review.load_config", return_value=config), \
+         patch("review_pull_request.review.parse_pr_url", return_value=("owner", "repo", 42)), \
+         patch("review_pull_request.review.get_pr_info", return_value=_mock_pr_info()), \
+         patch("review_pull_request.review.get_pr_description", return_value=""), \
+         patch("review_pull_request.review.get_diff", return_value=DIFF), \
+         patch("review_pull_request.review.GitHubFileReader", lambda *a, **k: repo), \
+         patch("review_pull_request.session.HttpLLM", http_llm_factory(responder)), \
+         patch("review_pull_request.review.post_comment") as mock_post, \
+         patch("subprocess.run", return_value=MagicMock(returncode=0, stdout="ghtoken")):
+        sys.argv = ["review", "https://github.com/owner/repo/pull/42"]
+        rc = main()
+
+    body = mock_post.call_args[0][0]
+    assert rc == 0
+    assert "`nowhere.py` (asked while reviewing `src/a.py`)" in body
+    assert "`util.py`" not in body
+
+
 def test_report_notes_an_unavailable_listing_even_if_it_is_first_fetched_for_the_report():
     from review_pull_request.stage2 import FileReviewResult
 

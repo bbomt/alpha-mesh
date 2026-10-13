@@ -224,6 +224,7 @@ def test_an_unavailable_file_listing_is_noted_so_missing_hints_are_explained():
                          missing={"src/cli.py": ["a.py"]}, listing_failed=True)
 
     assert "listing was unavailable" in body
+    assert "`src/cli.py` (asked while reviewing `a.py`)" in body
 
 
 def test_symlinks_in_the_repository_are_warned_about():
