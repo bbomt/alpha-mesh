@@ -7,7 +7,7 @@ It builds the PathPolicy once and hands the stages only wrapped collaborators:
   * folder_listing(folder)    : a folder's entries, from the policy-filtered repo tree
   * nearest_folder(path)      : the closest folder of a path that exists in that tree
   * suggest_paths(path)       : files anywhere in that tree with the same name as a missing path
-  * note_missing(path, file)  : records a path the model asked for that does not exist (for the report)
+  * note_missing(path, file)  : records a missing path the model did not recover from (for the report)
 Stages receive the session, not the raw pieces, so they have no way around the policy.
 """
 

@@ -334,6 +334,63 @@ def test_missing_paths_are_recorded_once_for_the_report():
     assert not session.listing_failed
 
 
+# --- PMAT-263: only misses the model did not recover from reach the report ---
+
+def _missing_after(*reviews, files=None, reader=None):
+    """Run each (file under review, tool-call rounds) in one session; return session.missing_paths."""
+    script = {}
+    llm = FakeLLM(lambda messages, tools: script["model"](messages, tools))
+    session = make_session(MockConfig(), llm=llm, reader=reader or StubReader(files))
+    for path, rounds in reviews:
+        script["model"] = _scripted(*rounds)
+        run_file_review(_chunk(path), "Overview", session)
+    return session.missing_paths
+
+
+REPO = {"pkg/a.py": "", "pkg/b.py": "", "src/pkg/x.py": "x"}
+
+
+def test_a_miss_followed_by_a_read_of_the_suggested_path_is_not_reported():
+    missing = _missing_after(("pkg/a.py", [[_tool_call("1", "pkg/x.py")], [_tool_call("2", "src/pkg/x.py")]]),
+                             files=REPO)
+    assert missing == {}
+
+
+def test_a_miss_whose_suggestion_was_read_earlier_in_the_review_is_not_reported():
+    missing = _missing_after(("pkg/a.py", [[_tool_call("1", "src/pkg/x.py")], [_tool_call("2", "pkg/x.py")]]),
+                             files=REPO)
+    assert missing == {}
+
+
+def test_a_miss_whose_suggestion_is_the_file_under_review_is_not_reported():
+    missing = _missing_after(("src/pkg/x.py", [[_tool_call("1", "pkg/x.py")]]), files=REPO)
+    assert missing == {}
+
+
+def test_a_miss_whose_suggestions_are_never_read_is_reported():
+    missing = _missing_after(("pkg/a.py", [[_tool_call("1", "pkg/x.py")]]), files=REPO)
+    assert missing == {"pkg/x.py": ["pkg/a.py"]}
+
+
+def test_a_path_recovered_in_one_review_is_reported_only_for_the_review_that_did_not_recover():
+    missing = _missing_after(
+        ("pkg/a.py", [[_tool_call("1", "pkg/x.py")], [_tool_call("2", "src/pkg/x.py")]]),
+        ("pkg/b.py", [[_tool_call("3", "pkg/x.py")]]),
+        files=REPO,
+    )
+    assert missing == {"pkg/x.py": ["pkg/b.py"]}
+
+
+def test_without_a_file_listing_every_miss_is_reported():
+    class NoListing(StubReader):
+        def list_files(self):
+            return None
+
+    missing = _missing_after(("pkg/a.py", [[_tool_call("1", "pkg/x.py")], [_tool_call("2", "src/pkg/x.py")]]),
+                             reader=NoListing(REPO))
+    assert missing == {"pkg/x.py": ["pkg/a.py"]}  # no suggestion was offered, so nothing to recover by
+
+
 def test_other_failed_reads_are_printed(capsys):
     _review(model=_scripted([_tool_call("1", "a.py")]),
             reader=StubReader({"a.py": ReadError("Error: GitHub API rate limit exceeded.")}))

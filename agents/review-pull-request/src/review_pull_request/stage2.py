@@ -180,7 +180,22 @@ def run_file_review(chunk, overview: str, session) -> FileReviewResult:
     Model calls go through session.review_llm and file reads through session.reader, which
     already enforce the exclusion policy. Handles read_file tool calls, retries JSON parse once.
     LLMError propagates: an unusable model API is fatal.
+
+    Only misses the model did not recover from reach the report: a miss is recovered if, by the
+    end of this review, one of its suggested paths was read or is the file under review.
     """
+    paths_read: set[str] = set()  # paths already shown to the model in this review
+    misses: dict[str, list[str]] = {}  # path that came back "not found" -> suggested paths
+    result = _run_file_review(chunk, overview, session, paths_read, misses)
+    seen = paths_read | {normalise(chunk.file_path)}
+    for path, suggestions in misses.items():
+        if not seen.intersection(suggestions):
+            session.note_missing(path, chunk.file_path)
+    return result
+
+
+def _run_file_review(chunk, overview: str, session, paths_read: set[str],
+                     misses: dict[str, list[str]]) -> FileReviewResult:
     config = session.config
     messages = [
         {"role": "user", "content": _build_per_file_prompt(chunk, overview, session)}
@@ -190,8 +205,6 @@ def run_file_review(chunk, overview: str, session) -> FileReviewResult:
     max_iterations = config.max_tool_calls + 3  # reads, then the answer, then one JSON retry
     tools = [READ_FILE_TOOL_SCHEMA]
     read_cache = getattr(config, "read_cache", None)
-    paths_read: set[str] = set()  # paths already shown to the model in this review
-    paths_missing: set[str] = set()  # paths that came back "not found" in this review
 
     for iteration in range(max_iterations):
         response = session.review_llm.chat(messages, tools=tools)
@@ -215,7 +228,7 @@ def run_file_review(chunk, overview: str, session) -> FileReviewResult:
                     key = normalise(path)  # one spelling per file, for dedup and the cache
                     if key in paths_read:
                         result = ALREADY_READ_NOTE
-                    elif key in paths_missing:
+                    elif key in misses:
                         result = NotFound(NOT_FOUND_AGAIN_NOTE)
                         print("     (not found, repeated — not re-read)", file=sys.stderr, flush=True)
                     elif read_cache is not None and key in read_cache:
@@ -230,9 +243,8 @@ def run_file_review(chunk, overview: str, session) -> FileReviewResult:
                                 read_cache[key] = result
                                 config.read_cache_bytes = getattr(config, "read_cache_bytes", 0) + size
                         if isinstance(result, NotFound):
-                            paths_missing.add(key)  # retrying cannot help, unlike a transient error
-                            session.note_missing(key, chunk.file_path)
                             suggestions = session.suggest_paths(path)
+                            misses[key] = suggestions  # retrying cannot help, unlike a transient error
                             folder = session.nearest_folder(path)
                             result = _with_hints(result, suggestions, folder, session.folder_listing(folder))
                             hint = f"; suggested: {', '.join(suggestions)}" if suggestions else ""
