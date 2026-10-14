@@ -84,7 +84,7 @@ A checkpoint is written after each node: `overview`, each `review_next_file` ste
 Inside one file's review nothing is checkpointed. A file whose review was in flight when the run died
 has no result and is reviewed again. A half-finished file is never reported as reviewed.
 
-**What is saved is results only, so it adds no new exposure.** The state (3.3) holds file paths,
+**What is saved is results only.** The state (3.3) holds file paths,
 model output (the overview, each file's summary and findings, missing paths, the report) and small
 values (model names, tool-call counts, incomplete flags). It holds no diff, no file contents, no
 prompts and no conversation with the model.
@@ -92,8 +92,11 @@ prompts and no conversation with the model.
 - The model's input has passed the exclusion policy and `GuardedLLM`'s redaction. `GuardedLLM`
   redacts what goes *to* the model, not what comes back, so the model could only repeat a secret
   that already reached it unredacted. That same model output is what the PR comment publishes
-  today (reports are not redacted), so saving it in the checkpoint exposes nothing the comment
-  does not. A made-up token-shaped string is not a secret.
+  today (reports are not redacted), so the checkpoint holds the same kind of content the comment
+  does. A made-up token-shaped string is not a secret.
+- Where it differs from the comment: a run that dies before `post` leaves its results saved but
+  never published, and the store's readers are everyone with the SSO `dev-EC2` permission set, not
+  the PR's readers. Results are kept for the TTL (default 2 days, 3.10), then expire.
 - File paths are those in the PR's own diff (excluded ones are removed); the small values hold no
   content.
 - No extra redaction on saving: the standard `DynamoDBSaver` (and `SqliteSaver` in tests) is used
@@ -168,8 +171,9 @@ The CLI reads `graph.get_state(config)`, as the reference `invoke_thread_with_re
 ### 3.6 Posting
 
 `post` posts the report as today. Posting the comment and saving the checkpoint after `post` are two
-steps, so a run killed in the split second after GitHub accepts the comment and before the
-checkpoint is saved would post the same comment again on resume.
+steps. If GitHub accepts the comment but the checkpoint after `post` is never saved, the resume
+posts the same comment again. That happens when the run is killed in the split second between the
+two, or when GitHub's response is lost on the network (the post raises, although GitHub saved it).
 
 **Accepted (owner decision, 2026-10-14):** that rare duplicate is harmless and can be deleted by
 hand. It does not affect `--since-last-review`: both copies name the same `Reviewed commit`. No
@@ -227,7 +231,7 @@ The stages talk to the model through `session.review_llm.chat(messages, tools)`,
 | 3 attempts, backoff 2/4/8 s on 429/500/502/503, timeouts, connection errors | SDK `max_retries=2` (3 attempts): exponential backoff **with jitter**, honours `Retry-After`, also retries 408/409 and all 5xx |
 | 120 s request timeout | `timeout=120` |
 | Malformed 200 body retried, then `LLMError` | `.with_retry(retry_if_exception_type=(MalformedResponse,), stop_after_attempt=3)` on a small parse check |
-| 200 body with an error object: `ProviderError`, fails fast with its message | Same: detect the error object and raise `ProviderError`, not retried (PMAT-236 may change this) |
+| 200 body with an error object: `ProviderError`, fails fast with its message | Same: detect the error object and raise `ProviderError`, not retried (PMAT-236 may change this). The ported test (5.3) is written first and decides how: if `ChatOpenAI` does not surface the provider's message, `LangChainLLM` inspects the raw response itself |
 | 404 with tools: retry without tools | **No fallback without tools (owner decision, 2026-10-14):** without tools the review cannot read files, so the fallback silently gave a weaker review. Instead the **same call, with tools,** is retried twice with backoff: on OpenRouter a 404 here means no provider that supports tools is reachable for the model *right now*, which can be transient. After 3 attempts: `LLMError` (see below). Deliberate behaviour change, covered by tests. PMAT-236 later moves this into its single classification |
 
 `LLMError` / `ProviderError` stay as the exceptions the CLI catches, so the fatal-error message
@@ -389,8 +393,8 @@ does not.
 
 Invariant: *excluded content and tokens never reach the model or the checkpoint store, by any path.*
 Paths: overview prompt, per-file prompt, `read_file` results, folder listings and not-found hints
-(as today), **plus** the checkpoint blobs (DynamoDB items and S3 objects; `SqliteSaver` rows in
-tests).
+(as today), **plus** the saved checkpoint state, scanned through `SqliteSaver` in tests (C2: the
+saved content is the same whichever saver writes it).
 
 | # | Test |
 |---|---|
