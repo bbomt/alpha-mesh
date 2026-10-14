@@ -64,7 +64,7 @@ CLI (review.py)
   │  take the local run lock (3.6a)
   │  ReviewSession.create(...)  (policy, guarded LangChain model, guarded reader)
   ▼
-Review graph (LangGraph StateGraph, checkpointer = redacting DynamoDBSaver)
+Review graph (LangGraph StateGraph, checkpointer = DynamoDBSaver)
   START ─► overview ─► review_next_file ─┐
                          ▲               │ files without a result left?
                          └───────────────┘
@@ -84,18 +84,19 @@ A checkpoint is written after each node: `overview`, each `review_next_file` ste
 Inside one file's review nothing is checkpointed. A file whose review was in flight when the run died
 has no result and is reviewed again. A half-finished file is never reported as reviewed.
 
-**Redaction at the store boundary.** Every checkpoint passes through the saver's serializer
-(`saver.serde`) before it is written. `checkpoints.py` wraps it: `RedactingSerializer` walks the
-object (strings, dicts, lists, tuples) and runs the existing `Redactor` over every string, then
-delegates to LangGraph's `JsonPlusSerializer`. So the rule "no token reaches the store" is enforced by
-our own code in one place, not by LangGraph internals.
+**What is saved is results only, so it is safe by construction.** The state (3.3) holds file
+paths and model output: the overview, each file's summary and findings, missing paths, model names
+and the report. It holds no diff, no file contents, no prompts and no conversation with the model.
 
-- `DynamoDBSaver` has no `serde` argument but reads `self.serde` in `__init__` (`saver.py:123` in
-  `langgraph-checkpoint-aws`), so `checkpoints.py` builds it as a small subclass with
-  `serde = RedactingSerializer(redactor)`. `SqliteSaver` (tests) takes `serde=` directly.
+- The model only ever sees input that has passed the exclusion policy and `GuardedLLM`'s redaction,
+  so excluded content and known tokens cannot reach its output, and so cannot reach the state.
+- Everything in the state also ends up in the posted PR comment. The checkpoint store holds nothing
+  that is not already on GitHub.
+- No extra redaction on saving: the standard `DynamoDBSaver` (and `SqliteSaver` in tests) is used
+  as is. The guarantee is proven by tests instead (5.2): a scan of everything saved for planted
+  secrets, a run with a deliberate leak to show the scan works, and a test that the state contains
+  only the fields listed in 3.3.
 - Only `checkpoints.py` builds a saver; `test_architecture.py` enforces it.
-- Excluded *files* never enter the state at all: the diff is not stored (3.3) and the policy refuses
-  their reads. Redaction at the store covers tokens, as redaction at the model does.
 
 ### 3.3 Graph state (what is persisted)
 
@@ -115,10 +116,14 @@ class ReviewState(TypedDict):
     files: list[str]                                   # files to review, in diff order
     overview: str | None
     overview_model: str | None
-    results: Annotated[dict[str, FileResult], merge]   # file_path -> result; a None value deletes
+    results: dict[str, FileResult]                     # file_path -> result (plain field, no reducer)
     report: str | None
     report_id: str | None                              # new UUID4 each time `report` runs (3.6)
 ```
+
+`results` is a plain field: `review_next_file` returns the whole dict with its new result added
+(`{"results": {**state["results"], path: result}}`), and RETRY (3.5) overwrites it. There is no custom
+merge rule to define or test.
 
 The diff is fetched again on resume; it is deterministic for the same head SHA (and base SHA for
 incremental reviews), which the thread key guarantees. Chunks are rebuilt from `SafeDiff`.
@@ -147,7 +152,7 @@ The CLI reads `graph.get_state(config)`, as the reference `invoke_thread_with_re
 |---|---|---|
 | none | **START** with the initial input | `Starting review (thread …)` |
 | `next` non-empty (stopped mid-run) | **RESUME**: `graph.stream(None, config)` | `Resuming: N file(s) from checkpoint, M to review` + both lists |
-| reached END, some results incomplete | **RETRY**: remove the incomplete results with `graph.update_state(config, {"results": {path: None, …}}, as_node="overview")`, then `graph.stream(None, config)` | `Retrying N incomplete file(s)` + list |
+| reached END, some results incomplete | **RETRY**: overwrite `results` with a copy that leaves out the incomplete files, `graph.update_state(config, {"results": complete_only}, as_node="overview")`, then `graph.stream(None, config)`. A different `--model` may be used | `Retrying N incomplete file(s)` + list |
 | reached END, no incomplete results | **SKIP**: print the stored report, post nothing | `Already completed (thread …)` |
 
 - `review_next_file` reviews the first file in `files` that has no result. A file that comes back
@@ -349,7 +354,7 @@ Node idempotency matters here: every outer node may run again on resume. `overvi
 | `llm.py` | `HttpLLM` replaced by `LangChainLLM` (same `chat` interface, 3.8); HTTP code removed; `LLMError` / `ProviderError` kept |
 | `session.py` | Builds the chat model from URL + model name (3.7) and wraps it in `GuardedLLM` as today |
 | `stage1.py`, `stage2.py`, `guard.py` | Unchanged |
-| `checkpoints.py` (new) | `make_checkpointer(config, redactor)` (redacting DynamoDB saver from SSM/env, 3.2), `thread_id(...)`, `policy_hash(...)`, the run lock (3.6a) |
+| `checkpoints.py` (new) | `make_checkpointer(config)` (standard `DynamoDBSaver` from SSM/env), `thread_id(...)`, `policy_hash(...)`, the run lock (3.6a) |
 | `formatter.py` | Header lists every model used; each file's summary line names its model (also overview); hidden run marker |
 | `github.py` | `has_run_marker(pr_url, report_id)` for exactly-once posting |
 
@@ -403,9 +408,10 @@ tests).
 
 | # | Test |
 |---|---|
-| C1 | All existing canary tests pass against the LangChain path (recording fake model sits after the redaction runnable) |
-| C2 | After a full run, a killed run and a resumed run, no checkpoint blob contains the canary marker or any planted token (scan every serialised checkpoint and pending write) |
-| C3 | **Protection off:** the fake model returns a planted token inside a finding's comment (a model echoing or guessing a secret). With the plain `JsonPlusSerializer` the token appears in the store; with `RedactingSerializer` it does not |
+| C1 | All existing canary tests pass against the LangChain path (recording fake model sits behind `GuardedLLM`, as today) |
+| C2 | **Secret scan of the store:** plant a canary in an excluded file and tokens in ordinary files; run a full review, a killed run and its resume (`SqliteSaver`). Search every saved checkpoint and pending write: the canary and tokens never appear |
+| C3 | **Does the scan work?** A test-only graph variant that also saves the diff in the state. The C2 search must find the canary, so C2 cannot pass by accident |
+| C5 | **Only these fields:** `ReviewState` and `FileResult` contain exactly the fields in 3.3. A new field that could hold raw content fails this test until it is changed on purpose |
 | C4 | A token in an allowed file is redacted before the model sees it (existing test, new path) |
 
 ### 5.3 Unit tests
@@ -445,7 +451,7 @@ findings in the ticket's changes; 2 passes) → DONE with a Jira comment.
 |---|---|---|
 | **PMAT-264 (237a) — Checkpoint infra (CDK)** | `infra/cdk`, `infra/scripts`, `scripts/deploy-dev-from-ec2.sh`, CDK assertion tests, README section | `deploy-dev-from-ec2.sh` deploys; table, bucket and SSM params exist; write probe (3.10) passes with `dev-EC2`; a manual `DynamoDBSaver` put/get works from EC2 |
 | **PMAT-265 (237b) — LangGraph + LangChain models, no behaviour change** | 3.7–3.9, 3.11, 3.12, graph with `InMemorySaver` calling `stage1`/`stage2` unchanged, `LangChainLLM` behind `GuardedLLM`, ported unit and canary tests (C1, C4), `CLAUDE_LANGGRAPH.md` | All existing tests pass; a real review of a small PR gives the same report shape as before |
-| **PMAT-266 (237c) — Durable checkpoints and resume** | `checkpoints.py`, thread key, start/resume/skip, incomplete retry, multi-model header, `--fresh`, local run lock (3.6a), redacting serializer (3.2), A1–A8, A10–A14, A16, A17, A20, C2–C3, I1 | Acceptance tests green; a real review killed mid-run resumes from the right file |
+| **PMAT-266 (237c) — Durable checkpoints and resume** | `checkpoints.py`, thread key, start/resume/skip, incomplete retry, multi-model header, `--fresh`, local run lock (3.6a), results-only state tests (C2, C3, C5), A1–A8, A10–A14, A16, A17, A20, I1 | Acceptance tests green; a real review killed mid-run resumes from the right file |
 | **PMAT-267 (237d) — Exactly-once post and docs** | Run marker (`report_id`), `has_run_marker` (fail closed), marker kept on truncation, A9, A15, A18, A19, README (resume, `--fresh`, free-model workflow, AWS prerequisites), `.env.example` | A9 green; README matches the CLI |
 
 237a and 237b can run in parallel; 237c needs both; 237d needs 237c.
