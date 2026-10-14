@@ -327,8 +327,10 @@ agents/review-pull-request/
 - **Access, same as the PMATFE-mfe-* projects:** their CDK grants permissions only to runtime
   principals (Lambdas, via `table.grantReadWriteData(fn)`). People and the EC2 instance act through
   the IAM Identity Center (SSO) `dev-EC2` permission set, e.g. the mfe-sales integration tests use the
-  tables directly. This agent runs on EC2 as the developer, so **the stack creates no IAM
-  resources** and relies on `dev-EC2`. The reference's policy attached to an IAM user is a pre-SSO
+  tables directly. This agent runs on EC2 as the developer, so **the stack grants no access
+  through IAM** (no policies, users or roles for the agent) and relies on `dev-EC2`. Exception: in
+  dev, `autoDeleteObjects` makes CDK add its own Lambda and execution role to empty the bucket on
+  teardown; that role is CDK's and grants the agent nothing. The reference's policy attached to an IAM user is a pre-SSO
   setup and is not copied.
 - Actions the agent needs: DynamoDB GetItem, PutItem (incl. conditional), UpdateItem, DeleteItem,
   Query, BatchGetItem, BatchWriteItem; S3 PutObject, GetObject, DeleteObject, PutObjectTagging, and
@@ -406,7 +408,7 @@ does not.
 | A6 | Resume with a **different model** | Files 1..K-1 keep their original model; K.. use the new one; header lists both models; each file's summary names its own model |
 | A7 | Head SHA changed between runs | New thread; nothing reused |
 | A8 | Exclusion policy changed between runs | New thread; nothing reused |
-| A9 | Crash after a successful post (post succeeds, process killed before checkpoint) | Resume finds the marker, does not post again |
+| A9 | Crash after a successful post (post succeeds, process killed before checkpoint) | Setup asserts `report_id` is already in the checkpoint written by `report`, before `post` runs. Resume reuses it, finds the marker, does not post again |
 | A10 | Completed and posted thread run again | SKIP: stored report printed, no model call, no post |
 | A11 | Run that finished with an incomplete file, run again | Only the incomplete file is reviewed again; a new report is posted (new `report_id`); other files not re-sent |
 | A12 | `--since-last-review` killed and resumed | Same as A1 for the incremental diff; key uses `since-{base}` |
@@ -415,7 +417,7 @@ does not.
 | A15 | `--fresh` after a posted run, and a rerun after TTL expiry | A new report is posted (new `report_id`); the old marker does not suppress it |
 | A16 | Second run on a thread while the first holds a live lease | Aborts with the lease owner; first run unaffected |
 | A17 | Run killed by SIGKILL, resumed at once on the same host | Dead-pid lease is taken over; resume proceeds |
-| A18 | Report over `MAX_COMMENT_CHARS`, crash after post, resume | Truncated comment still carries the marker; no second post |
+| A18 | Report over `MAX_COMMENT_CHARS`, crash after post, resume | Truncated comment still carries the marker (same checkpointed `report_id`, as A9); no second post |
 | A19 | Comment listing fails in `post` | Run fails noisily, nothing posted; next resume posts once |
 | A21 | Lease renewal fails (fake DynamoDB rejects the conditional update) | Run aborts noisily at the next node; nothing posted; checkpoints so far kept |
 | A22 | Run aborts because another run holds a live lease | The other run's lease is untouched (owner-conditional delete) |
@@ -455,7 +457,10 @@ tests).
 - I1: one real run of the graph against the deployed DynamoDB/S3 with a fake model: start, kill,
   resume, then delete the thread (tests clean up after themselves).
 - CDK assertions test (`infra/cdk/test`): table keys, TTL, bucket encryption and public-access block,
-  SSM parameters (incl. ttl-days), and no IAM resources in the template.
+  SSM parameters (incl. ttl-days), and no IAM resource that grants access to the table or bucket:
+  no `AWS::IAM::ManagedPolicy`, no `AWS::IAM::User`, and no role or policy whose statements name the
+  table or bucket. The one allowed exception, in dev only, is the execution role of CDK's
+  `Custom::S3AutoDeleteObjects` Lambda (created by `autoDeleteObjects: true`).
 
 ---
 
@@ -512,5 +517,5 @@ findings in the ticket's changes; 2 passes) → DONE with a Jira comment.
 1. **404 with tools:** no fallback without tools; retry the same call twice with backoff, then fail with an `LLMError` that says to resume with a tool-capable `--model` (3.9).
 2. **TTL:** configurable, default 2 days (3.10).
 3. **Models in the report:** header lists every model; each file names its model (section 7).
-4. **Access:** same as the PMATFE-mfe-* projects; no IAM resources, rely on the SSO `dev-EC2`
+4. **Access:** same as the PMATFE-mfe-* projects; no IAM access grants (CDK's auto-delete role in dev excepted), rely on the SSO `dev-EC2`
    permission set; 237a proves write access first (3.10).
