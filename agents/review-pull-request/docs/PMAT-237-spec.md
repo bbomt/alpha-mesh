@@ -198,9 +198,9 @@ Model names follow `{provider}/{modelname}` (the OpenRouter standard), e.g. `ope
 `anthropic/claude-sonnet-5-5`, `minimax/minimax-m2`.
 
 One function in `session.py` builds the chat model from `CODE_REVIEW_URL` (owner decision, 2026-10-14):
-**`openrouter.ai` uses LangChain's OpenRouter chat model class; every other endpoint uses `ChatOpenAI`**
-with `base_url` set (OpenAI, MiniMax, Ollama, Anthropic's OpenAI-compatible endpoint), as `llm.py`
-does today. The OpenRouter package and class name are confirmed in PMAT-265.
+**`openrouter.ai` uses `ChatOpenRouter` (`langchain-openrouter`, as in the reference
+`quickstart.py`); every other endpoint uses `ChatOpenAI`** with `base_url` set (OpenAI, MiniMax,
+Ollama, Anthropic's OpenAI-compatible endpoint), as `llm.py` does today.
 
 - Model name: the full `provider/model` is sent to `openrouter.ai`; for any other host the
   `provider/` prefix is stripped. A name with no `/` is sent unchanged.
@@ -323,7 +323,7 @@ agents/review-pull-request/
 
 - Pin Python 3.12 (`requires-python = "~=3.12.0"`, `.python-version`). The reference notes newer
   versions are problematic with these LangGraph modules.
-- Add: `langgraph`, `langchain-core`, `langchain-openai`, the LangChain OpenRouter package (3.7),
+- Add: `langgraph`, `langchain-core`, `langchain-openai`, `langchain-openrouter` (3.7),
   `langgraph-checkpoint-aws`, `boto3`; dev: `langgraph-checkpoint-sqlite` (kill tests).
   Use the versions in the reference `uv.lock` as the floor.
 - Remove `httpx` only if nothing else still uses it (`tools.py` / `github.py` do today; keep it).
