@@ -61,35 +61,45 @@ fetch PR info + diff ──► ReviewSession ──► stage1.run_overview (1 ca
 ```
 CLI (review.py)
   │  resolve PR, head SHA, diff mode, policy  ──► thread_id
-  │  ReviewSession.create(...)  (policy, guarded model, guarded reader, read_file tool)
+  │  take the local run lock (3.6a)
+  │  ReviewSession.create(...)  (policy, guarded LangChain model, guarded reader)
   ▼
-Review graph (LangGraph StateGraph, checkpointer = DynamoDBSaver)
-  START ─► begin ─► overview ─► review_next_file ─┐
-                                  ▲               │ more files to review?
-                                  └───────────────┘
-                                                  └─► report ─► post ─► END
-
-review_next_file calls the Reviewer Agent (a compiled subgraph, checkpointer=False):
-  agent (guarded model with read_file bound) ◄──► tools (read_file via PolicyFileReader)
+Review graph (LangGraph StateGraph, checkpointer = redacting DynamoDBSaver)
+  START ─► overview ─► review_next_file ─┐
+                         ▲               │ files without a result left?
+                         └───────────────┘
+                                         └─► report ─► post ─► END
 ```
 
-### 3.2 Checkpoint granularity (security-critical)
+`review_next_file` calls the existing `stage2.run_file_review(chunk, overview, session)` for the next
+file, and `overview` calls the existing `stage1.run_overview`. Neither changes: the per-file review
+keeps its tool loop and all its rules (dedup, read limit, not-found hints, JSON retry, incomplete).
+It already is the Reviewer Agent: one model with the `read_file` tool, looping until it answers.
+Only the model client behind `session.review_llm` changes (3.7, 3.8). The migration is deliberately
+this small; a LangGraph agent subgraph for the per-file review can come later if it earns its place.
 
-A checkpoint is written after each **outer** node: `overview`, each `review_next_file` step, `report`
-and `post`. The Reviewer Agent's inner steps (model call ↔ `read_file`) are **never** checkpointed.
+### 3.2 Checkpoints and what they may contain (security)
 
-Why: inside the agent the message list holds raw `read_file` results *before* redaction (redaction
-happens at the model boundary). Checkpointing those steps would write unredacted file content to
-DynamoDB/S3. So:
+A checkpoint is written after each node: `overview`, each `review_next_file` step, `report`, `post`.
+Inside one file's review nothing is checkpointed. A file whose review was in flight when the run died
+has no result and is reviewed again. A half-finished file is never reported as reviewed.
 
-- The Reviewer Agent subgraph is compiled with `checkpointer=False`. In LangGraph a subgraph invoked
-  inside a node otherwise *inherits* the parent checkpointer.
-- A file whose review was in flight when the run died has no checkpoint and is reviewed again.
-  A half-finished file is never reported as reviewed.
+**Redaction at the store boundary.** Every checkpoint passes through the saver's serializer
+(`saver.serde`) before it is written. `checkpoints.py` wraps it: `RedactingSerializer` walks the
+object (strings, dicts, lists, tuples) and runs the existing `Redactor` over every string, then
+delegates to LangGraph's `JsonPlusSerializer`. So the rule "no token reaches the store" is enforced by
+our own code in one place, not by LangGraph internals.
+
+- `DynamoDBSaver` has no `serde` argument but reads `self.serde` in `__init__` (`saver.py:123` in
+  `langgraph-checkpoint-aws`), so `checkpoints.py` builds it as a small subclass with
+  `serde = RedactingSerializer(redactor)`. `SqliteSaver` (tests) takes `serde=` directly.
+- Only `checkpoints.py` builds a saver; `test_architecture.py` enforces it.
+- Excluded *files* never enter the state at all: the diff is not stored (3.3) and the policy refuses
+  their reads. Redaction at the store covers tokens, as redaction at the model does.
 
 ### 3.3 Graph state (what is persisted)
 
-Persisted state holds **results only**: no diff, no file contents, no prompts, no tokens.
+Results only: no diff, no file contents, no prompts.
 
 ```python
 class FileResult(TypedDict):
@@ -100,31 +110,21 @@ class FileResult(TypedDict):
     incomplete: bool
     missing: list[str]          # unrecovered not-found paths from this file's review
     model: str                  # model that produced this result
-    run: int                    # ReviewState.run of the invocation that produced it
 
 class ReviewState(TypedDict):
     files: list[str]                                   # files to review, in diff order
     overview: str | None
     overview_model: str | None
-    results: Annotated[dict[str, FileResult], merge]   # file_path -> result
-    resumed_files: list[str]                           # filled at run start, for the report/console
-    run: int                                           # invocation number, bumped by `begin`
+    results: Annotated[dict[str, FileResult], merge]   # file_path -> result; a None value deletes
     report: str | None
-    report_id: str | None                              # new UUID each time `report` builds a report (3.6)
-    posted_report_id: str | None                       # report_id that `post` last posted
+    report_id: str | None                              # new UUID4 each time `report` runs (3.6)
 ```
 
-The graph starts with a `begin` node (`START ─► begin ─► overview …`) whose only job is
-`run = run + 1`. A RESUME (`stream(None)`) continues from the pending node and does not pass `begin`
-again, so it stays in the same run; a new invocation after END passes `begin` and starts a new run.
-
-The diff is not stored. On resume it is fetched again; it is deterministic for the same head SHA
-(and the same base SHA for incremental reviews), which the thread key guarantees. Chunks are rebuilt
-from `SafeDiff`, so excluded files never enter the state.
+The diff is fetched again on resume; it is deterministic for the same head SHA (and base SHA for
+incremental reviews), which the thread key guarantees. Chunks are rebuilt from `SafeDiff`.
 
 `session.missing_paths` is no longer the source of truth for the report: each file's misses travel in
-its `FileResult.missing`, so misses from checkpointed files survive a resume. `report` rebuilds the
-missing-path map from `results`.
+its `FileResult.missing`, so misses from checkpointed files survive a resume.
 
 ### 3.4 Thread key
 
@@ -139,76 +139,54 @@ policy_hash = sha256 of the sorted, normalised exclusion patterns (first 12 hex 
   stale result is ever reused. (Resuming only the files unchanged between two head SHAs is out of
   scope; see section 9.)
 
-### 3.5 Start / resume / skip
+### 3.5 Start / resume / retry / skip
 
-Same three cases as the reference `invoke_thread_with_recovery`, using `graph.get_state(config)`:
+The CLI reads `graph.get_state(config)`, as the reference `invoke_thread_with_recovery` does:
 
 | Checkpoint state | Action | Console |
 |---|---|---|
 | none | **START** with the initial input | `Starting review (thread …)` |
-| values and `next` non-empty | **RESUME**: `graph.stream(None, config)` | `Resuming: N file(s) from checkpoint, M to review` + the two lists |
-| values and `next` empty (reached END) | **SKIP**: print the stored report, post nothing | `Already completed and posted (thread …)` |
+| `next` non-empty (stopped mid-run) | **RESUME**: `graph.stream(None, config)` | `Resuming: N file(s) from checkpoint, M to review` + both lists |
+| reached END, some results incomplete | **RETRY**: remove the incomplete results with `graph.update_state(config, {"results": {path: None, …}}, as_node="overview")`, then `graph.stream(None, config)` | `Retrying N incomplete file(s)` + list |
+| reached END, no incomplete results | **SKIP**: print the stored report, post nothing | `Already completed (thread …)` |
 
-`--fresh` discards the existing thread state (`checkpointer.delete_thread(thread_id)`) and starts.
-
-**Incomplete files are retried on resume.** A `FileResult` with `incomplete=True` is stored (so a
-finished run reports it as today) but is treated as "to review" when a run resumes. A file needs a
-usable result, and a different model may give one.
-
-How that works with a thread that already reached END:
-
-- SKIP applies only when the thread reached END **and** has no incomplete results.
-- Otherwise the CLI invokes the graph again on the same thread (input `{}`), so `begin` starts a
-  new run. Nodes are idempotent: `overview` returns nothing if an overview exists;
-  `review_next_file` picks the next file that has no result, or whose result is incomplete **and**
-  has `result.run < state.run`. A file retried in this run gets `result.run == state.run`, so it is
-  never picked twice in one run, even if it comes back incomplete again.
-- `report` builds a new report from all results with a new `report_id`; `post` posts it.
-  This gives a new PR comment, as a rerun does today.
+- `review_next_file` reviews the first file in `files` that has no result. A file that comes back
+  incomplete again has a result, so it is not picked twice in one run; the next rerun retries it.
+- `overview` does nothing if an overview exists, so RETRY reuses it.
+- RETRY reaches `report` again, which builds a new report (new `report_id`) that `post` posts as a
+  new PR comment, as a rerun does today.
+- `--fresh` discards the thread (`checkpointer.delete_thread(thread_id)`) and starts.
 
 ### 3.6 Posting exactly once
 
-- `report` generates a fresh `report_id` (UUID4) every time it builds a report; it is checkpointed
-  with the report. `post` sets `posted_report_id = report_id` and does nothing if they are already
-  equal.
-- Crash window: the comment is posted but the process dies before the checkpoint is saved. To close
-  it, the posted comment carries a hidden marker `<!-- mesh-review-run: {report_id} -->`. Before
-  posting, `post` lists the PR's comments by the token's account (as
-  `incremental.find_last_review_comment` already does) and skips the post if that marker is present.
-- A UUID, not a counter: `--fresh`, TTL expiry or a deliberate rerun (3.5) always produce a new
-  `report_id`, so an old comment's marker can never suppress a new report. A crash-resume re-enters
-  `post` with the same checkpointed `report_id`, so it never posts twice.
+The problem: posting the comment and saving the checkpoint after `post` are two steps. A run killed
+between them would, on resume, post again.
+
+- `report` sets `report_id` to a new UUID4 and is checkpointed before `post` runs.
+- `post` appends a hidden tag `<!-- mesh-review-run: {report_id} -->` to the comment. Before
+  posting, it lists the PR's comments by the token's account (as `incremental.find_last_review_comment`
+  does) and skips the post if a comment already carries that tag.
+- A resume re-enters `post` with the same checkpointed `report_id`, finds its tag, and does not post
+  twice. A new report (RETRY, `--fresh`, TTL expiry) has a new `report_id`, so an old tag never
+  blocks it.
 - **Fail closed:** if the comment listing fails, `post` raises (the run fails noisily, nothing is
-  posted, `posted_report_id` stays unset). The report is still printed; the next resume retries
-  the check and the post.
-- **Truncation:** `post_comment` cuts oversized bodies at the tail (`MAX_COMMENT_CHARS`). The marker
-  is passed to `post_comment` separately and appended **after** truncation, so it always survives.
-  It sits after the footer and does not affect `REVIEW_SIGNATURE` or `Reviewed commit` parsing.
+  posted); the next resume tries again.
+- **Truncation:** `post_comment` cuts oversized bodies at the tail (`MAX_COMMENT_CHARS`); the tag is
+  appended after truncation, so it always survives. It does not affect `REVIEW_SIGNATURE` or
+  `Reviewed commit` parsing.
 
 ### 3.6a One run per thread at a time
 
-Two runs on the same thread (e.g. a manual rerun overlapping a still-running one) would interleave
-checkpoints and could both pass the marker check. `DynamoDBSaver` does no locking, so:
+A second process on a thread that is already being reviewed must stop, not interleave checkpoints.
 
-- At run start the CLI takes a **lease** on the thread: a conditional `PutItem` of a lock item
-  (PK `LOCK#{thread_id}`, in the checkpoint table; 237c checks this prefix cannot collide with the
-  saver's own keys) holding host, pid, start time, `expires_at` and an **owner token** (UUID4
-  generated by this run).
-- **Renewal, fail closed:** a daemon thread renews every 60 s (`expires_at = now + 5 min`) with a
-  conditional `UpdateItem` (`owner = :token`). A transient error is retried with backoff within the
-  minute. If the condition fails (another run took over) or the lease cannot be renewed before it
-  expires, the renewer sets a "lease lost" flag and the run aborts at the next node boundary with
-  `ERROR: lost the lease on this thread …`, exit 1, nothing posted. `post` also checks the flag
-  immediately before posting.
-- **Release, owner only:** in `finally`, the run stops and joins the renewer first, then deletes the
-  lease with a conditional `DeleteItem` (`owner = :token`). A run that never acquired the lease
-  (the live-lease abort below) deletes nothing.
-- If a live lease exists the run aborts at once: `ERROR: another review is running on this thread
-  (host, pid, started …)`. Exit 1, nothing reviewed.
-- Takeover: a lease is taken over when it has expired, or when it was taken on **this host** by a
-  pid that is no longer alive. A run killed by hand (the hung-call case) can therefore be resumed
-  immediately on the same machine, and after at most 5 minutes from another.
-- Needs `dynamodb:UpdateItem` and `DeleteItem` (in the access list, 3.10).
+- At start the CLI takes a non-blocking exclusive `fcntl.flock` on
+  `~/.mesh/locks/review-pull-request-<sha256(thread_id)[:16]>.lock` and writes its pid into it.
+- If the lock is held: `ERROR: another review is running on this thread (pid N)`, exit 1, nothing
+  reviewed.
+- The operating system releases the lock when the process ends **in any way, including SIGKILL**, so
+  a run killed by hand can be resumed at once. No heartbeat, no expiry, nothing in DynamoDB.
+- Limitation: it protects runs on the same machine only. That matches how reviews run (one dev EC2);
+  noted in the README.
 
 ### 3.7 Model construction and naming
 
@@ -229,23 +207,21 @@ One function in `session.py` builds the LangChain chat model from `CODE_REVIEW_U
 - Pick between `ChatOpenAI` and `langchain-openrouter`'s `ChatOpenRouter` for OpenRouter during 237b,
   based on which surfaces OpenRouter's 200-with-error-object responses more reliably (section 3.9).
 
-### 3.8 Redaction wrapper (kept as simple as possible)
+### 3.8 Redaction: unchanged
 
-```python
-# session.py — the only place a chat model is built
-redact = RunnableLambda(lambda msgs: redactor.scrub_messages(msgs))
-review_model = redact | chat_model.bind_tools([read_file_tool])
-overview_model = redact | chat_model
-```
+The stages talk to the model through `session.review_llm.chat(messages, tools)`, and keep doing so.
 
-- `Redactor.scrub_messages` is the existing `scrub`, adapted to LangChain `BaseMessage` objects
-  (content strings, and the string parts of list content). The token patterns do not change.
-- `read_file_tool` is a LangChain `@tool` defined in the session. It calls `session.reader`
-  (`PolicyFileReader`), so excluded paths are refused exactly as today. Its schema matches
-  `READ_FILE_TOOL_SCHEMA` (`path`, `reason`).
-- Stages and graph nodes receive the session, never a raw chat model or reader.
-  `test_architecture.py` is extended to cover the new modules (no `langchain_openai`,
-  `langchain_anthropic`, `httpx` etc. outside `session.py`).
+- `llm.py`'s `HttpLLM` is replaced by `LangChainLLM`, with the same `chat(messages, tools)` method and
+  the same `ChatResponse` / `ToolCall` result. Inside, it binds the tool schemas
+  (`chat_model.bind_tools(tools)`, which accepts today's OpenAI-format `READ_FILE_TOOL_SCHEMA`),
+  invokes the LangChain model with today's OpenAI-format message dicts, and maps the `AIMessage`
+  back (`tool_calls` → `ToolCall`; `invalid_tool_calls` → `LLMError`).
+- `GuardedLLM` wraps `LangChainLLM` exactly as it wraps `HttpLLM` today, so redaction and `Redactor`
+  do not change.
+- `read_file` calls are still executed by the stage 2 loop through `session.reader`
+  (`PolicyFileReader`), so excluded paths are refused exactly as today.
+- Only `session.py` / `llm.py` import LangChain chat-model classes; `test_architecture.py` is extended
+  to enforce it (as it does for `httpx` today).
 
 ### 3.9 Retries and timeouts
 
@@ -332,12 +308,12 @@ agents/review-pull-request/
   dev, `autoDeleteObjects` makes CDK add its own Lambda and execution role to empty the bucket on
   teardown; that role is CDK's and grants the agent nothing. The reference's policy attached to an IAM user is a pre-SSO
   setup and is not copied.
-- Actions the agent needs: DynamoDB GetItem, PutItem (incl. conditional), UpdateItem, DeleteItem,
-  Query, BatchGetItem, BatchWriteItem; S3 PutObject, GetObject, DeleteObject, PutObjectTagging, and
+- Actions the agent needs: DynamoDB GetItem, PutItem, DeleteItem (`--fresh`), Query, BatchGetItem,
+  BatchWriteItem; S3 PutObject, GetObject, DeleteObject, PutObjectTagging, and
   Get/PutBucketLifecycleConfiguration if the saver sets lifecycle itself.
 - 2026-10-14 probe with `dev-EC2`: list/describe tables, `get-item`, and listing an S3 bucket work.
-  Writes are not yet proven: **237a's first check** after deploy is a put / conditional put / update /
-  delete on its own table and a put / get / delete in its own bucket. If any is denied, stop and
+  Writes are not yet proven: **237a's first check** after deploy is a put / get / delete on its own
+  table and in its own bucket. If any is denied, stop and
   ask the owner.
 - Stack name `PmatAlphaMeshReviewCheckpointsStack-{env}`. Dev uses `RemovalPolicy.DESTROY` and
   `autoDeleteObjects`; staging/prod `RETAIN`.
@@ -368,15 +344,12 @@ Node idempotency matters here: every outer node may run again on resume. `overvi
 
 | Module | Change |
 |---|---|
-| `review.py` | CLI only: args, PR/diff resolution, thread key, session, checkpointer, start/resume/skip, error mapping. The review loop moves to `graph.py` |
-| `graph.py` (new) | `ReviewState`, outer nodes, `build_review_graph(session, checkpointer)` |
-| `reviewer_agent.py` (new, replaces the loop in `stage2.py`) | Reviewer Agent subgraph: `agent` node and `tools` node, porting the stage 2 rules (dedup reads, read limit then "answer now", not-found hints and misses, JSON retry, incomplete) |
-| `stage1.py` | Uses `session.overview_model`; prompt unchanged |
-| `stage2.py` | Keeps the prompt, `Issue`/`FileReviewResult`, parsing and severity helpers; the tool loop moves to `reviewer_agent.py` |
-| `session.py` | Builds the LangChain model (3.7), the redaction wrapper (3.8), the `read_file` tool and error mapping |
-| `guard.py` | `Redactor` gains `scrub_messages` for LangChain messages; `GuardedLLM` removed when nothing uses it |
-| `llm.py` | Reduced to `LLMError` / `ProviderError` (or merged into `session.py`); HTTP code removed |
-| `checkpoints.py` (new) | `make_checkpointer(config)` (DynamoDB from SSM/env), `thread_id(...)`, `policy_hash(...)` |
+| `review.py` | CLI only: args, PR/diff resolution, thread key, run lock, session, checkpointer, start/resume/retry/skip, error mapping. The review loop moves to `graph.py` |
+| `graph.py` (new) | `ReviewState`, the four nodes (calling `stage1` / `stage2` unchanged), `build_review_graph(session, checkpointer)` |
+| `llm.py` | `HttpLLM` replaced by `LangChainLLM` (same `chat` interface, 3.8); HTTP code removed; `LLMError` / `ProviderError` kept |
+| `session.py` | Builds the chat model from URL + model name (3.7) and wraps it in `GuardedLLM` as today |
+| `stage1.py`, `stage2.py`, `guard.py` | Unchanged |
+| `checkpoints.py` (new) | `make_checkpointer(config, redactor)` (redacting DynamoDB saver from SSM/env, 3.2), `thread_id(...)`, `policy_hash(...)`, the run lock (3.6a) |
 | `formatter.py` | Header lists every model used; each file's summary line names its model (also overview); hidden run marker |
 | `github.py` | `has_run_marker(pr_url, report_id)` for exactly-once posting |
 
@@ -415,13 +388,11 @@ does not.
 | A13 | `--fresh` | Existing thread discarded; every file reviewed |
 | A14 | Resume console output | Lists files from checkpoint and files reviewed now |
 | A15 | `--fresh` after a posted run, and a rerun after TTL expiry | A new report is posted (new `report_id`); the old marker does not suppress it |
-| A16 | Second run on a thread while the first holds a live lease | Aborts with the lease owner; first run unaffected |
-| A17 | Run killed by SIGKILL, resumed at once on the same host | Dead-pid lease is taken over; resume proceeds |
+| A16 | Second process on a thread while the first is running | Exits 1 with "another review is running (pid N)"; first run unaffected |
+| A17 | Run killed by SIGKILL, resumed at once | The OS released the lock; resume proceeds |
 | A18 | Report over `MAX_COMMENT_CHARS`, crash after post, resume | Truncated comment still carries the marker (same checkpointed `report_id`, as A9); no second post |
 | A19 | Comment listing fails in `post` | Run fails noisily, nothing posted; next resume posts once |
-| A21 | Lease renewal fails (fake DynamoDB rejects the conditional update) | Run aborts noisily at the next node; nothing posted; checkpoints so far kept |
-| A22 | Run aborts because another run holds a live lease | The other run's lease is untouched (owner-conditional delete) |
-| A20 | File incomplete again on its retry run | Not picked a second time in that run; report marks it incomplete |
+| A20 | File incomplete again on its RETRY run | Not picked a second time in that run; report marks it incomplete; the next rerun retries it |
 
 ### 5.2 Security (canary, `tests/test_canary.py`)
 
@@ -434,7 +405,7 @@ tests).
 |---|---|
 | C1 | All existing canary tests pass against the LangChain path (recording fake model sits after the redaction runnable) |
 | C2 | After a full run, a killed run and a resumed run, no checkpoint blob contains the canary marker or any planted token (scan every serialised checkpoint and pending write) |
-| C3 | **Protection off:** compile the Reviewer Agent *with* the inherited checkpointer and show C2 fails (a token in an allowed file's `read_file` result appears in the store) |
+| C3 | **Protection off:** the fake model returns a planted token inside a finding's comment (a model echoing or guessing a secret). With the plain `JsonPlusSerializer` the token appears in the store; with `RedactingSerializer` it does not |
 | C4 | A token in an allowed file is redacted before the model sees it (existing test, new path) |
 
 ### 5.3 Unit tests
@@ -473,8 +444,8 @@ findings in the ticket's changes; 2 passes) → DONE with a Jira comment.
 | Sub-ticket | Scope | Done when |
 |---|---|---|
 | **PMAT-264 (237a) — Checkpoint infra (CDK)** | `infra/cdk`, `infra/scripts`, `scripts/deploy-dev-from-ec2.sh`, CDK assertion tests, README section | `deploy-dev-from-ec2.sh` deploys; table, bucket and SSM params exist; write probe (3.10) passes with `dev-EC2`; a manual `DynamoDBSaver` put/get works from EC2 |
-| **PMAT-265 (237b) — LangGraph + LangChain models, no behaviour change** | 3.7–3.9, 3.11, 3.12, graph with `InMemorySaver`, Reviewer Agent subgraph, ported unit and canary tests (C1, C4), `CLAUDE_LANGGRAPH.md` | All existing tests pass; a real review of a small PR gives the same report shape as before |
-| **PMAT-266 (237c) — Durable checkpoints and resume** | `checkpoints.py`, thread key, start/resume/skip, incomplete retry, multi-model header, `--fresh`, thread lease (3.6a), A1–A8, A10–A14, A16, A17, A20–A22, C2–C3, I1 | Acceptance tests green; a real review killed mid-run resumes from the right file |
+| **PMAT-265 (237b) — LangGraph + LangChain models, no behaviour change** | 3.7–3.9, 3.11, 3.12, graph with `InMemorySaver` calling `stage1`/`stage2` unchanged, `LangChainLLM` behind `GuardedLLM`, ported unit and canary tests (C1, C4), `CLAUDE_LANGGRAPH.md` | All existing tests pass; a real review of a small PR gives the same report shape as before |
+| **PMAT-266 (237c) — Durable checkpoints and resume** | `checkpoints.py`, thread key, start/resume/skip, incomplete retry, multi-model header, `--fresh`, local run lock (3.6a), redacting serializer (3.2), A1–A8, A10–A14, A16, A17, A20, C2–C3, I1 | Acceptance tests green; a real review killed mid-run resumes from the right file |
 | **PMAT-267 (237d) — Exactly-once post and docs** | Run marker (`report_id`), `has_run_marker` (fail closed), marker kept on truncation, A9, A15, A18, A19, README (resume, `--fresh`, free-model workflow, AWS prerequisites), `.env.example` | A9 green; README matches the CLI |
 
 237a and 237b can run in parallel; 237c needs both; 237d needs 237c.
