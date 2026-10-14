@@ -64,10 +64,10 @@ CLI (review.py)
   │  ReviewSession.create(...)  (policy, guarded model, guarded reader, read_file tool)
   ▼
 Review graph (LangGraph StateGraph, checkpointer = DynamoDBSaver)
-  START ─► overview ─► review_next_file ─┐
-                         ▲               │ more files to review?
-                         └───────────────┘
-                                         └─► report ─► post ─► END
+  START ─► begin ─► overview ─► review_next_file ─┐
+                                  ▲               │ more files to review?
+                                  └───────────────┘
+                                                  └─► report ─► post ─► END
 
 review_next_file calls the Reviewer Agent (a compiled subgraph, checkpointer=False):
   agent (guarded model with read_file bound) ◄──► tools (read_file via PolicyFileReader)
@@ -100,6 +100,7 @@ class FileResult(TypedDict):
     incomplete: bool
     missing: list[str]          # unrecovered not-found paths from this file's review
     model: str                  # model that produced this result
+    run: int                    # ReviewState.run of the invocation that produced it
 
 class ReviewState(TypedDict):
     files: list[str]                                   # files to review, in diff order
@@ -107,11 +108,15 @@ class ReviewState(TypedDict):
     overview_model: str | None
     results: Annotated[dict[str, FileResult], merge]   # file_path -> result
     resumed_files: list[str]                           # filled at run start, for the report/console
-    run: int                                           # invocation number on this thread
+    run: int                                           # invocation number, bumped by `begin`
     report: str | None
-    post_attempt: int                                  # incremented by report, see 3.6
-    posted_attempt: int                                # last attempt that was posted
+    report_id: str | None                              # new UUID each time `report` builds a report (3.6)
+    posted_report_id: str | None                       # report_id that `post` last posted
 ```
+
+The graph starts with a `begin` node (`START ─► begin ─► overview …`) whose only job is
+`run = run + 1`. A RESUME (`stream(None)`) continues from the pending node and does not pass `begin`
+again, so it stays in the same run; a new invocation after END passes `begin` and starts a new run.
 
 The diff is not stored. On resume it is fetched again; it is deterministic for the same head SHA
 (and the same base SHA for incremental reviews), which the thread key guarantees. Chunks are rebuilt
@@ -153,25 +158,49 @@ usable result, and a different model may give one.
 How that works with a thread that already reached END:
 
 - SKIP applies only when the thread reached END **and** has no incomplete results.
-- Otherwise the CLI invokes the graph again on the same thread with a new input
-  (`{"retry_from_run": run_number}`). Nodes are idempotent: `overview` returns nothing if an overview
-  exists; `review_next_file` picks files with no result, or with an incomplete result from an earlier
-  run (each file at most once per run, tracked by `ReviewState.run`).
-- `report` builds a new report from all results and increments `post_attempt`; `post` posts it.
+- Otherwise the CLI invokes the graph again on the same thread (input `{}`), so `begin` starts a
+  new run. Nodes are idempotent: `overview` returns nothing if an overview exists;
+  `review_next_file` picks the next file that has no result, or whose result is incomplete **and**
+  has `result.run < state.run`. A file retried in this run gets `result.run == state.run`, so it is
+  never picked twice in one run, even if it comes back incomplete again.
+- `report` builds a new report from all results with a new `report_id`; `post` posts it.
   This gives a new PR comment, as a rerun does today.
 
 ### 3.6 Posting exactly once
 
-- `post` sets `posted_attempt = post_attempt`; the checkpoint is written when the node completes.
-  `post` does nothing if `posted_attempt == post_attempt`.
+- `report` generates a fresh `report_id` (UUID4) every time it builds a report; it is checkpointed
+  with the report. `post` sets `posted_report_id = report_id` and does nothing if they are already
+  equal.
 - Crash window: the comment is posted but the process dies before the checkpoint is saved. To close
-  it, the report carries a hidden marker `<!-- mesh-review-run: {thread_id}:{post_attempt} -->`.
-  Before posting, `post` lists the PR's comments by the token's account (as
+  it, the posted comment carries a hidden marker `<!-- mesh-review-run: {report_id} -->`. Before
+  posting, `post` lists the PR's comments by the token's account (as
   `incremental.find_last_review_comment` already does) and skips the post if that marker is present.
-- The attempt number means a deliberate rerun (incomplete files retried, 3.5) posts a new report,
-  while a crash-resume of the same attempt never posts twice.
-- The marker sits after the footer and does not affect `REVIEW_SIGNATURE` or `Reviewed commit`
-  parsing.
+- A UUID, not a counter: `--fresh`, TTL expiry or a deliberate rerun (3.5) always produce a new
+  `report_id`, so an old comment's marker can never suppress a new report. A crash-resume re-enters
+  `post` with the same checkpointed `report_id`, so it never posts twice.
+- **Fail closed:** if the comment listing fails, `post` raises (the run fails noisily, nothing is
+  posted, `posted_report_id` stays unset). The report is still printed; the next resume retries
+  the check and the post.
+- **Truncation:** `post_comment` cuts oversized bodies at the tail (`MAX_COMMENT_CHARS`). The marker
+  is passed to `post_comment` separately and appended **after** truncation, so it always survives.
+  It sits after the footer and does not affect `REVIEW_SIGNATURE` or `Reviewed commit` parsing.
+
+### 3.6a One run per thread at a time
+
+Two runs on the same thread (e.g. a manual rerun overlapping a still-running one) would interleave
+checkpoints and could both pass the marker check. `DynamoDBSaver` does no locking, so:
+
+- At run start the CLI takes a **lease** on the thread: a conditional `PutItem` of a lock item
+  (PK `LOCK#{thread_id}`, in the checkpoint table; 237c checks this prefix cannot collide with the
+  saver's own keys) holding host, pid, start time and `expires_at`.
+- A background thread renews the lease every 60 s (`expires_at = now + 5 min`). The lease is deleted
+  at the end of the run, also on failure (`finally`).
+- If a live lease exists the run aborts at once: `ERROR: another review is running on this thread
+  (host, pid, started …)`. Exit 1, nothing reviewed.
+- Takeover: a lease is taken over when it has expired, or when it was taken on **this host** by a
+  pid that is no longer alive. A run killed by hand (the hung-call case) can therefore be resumed
+  immediately on the same machine, and after at most 5 minutes from another.
+- Needs `dynamodb:UpdateItem` and `DeleteItem` in the IAM policy (3.10).
 
 ### 3.7 Model construction and naming
 
@@ -255,7 +284,7 @@ agents/review-pull-request/
     bin/cdk.ts              # App; requires -c config=dev|staging|prod
     lib/checkpoint-stack.ts # DynamoDB table (PK/SK strings, PAY_PER_REQUEST, TTL attr "ttl"),
                             # S3 bucket (block public access, SSE-S3, lifecycle matching TTL),
-                            # SSM parameters, managed IAM policy attached to the EC2 IAM user
+                            # SSM parameters, managed IAM policy (exported; see IAM note)
     test/checkpoint-stack.test.ts  # CDK assertions
     cdk.json  package.json  tsconfig.json  jest.config.js
   infra/scripts/deploy-pipeline-infra.sh  # validates DEPLOY_ENV/AWS_REGION, pnpm install, cdk deploy
@@ -263,8 +292,14 @@ agents/review-pull-request/
 ```
 
 - IAM permissions are those in the reference `infra/create.sh` (DynamoDB Get/Put/Query/BatchGet/
-  BatchWrite, plus Delete for `--fresh`; S3 Put/Get/Delete/PutObjectTagging on objects; lifecycle
-  config on the bucket). The IAM user name comes from `cdk.json` context.
+  BatchWrite, plus DeleteItem for `--fresh` and the lease, UpdateItem for the lease (3.6a); S3 Put/Get/Delete/PutObjectTagging on objects; lifecycle
+  config on the bucket).
+- **IAM note:** runs on EC2 use an IAM Identity Center (SSO) role
+  (`AWSReservedSSO_dev-EC2_…`). SSO-managed roles cannot have policies attached outside their
+  permission set. The stack therefore creates the managed policy and exports its ARN, and attaches it
+  only to principals named in `cdk.json` context (empty by default). 237a must first check whether
+  the `dev-EC2` permission set already allows these actions on the new table and bucket. If not, the
+  owner adds the policy to the permission set (open question 4).
 - Stack name `PmatAlphaMeshReviewCheckpointsStack-{env}`. Dev uses `RemovalPolicy.DESTROY` and
   `autoDeleteObjects`; staging/prod `RETAIN`.
 - The reference shell scripts `create.sh` / `teardown.sh` are not copied; CDK replaces them.
@@ -340,6 +375,12 @@ does not.
 | A12 | `--since-last-review` killed and resumed | Same as A1 for the incremental diff; key uses `since-{base}` |
 | A13 | `--fresh` | Existing thread discarded; every file reviewed |
 | A14 | Resume console output | Lists files from checkpoint and files reviewed now |
+| A15 | `--fresh` after a posted run, and a rerun after TTL expiry | A new report is posted (new `report_id`); the old marker does not suppress it |
+| A16 | Second run on a thread while the first holds a live lease | Aborts with the lease owner; first run unaffected |
+| A17 | Run killed by SIGKILL, resumed at once on the same host | Dead-pid lease is taken over; resume proceeds |
+| A18 | Report over `MAX_COMMENT_CHARS`, crash after post, resume | Truncated comment still carries the marker; no second post |
+| A19 | Comment listing fails in `post` | Run fails noisily, nothing posted; next resume posts once |
+| A20 | File incomplete again on its retry run | Not picked a second time in that run; report marks it incomplete |
 
 ### 5.2 Security (canary, `tests/test_canary.py`)
 
@@ -386,8 +427,8 @@ findings in the ticket's changes; 2 passes) → DONE with a Jira comment.
 |---|---|---|
 | **PMAT-264 (237a) — Checkpoint infra (CDK)** | `infra/cdk`, `infra/scripts`, `scripts/deploy-dev-from-ec2.sh`, CDK assertion tests, README section | `deploy-dev-from-ec2.sh` deploys; table, bucket, SSM params and policy exist; a manual `DynamoDBSaver` put/get works from EC2 |
 | **PMAT-265 (237b) — LangGraph + LangChain models, no behaviour change** | 3.7–3.9, 3.11, 3.12, graph with `InMemorySaver`, Reviewer Agent subgraph, ported unit and canary tests (C1, C4), `CLAUDE_LANGGRAPH.md` | All existing tests pass; a real review of a small PR gives the same report shape as before |
-| **PMAT-266 (237c) — Durable checkpoints and resume** | `checkpoints.py`, thread key, start/resume/skip, incomplete retry, multi-model header, `--fresh`, A1–A8, A10–A14, C2–C3, I1 | Acceptance tests green; a real review killed mid-run resumes from the right file |
-| **PMAT-267 (237d) — Exactly-once post and docs** | Run marker, `has_run_marker`, A9, README (resume, `--fresh`, free-model workflow, AWS prerequisites), `.env.example` | A9 green; README matches the CLI |
+| **PMAT-266 (237c) — Durable checkpoints and resume** | `checkpoints.py`, thread key, start/resume/skip, incomplete retry, multi-model header, `--fresh`, thread lease (3.6a), A1–A8, A10–A14, A16, A17, A20, C2–C3, I1 | Acceptance tests green; a real review killed mid-run resumes from the right file |
+| **PMAT-267 (237d) — Exactly-once post and docs** | Run marker (`report_id`), `has_run_marker` (fail closed), marker kept on truncation, A9, A15, A18, A19, README (resume, `--fresh`, free-model workflow, AWS prerequisites), `.env.example` | A9 green; README matches the CLI |
 
 237a and 237b can run in parallel; 237c needs both; 237d needs 237c.
 
@@ -428,3 +469,6 @@ findings in the ticket's changes; 2 passes) → DONE with a Jira comment.
    fail? Default in this spec: keep, for no behaviour change.
 2. **TTL:** 14 days proposed. Long enough to finish a free-model review over several days?
 3. **Model in the report header:** list all models used (proposed), or the last one only?
+4. **IAM for the SSO role:** if the `dev-EC2` permission set lacks DynamoDB/S3 access to the new
+   resources, will you add the exported policy to the permission set, or should the agent use a
+   dedicated role it assumes?
