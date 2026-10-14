@@ -200,7 +200,7 @@ checkpoints and could both pass the marker check. `DynamoDBSaver` does no lockin
 - Takeover: a lease is taken over when it has expired, or when it was taken on **this host** by a
   pid that is no longer alive. A run killed by hand (the hung-call case) can therefore be resumed
   immediately on the same machine, and after at most 5 minutes from another.
-- Needs `dynamodb:UpdateItem` and `DeleteItem` in the IAM policy (3.10).
+- Needs `dynamodb:UpdateItem` and `DeleteItem` (in the access list, 3.10).
 
 ### 3.7 Model construction and naming
 
@@ -249,7 +249,7 @@ overview_model = redact | chat_model
 | 120 s request timeout | `timeout=120` |
 | Malformed 200 body retried, then `LLMError` | `.with_retry(retry_if_exception_type=(MalformedResponse,), stop_after_attempt=3)` on a small parse check |
 | 200 body with an error object: `ProviderError`, fails fast with its message | Same: detect the error object and raise `ProviderError`, not retried (PMAT-236 may change this) |
-| 404 with tools: retry without tools | Kept with `.with_fallbacks([model_without_tools])`. **Open question for the owner:** without tools stage 2 cannot read files; consider failing instead (section 10) |
+| 404 with tools: retry without tools | **Dropped (owner decision, 2026-10-14).** Without tools the review cannot read files, so the fallback gave a weaker review silently. A 404 is now an `LLMError`: `endpoint or model does not support tool calls`. Deliberate behaviour change, covered by a test |
 
 `LLMError` / `ProviderError` stay as the exceptions the CLI catches, so the fatal-error message
 (model, API host, "nothing was posted") is unchanged. LangChain/SDK exceptions are mapped to them in
@@ -268,7 +268,15 @@ hang cheap to recover from.
 - `DynamoDBSaver` from `langgraph-checkpoint-aws`, with compression and S3 offload for large
   checkpoints, as in the reference. Every non-dry run uses it; no AWS credentials means a clear error
   before the review starts.
-- TTL: 14 days (configurable in `cdk.json` context per environment).
+- **TTL: configurable, default 2 days** (owner decision: conservative, keeps DynamoDB small; extend
+  if development shows reviews need longer to finish). One source: `checkpointTtlDays` in `cdk.json`
+  context per environment. The stack writes it to SSM (`…/checkpoint-ttl-days`); the agent reads it
+  and passes `ttl_seconds` to `DynamoDBSaver` (the saver stamps the `ttl` attribute on write).
+  A checkpoint that has expired simply means the next run starts fresh.
+- S3 objects must not outlive their checkpoints. The reference IAM grants
+  `PutBucketLifecycleConfiguration`, which suggests `DynamoDBSaver` sets the bucket lifecycle from
+  `ttl_seconds` itself. 237a confirms this. If it does, the stack defines no lifecycle rule; if not,
+  the stack sets one from the same `checkpointTtlDays`.
 - Table and bucket names are read from SSM:
   `/pmat/{env}/alpha-mesh/review-pull-request/checkpoint-table` and `…/checkpoint-bucket`.
   `CODE_REVIEW_CHECKPOINT_TABLE` / `CODE_REVIEW_CHECKPOINT_BUCKET` override them (integration tests).
@@ -283,23 +291,27 @@ agents/review-pull-request/
   infra/cdk/
     bin/cdk.ts              # App; requires -c config=dev|staging|prod
     lib/checkpoint-stack.ts # DynamoDB table (PK/SK strings, PAY_PER_REQUEST, TTL attr "ttl"),
-                            # S3 bucket (block public access, SSE-S3, lifecycle matching TTL),
-                            # SSM parameters, managed IAM policy (exported; see IAM note)
+                            # S3 bucket (block public access, SSE-S3), SSM parameters
+                            # (table, bucket, ttl-days). No IAM resources (see access note)
     test/checkpoint-stack.test.ts  # CDK assertions
     cdk.json  package.json  tsconfig.json  jest.config.js
   infra/scripts/deploy-pipeline-infra.sh  # validates DEPLOY_ENV/AWS_REGION, pnpm install, cdk deploy
   scripts/deploy-dev-from-ec2.sh          # sets DEPLOY_ENV=dev, AWS_REGION, AWS_ACCOUNT_ID; calls the above
 ```
 
-- IAM permissions are those in the reference `infra/create.sh` (DynamoDB Get/Put/Query/BatchGet/
-  BatchWrite, plus DeleteItem for `--fresh` and the lease, UpdateItem for the lease (3.6a); S3 Put/Get/Delete/PutObjectTagging on objects; lifecycle
-  config on the bucket).
-- **IAM note:** runs on EC2 use an IAM Identity Center (SSO) role
-  (`AWSReservedSSO_dev-EC2_…`). SSO-managed roles cannot have policies attached outside their
-  permission set. The stack therefore creates the managed policy and exports its ARN, and attaches it
-  only to principals named in `cdk.json` context (empty by default). 237a must first check whether
-  the `dev-EC2` permission set already allows these actions on the new table and bucket. If not, the
-  owner adds the policy to the permission set (open question 4).
+- **Access, same as the PMATFE-mfe-* projects:** their CDK grants permissions only to runtime
+  principals (Lambdas, via `table.grantReadWriteData(fn)`). People and the EC2 instance act through
+  the IAM Identity Center (SSO) `dev-EC2` permission set, e.g. the mfe-sales integration tests use the
+  tables directly. This agent runs on EC2 as the developer, so **the stack creates no IAM
+  resources** and relies on `dev-EC2`. The reference's policy attached to an IAM user is a pre-SSO
+  setup and is not copied.
+- Actions the agent needs: DynamoDB GetItem, PutItem (incl. conditional), UpdateItem, DeleteItem,
+  Query, BatchGetItem, BatchWriteItem; S3 PutObject, GetObject, DeleteObject, PutObjectTagging, and
+  Get/PutBucketLifecycleConfiguration if the saver sets lifecycle itself.
+- 2026-10-14 probe with `dev-EC2`: list/describe tables, `get-item`, and listing an S3 bucket work.
+  Writes are not yet proven: **237a's first check** after deploy is a put / conditional put / update /
+  delete on its own table and a put / get / delete in its own bucket. If any is denied, stop and
+  ask the owner.
 - Stack name `PmatAlphaMeshReviewCheckpointsStack-{env}`. Dev uses `RemovalPolicy.DESTROY` and
   `autoDeleteObjects`; staging/prod `RETAIN`.
 - The reference shell scripts `create.sh` / `teardown.sh` are not copied; CDK replaces them.
@@ -338,7 +350,7 @@ Node idempotency matters here: every outer node may run again on resume. `overvi
 | `guard.py` | `Redactor` gains `scrub_messages` for LangChain messages; `GuardedLLM` removed when nothing uses it |
 | `llm.py` | Reduced to `LLMError` / `ProviderError` (or merged into `session.py`); HTTP code removed |
 | `checkpoints.py` (new) | `make_checkpointer(config)` (DynamoDB from SSM/env), `thread_id(...)`, `policy_hash(...)` |
-| `formatter.py` | Header lists models used when more than one; hidden run marker |
+| `formatter.py` | Header lists every model used; each file's summary line names its model (also overview); hidden run marker |
 | `github.py` | `has_run_marker(pr_url, thread_id)` for exactly-once posting |
 
 Seams for tests (no test hooks in production code): `main(argv, *, checkpointer=None,
@@ -366,7 +378,7 @@ does not.
 | A3 | Hung call, SIGINT and SIGTERM (parametrised) | As A2; no partial result recorded for K |
 | A4 | Hung **overview**, killed | Nothing posted; resume re-runs overview; no file results to reuse |
 | A5 | Provider error object on file K (`Upstream idle timeout exceeded`) | Run fails noisily as today (exit 1, nothing posted); resume keeps files 1..K-1 **and their findings** |
-| A6 | Resume with a **different model** | Files 1..K-1 keep their original model; K.. use the new one; report lists both models |
+| A6 | Resume with a **different model** | Files 1..K-1 keep their original model; K.. use the new one; header lists both models; each file's summary names its own model |
 | A7 | Head SHA changed between runs | New thread; nothing reused |
 | A8 | Exclusion policy changed between runs | New thread; nothing reused |
 | A9 | Crash after a successful post (post succeeds, process killed before checkpoint) | Resume finds the marker, does not post again |
@@ -398,9 +410,10 @@ tests).
 
 ### 5.3 Unit tests
 
-- `test_llm.py` → `test_model_errors.py`: port all six existing tests (malformed 200 retried;
-  malformed body on the no-tools fallback retried; non-JSON body, no `choices`, non-object tool
-  arguments → `LLMError`; provider error object → `ProviderError` without retry).
+- `test_llm.py` → `test_model_errors.py`: port five existing tests (malformed 200 retried;
+  non-JSON body, no `choices`, non-object tool arguments → `LLMError`; provider error object →
+  `ProviderError` without retry). Replace `test_malformed_body_on_the_no_tools_fallback_is_retried_too`
+  with: a 404 on a call with tools raises `LLMError` naming tool support, with no retry without tools.
 - Model construction table (3.7), including prefix stripping and `/v1` handling.
 - `thread_id` / `policy_hash` stability (pattern order does not matter; any pattern change does).
 - `test_architecture.py`: new modules may not import chat-model classes, `httpx`, readers or the
@@ -413,7 +426,7 @@ tests).
 - I1: one real run of the graph against the deployed DynamoDB/S3 with a fake model: start, kill,
   resume, then delete the thread (tests clean up after themselves).
 - CDK assertions test (`infra/cdk/test`): table keys, TTL, bucket encryption and public-access block,
-  SSM parameters, IAM policy statements.
+  SSM parameters (incl. ttl-days), and no IAM resources in the template.
 
 ---
 
@@ -425,7 +438,7 @@ findings in the ticket's changes; 2 passes) → DONE with a Jira comment.
 
 | Sub-ticket | Scope | Done when |
 |---|---|---|
-| **PMAT-264 (237a) — Checkpoint infra (CDK)** | `infra/cdk`, `infra/scripts`, `scripts/deploy-dev-from-ec2.sh`, CDK assertion tests, README section | `deploy-dev-from-ec2.sh` deploys; table, bucket, SSM params and policy exist; a manual `DynamoDBSaver` put/get works from EC2 |
+| **PMAT-264 (237a) — Checkpoint infra (CDK)** | `infra/cdk`, `infra/scripts`, `scripts/deploy-dev-from-ec2.sh`, CDK assertion tests, README section | `deploy-dev-from-ec2.sh` deploys; table, bucket and SSM params exist; write probe (3.10) passes with `dev-EC2`; a manual `DynamoDBSaver` put/get works from EC2 |
 | **PMAT-265 (237b) — LangGraph + LangChain models, no behaviour change** | 3.7–3.9, 3.11, 3.12, graph with `InMemorySaver`, Reviewer Agent subgraph, ported unit and canary tests (C1, C4), `CLAUDE_LANGGRAPH.md` | All existing tests pass; a real review of a small PR gives the same report shape as before |
 | **PMAT-266 (237c) — Durable checkpoints and resume** | `checkpoints.py`, thread key, start/resume/skip, incomplete retry, multi-model header, `--fresh`, thread lease (3.6a), A1–A8, A10–A14, A16, A17, A20, C2–C3, I1 | Acceptance tests green; a real review killed mid-run resumes from the right file |
 | **PMAT-267 (237d) — Exactly-once post and docs** | Run marker (`report_id`), `has_run_marker` (fail closed), marker kept on truncation, A9, A15, A18, A19, README (resume, `--fresh`, free-model workflow, AWS prerequisites), `.env.example` | A9 green; README matches the CLI |
@@ -438,7 +451,9 @@ findings in the ticket's changes; 2 passes) → DONE with a Jira comment.
 
 - A rerun of the same command after a failure resumes, and says so.
 - `--fresh` flag.
-- Report header lists all models used when a resume switched model.
+- Report header lists every model used (`**Models:**` instead of `**Model:**` when more than one),
+  and each file's summary names the model that reviewed it, e.g.
+  `` `src/x.py` (model: `z-ai/glm-5.3-flash`) — summary… ``. The overview names its model too.
 - Hidden run marker in the PR comment.
 - AWS credentials (DynamoDB/S3) are required for non-dry runs.
 
@@ -463,12 +478,10 @@ findings in the ticket's changes; 2 passes) → DONE with a Jira comment.
 
 ---
 
-## 10. Open questions for the owner
+## 10. Decisions (owner, 2026-10-14)
 
-1. **404 with tools:** keep today's fallback to a no-tools call (stage 2 then cannot read files), or
-   fail? Default in this spec: keep, for no behaviour change.
-2. **TTL:** 14 days proposed. Long enough to finish a free-model review over several days?
-3. **Model in the report header:** list all models used (proposed), or the last one only?
-4. **IAM for the SSO role:** if the `dev-EC2` permission set lacks DynamoDB/S3 access to the new
-   resources, will you add the exported policy to the permission set, or should the agent use a
-   dedicated role it assumes?
+1. **404 with tools:** no fallback; fail with a clear `LLMError` (3.9).
+2. **TTL:** configurable, default 2 days (3.10).
+3. **Models in the report:** header lists every model; each file names its model (section 7).
+4. **Access:** same as the PMATFE-mfe-* projects; no IAM resources, rely on the SSO `dev-EC2`
+   permission set; 237a proves write access first (3.10).
