@@ -197,18 +197,15 @@ A second process on a thread that is already being reviewed must stop, not inter
 Model names follow `{provider}/{modelname}` (the OpenRouter standard), e.g. `openai/gpt-oss-120b`,
 `anthropic/claude-sonnet-5-5`, `minimax/minimax-m2`.
 
-One function in `session.py` builds the chat model: **`ChatOpenAI` for every endpoint**, with
-`base_url` set from `CODE_REVIEW_URL`. That is how `llm.py` works today (one OpenAI-compatible client),
-and it covers OpenRouter, OpenAI, MiniMax, Ollama and Anthropic's OpenAI-compatible endpoint.
+One function in `session.py` builds the chat model from `CODE_REVIEW_URL` (owner decision, 2026-10-14):
+**`openrouter.ai` uses LangChain's OpenRouter chat model class; every other endpoint uses `ChatOpenAI`**
+with `base_url` set (OpenAI, MiniMax, Ollama, Anthropic's OpenAI-compatible endpoint), as `llm.py`
+does today. The OpenRouter package and class name are confirmed in PMAT-265.
 
 - Model name: the full `provider/model` is sent to `openrouter.ai`; for any other host the
   `provider/` prefix is stripped. A name with no `/` is sent unchanged.
 - `/v1` is appended to the base URL if missing, as `llm.py` does today.
-- A dedicated class (e.g. `ChatAnthropic`) is added only when a provider needs one; out of scope here.
-  **Exception allowed (owner decision, 2026-10-14):** if the ported provider-error test (5.3) shows
-  `ChatOpenAI` does not surface OpenRouter's 200-with-error-object, `openrouter.ai` may use
-  LangChain's OpenRouter chat model class (confirm the package and class name in PMAT-265) instead of
-  `LangChainLLM` inspecting the raw response. Every other host stays on `ChatOpenAI`.
+- Any other dedicated class (e.g. `ChatAnthropic`) is added only when a provider needs one; out of scope here.
 
 ### 3.8 Redaction: unchanged
 
@@ -235,7 +232,7 @@ The stages talk to the model through `session.review_llm.chat(messages, tools)`,
 | 3 attempts, backoff 2/4/8 s on 429/500/502/503, timeouts, connection errors | SDK `max_retries=2` (3 attempts): exponential backoff **with jitter**, honours `Retry-After`, also retries 408/409 and all 5xx |
 | 120 s request timeout | `timeout=120` |
 | Malformed 200 body retried, then `LLMError` | `.with_retry(retry_if_exception_type=(MalformedResponse,), stop_after_attempt=3)` on a small parse check |
-| 200 body with an error object: `ProviderError`, fails fast with its message | Same: detect the error object and raise `ProviderError`, not retried (PMAT-236 may change this). The ported test (5.3) is written first and decides how: if `ChatOpenAI` does not surface the provider's message, either OpenRouter uses LangChain's OpenRouter class (3.7) or `LangChainLLM` inspects the raw response itself, whichever is smaller |
+| 200 body with an error object: `ProviderError`, fails fast with its message | Same: detect the error object and raise `ProviderError`, not retried (PMAT-236 may change this). The ported test (5.3) is written first, for both classes (3.7): where a class does not surface the provider's message, `LangChainLLM` inspects the raw response itself |
 | 404 with tools: retry without tools | **No fallback without tools (owner decision, 2026-10-14):** without tools the review cannot read files, so the fallback silently gave a weaker review. Instead the **same call, with tools,** is retried twice with backoff: on OpenRouter a 404 here means no provider that supports tools is reachable for the model *right now*, which can be transient. After 3 attempts: `LLMError` (see below). Deliberate behaviour change, covered by tests. PMAT-236 later moves this into its single classification |
 
 `LLMError` / `ProviderError` stay as the exceptions the CLI catches, so the fatal-error message
@@ -326,7 +323,7 @@ agents/review-pull-request/
 
 - Pin Python 3.12 (`requires-python = "~=3.12.0"`, `.python-version`). The reference notes newer
   versions are problematic with these LangGraph modules.
-- Add: `langgraph`, `langchain-core`, `langchain-openai`,
+- Add: `langgraph`, `langchain-core`, `langchain-openai`, the LangChain OpenRouter package (3.7),
   `langgraph-checkpoint-aws`, `boto3`; dev: `langgraph-checkpoint-sqlite` (kill tests).
   Use the versions in the reference `uv.lock` as the floor.
 - Remove `httpx` only if nothing else still uses it (`tools.py` / `github.py` do today; keep it).
