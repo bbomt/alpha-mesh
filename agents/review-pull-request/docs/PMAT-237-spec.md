@@ -249,11 +249,28 @@ overview_model = redact | chat_model
 | 120 s request timeout | `timeout=120` |
 | Malformed 200 body retried, then `LLMError` | `.with_retry(retry_if_exception_type=(MalformedResponse,), stop_after_attempt=3)` on a small parse check |
 | 200 body with an error object: `ProviderError`, fails fast with its message | Same: detect the error object and raise `ProviderError`, not retried (PMAT-236 may change this) |
-| 404 with tools: retry without tools | **Dropped (owner decision, 2026-10-14).** Without tools the review cannot read files, so the fallback gave a weaker review silently. A 404 is now an `LLMError`: `endpoint or model does not support tool calls`. Deliberate behaviour change, covered by a test |
+| 404 with tools: retry without tools | **No fallback without tools (owner decision, 2026-10-14):** without tools the review cannot read files, so the fallback silently gave a weaker review. Instead the **same call, with tools,** is retried twice with backoff: on OpenRouter a 404 here means no provider that supports tools is reachable for the model *right now*, which can be transient. After 3 attempts: `LLMError` (see below). Deliberate behaviour change, covered by tests. PMAT-236 later moves this into its single classification |
 
 `LLMError` / `ProviderError` stay as the exceptions the CLI catches, so the fatal-error message
 (model, API host, "nothing was posted") is unchanged. LangChain/SDK exceptions are mapped to them in
 `session.py`.
+
+**Knowing to switch model.** The overview call has no tools, so the first call with tools is file
+1's review. A model with no tool support therefore fails right at the start, after the overview,
+which is checkpointed and kept. The error says what to do:
+
+```
+ERROR: LLM API call failed during <file>: model 'x/y' has no endpoint that supports tool calls
+  at openrouter.ai (404, after 3 attempts).
+  The review needs tool calls (read_file). Resume with a model that supports them:
+    mesh review-pull-request <url> --model <provider/model>
+  Completed work is kept: overview + N file(s).
+```
+
+If the 404 happens mid-review (OpenRouter's tool-capable providers for that model went away), the
+same message applies and the resume keeps every finished file. A pre-flight check (OpenRouter's
+`/api/v1/models` lists `supported_parameters`, incl. `tools`) could catch this before the overview;
+it is not in scope.
 
 For PMAT-236: the SDK retries 429 even when the cause is exhausted credits, which PMAT-236 wants to
 fail fast. PMAT-236 will likely set SDK `max_retries=0` and put all classification in one retry
@@ -413,7 +430,9 @@ tests).
 - `test_llm.py` → `test_model_errors.py`: port five existing tests (malformed 200 retried;
   non-JSON body, no `choices`, non-object tool arguments → `LLMError`; provider error object →
   `ProviderError` without retry). Replace `test_malformed_body_on_the_no_tools_fallback_is_retried_too`
-  with: a 404 on a call with tools raises `LLMError` naming tool support, with no retry without tools.
+  with: a 404 on a call with tools is retried twice with tools (backoff patched), succeeds if a later
+  attempt succeeds, else raises `LLMError` naming tool support and the `--model` resume hint; a call
+  without tools is never made.
 - Model construction table (3.7), including prefix stripping and `/v1` handling.
 - `thread_id` / `policy_hash` stability (pattern order does not matter; any pattern change does).
 - `test_architecture.py`: new modules may not import chat-model classes, `httpx`, readers or the
@@ -480,7 +499,7 @@ findings in the ticket's changes; 2 passes) → DONE with a Jira comment.
 
 ## 10. Decisions (owner, 2026-10-14)
 
-1. **404 with tools:** no fallback; fail with a clear `LLMError` (3.9).
+1. **404 with tools:** no fallback without tools; retry the same call twice with backoff, then fail with an `LLMError` that says to resume with a tool-capable `--model` (3.9).
 2. **TTL:** configurable, default 2 days (3.10).
 3. **Models in the report:** header lists every model; each file names its model (section 7).
 4. **Access:** same as the PMATFE-mfe-* projects; no IAM resources, rely on the SSO `dev-EC2`
