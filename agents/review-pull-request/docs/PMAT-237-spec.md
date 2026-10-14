@@ -118,7 +118,6 @@ class ReviewState(TypedDict):
     overview_model: str | None
     results: dict[str, FileResult]                     # file_path -> result (plain field, no reducer)
     report: str | None
-    report_id: str | None                              # new UUID4 each time `report` runs (3.6)
 ```
 
 `results` is a plain field: `review_next_file` returns the whole dict with its new result added
@@ -158,27 +157,19 @@ The CLI reads `graph.get_state(config)`, as the reference `invoke_thread_with_re
 - `review_next_file` reviews the first file in `files` that has no result. A file that comes back
   incomplete again has a result, so it is not picked twice in one run; the next rerun retries it.
 - `overview` does nothing if an overview exists, so RETRY reuses it.
-- RETRY reaches `report` again, which builds a new report (new `report_id`) that `post` posts as a
-  new PR comment, as a rerun does today.
+- RETRY reaches `report` again, which builds a new report that `post` posts as a new PR comment,
+  as a rerun does today.
 - `--fresh` discards the thread (`checkpointer.delete_thread(thread_id)`) and starts.
 
-### 3.6 Posting exactly once
+### 3.6 Posting
 
-The problem: posting the comment and saving the checkpoint after `post` are two steps. A run killed
-between them would, on resume, post again.
+`post` posts the report as today. Posting the comment and saving the checkpoint after `post` are two
+steps, so a run killed in the split second after GitHub accepts the comment and before the
+checkpoint is saved would post the same comment again on resume.
 
-- `report` sets `report_id` to a new UUID4 and is checkpointed before `post` runs.
-- `post` appends a hidden tag `<!-- mesh-review-run: {report_id} -->` to the comment. Before
-  posting, it lists the PR's comments by the token's account (as `incremental.find_last_review_comment`
-  does) and skips the post if a comment already carries that tag.
-- A resume re-enters `post` with the same checkpointed `report_id`, finds its tag, and does not post
-  twice. A new report (RETRY, `--fresh`, TTL expiry) has a new `report_id`, so an old tag never
-  blocks it.
-- **Fail closed:** if the comment listing fails, `post` raises (the run fails noisily, nothing is
-  posted); the next resume tries again.
-- **Truncation:** `post_comment` cuts oversized bodies at the tail (`MAX_COMMENT_CHARS`); the tag is
-  appended after truncation, so it always survives. It does not affect `REVIEW_SIGNATURE` or
-  `Reviewed commit` parsing.
+**Accepted (owner decision, 2026-10-14):** that rare duplicate is harmless and can be deleted by
+hand. It does not affect `--since-last-review`: both copies name the same `Reviewed commit`. No
+hidden tag or comment search is added. The README notes it.
 
 ### 3.6a One run per thread at a time
 
@@ -336,7 +327,8 @@ globals, conditional edges return node names, idempotent nodes) and import it fr
 `alpha-mesh/CLAUDE.md`. Leave out the demo-specific parts.
 
 Node idempotency matters here: every outer node may run again on resume. `overview`,
-`review_next_file` and `report` are pure apart from model calls. `post` is made idempotent by 3.6.
+`review_next_file` and `report` are pure apart from model calls. `post` is not idempotent; 3.6
+explains the rare duplicate this allows.
 
 ---
 
@@ -350,8 +342,7 @@ Node idempotency matters here: every outer node may run again on resume. `overvi
 | `session.py` | Builds the chat model from URL + model name (3.7) and wraps it in `GuardedLLM` as today |
 | `stage1.py`, `stage2.py`, `guard.py` | Unchanged |
 | `checkpoints.py` (new) | `make_checkpointer(config)` (standard `DynamoDBSaver` from SSM/env), `thread_id(...)`, `policy_hash(...)`, the run lock (3.6a) |
-| `formatter.py` | Header lists every model used; each file's summary line names its model (also overview); hidden run marker |
-| `github.py` | `has_run_marker(pr_url, report_id)` for exactly-once posting |
+| `formatter.py` | Header lists every model used; each file's summary line names its model (also overview) |
 
 Seams for tests (no test hooks in production code): `main(argv, *, checkpointer=None,
 model_factory=None, github=None)` or an equivalent `run_review(...)` function the CLI calls, so tests
@@ -381,17 +372,13 @@ does not.
 | A6 | Resume with a **different model** | Files 1..K-1 keep their original model; K.. use the new one; header lists both models; each file's summary names its own model |
 | A7 | Head SHA changed between runs | New thread; nothing reused |
 | A8 | Exclusion policy changed between runs | New thread; nothing reused |
-| A9 | Crash after a successful post (post succeeds, process killed before checkpoint) | Setup asserts `report_id` is already in the checkpoint written by `report`, before `post` runs. Resume reuses it, finds the marker, does not post again |
 | A10 | Completed and posted thread run again | SKIP: stored report printed, no model call, no post |
-| A11 | Run that finished with an incomplete file, run again | Only the incomplete file is reviewed again; a new report is posted (new `report_id`); other files not re-sent |
+| A11 | Run that finished with an incomplete file, run again | Only the incomplete file is reviewed again; a new report is posted; other files not re-sent |
 | A12 | `--since-last-review` killed and resumed | Same as A1 for the incremental diff; key uses `since-{base}` |
 | A13 | `--fresh` | Existing thread discarded; every file reviewed |
 | A14 | Resume console output | Lists files from checkpoint and files reviewed now |
-| A15 | `--fresh` after a posted run, and a rerun after TTL expiry | A new report is posted (new `report_id`); the old marker does not suppress it |
 | A16 | Second process on a thread while the first is running | Exits 1 with "another review is running (pid N)"; first run unaffected |
 | A17 | Run killed by SIGKILL, resumed at once | The OS released the lock; resume proceeds |
-| A18 | Report over `MAX_COMMENT_CHARS`, crash after post, resume | Truncated comment still carries the marker (same checkpointed `report_id`, as A9); no second post |
-| A19 | Comment listing fails in `post` | Run fails noisily, nothing posted; next resume posts once |
 | A20 | File incomplete again on its RETRY run | Not picked a second time in that run; report marks it incomplete; the next rerun retries it |
 
 ### 5.2 Security (canary, `tests/test_canary.py`)
@@ -446,10 +433,9 @@ findings in the ticket's changes; up to 10 passes) → DONE with a Jira comment.
 |---|---|---|
 | **PMAT-264 (237a) — Checkpoint infra (CDK)** | `infra/cdk`, `infra/scripts`, `scripts/deploy-dev-from-ec2.sh`, CDK assertion tests, README section | `deploy-dev-from-ec2.sh` deploys; table, bucket and SSM params exist; write probe (3.10) passes with `dev-EC2`; a manual `DynamoDBSaver` put/get works from EC2 |
 | **PMAT-265 (237b) — LangGraph + LangChain models, no behaviour change** | 3.7–3.9, 3.11, 3.12, graph with `InMemorySaver` calling `stage1`/`stage2` unchanged, `LangChainLLM` behind `GuardedLLM`, ported unit and canary tests (C1, C4), `CLAUDE_LANGGRAPH.md` | All existing tests pass; a real review of a small PR gives the same report shape as before |
-| **PMAT-266 (237c) — Durable checkpoints and resume** | `checkpoints.py`, thread key, start/resume/skip, incomplete retry, multi-model header, `--fresh`, local run lock (3.6a), results-only state tests (C2, C3, C5), A1–A8, A10–A14, A16, A17, A20, I1 | Acceptance tests green; a real review killed mid-run resumes from the right file |
-| **PMAT-267 (237d) — Exactly-once post and docs** | Run marker (`report_id`), `has_run_marker` (fail closed), marker kept on truncation, A9, A15, A18, A19, README (resume, `--fresh`, free-model workflow, AWS prerequisites), `.env.example` | A9 green; README matches the CLI |
+| **PMAT-266 (237c) — Durable checkpoints and resume** | `checkpoints.py`, thread key, start/resume/skip, incomplete retry, multi-model header, `--fresh`, local run lock (3.6a), results-only state tests (C2, C3, C5), A1–A8, A10–A14, A16, A17, A20, I1, README (resume, `--fresh`, free-model workflow, AWS prerequisites, the rare duplicate comment), `.env.example` | Acceptance tests green; a real review killed mid-run resumes from the right file |
 
-237a and 237b can run in parallel; 237c needs both; 237d needs 237c.
+237a and 237b can run in parallel; 237c needs both. (237d, exactly-once posting, was dropped: see 3.6.)
 
 ---
 
@@ -460,7 +446,6 @@ findings in the ticket's changes; up to 10 passes) → DONE with a Jira comment.
 - Report header lists every model used (`**Models:**` instead of `**Model:**` when more than one),
   and each file's summary names the model that reviewed it, e.g.
   `` `src/x.py` (model: `z-ai/glm-5.3-flash`) — summary… ``. The overview names its model too.
-- Hidden run marker in the PR comment.
 - AWS credentials (DynamoDB/S3) are required for non-dry runs.
 
 ---
@@ -491,3 +476,5 @@ findings in the ticket's changes; up to 10 passes) → DONE with a Jira comment.
 3. **Models in the report:** header lists every model; each file names its model (section 7).
 4. **Access:** same as the PMATFE-mfe-* projects; no IAM access grants (CDK's auto-delete role in dev excepted), rely on the SSO `dev-EC2`
    permission set; 237a proves write access first (3.10).
+5. **Posting:** no exactly-once machinery; a rare duplicate comment after a crash at the moment of
+   posting is accepted (3.6). PMAT-267 dropped; its README work moved to PMAT-266.
