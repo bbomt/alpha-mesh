@@ -198,19 +198,14 @@ A second process on a thread that is already being reviewed must stop, not inter
 Model names follow `{provider}/{modelname}` (the OpenRouter standard), e.g. `openai/gpt-oss-120b`,
 `anthropic/claude-sonnet-5-5`, `minimax/minimax-m2`.
 
-One function in `session.py` builds the LangChain chat model from `CODE_REVIEW_URL` + model name:
+One function in `session.py` builds the chat model: **`ChatOpenAI` for every endpoint**, with
+`base_url` set from `CODE_REVIEW_URL`. That is how `llm.py` works today (one OpenAI-compatible client),
+and it covers OpenRouter, OpenAI, MiniMax, Ollama and Anthropic's OpenAI-compatible endpoint.
 
-| Endpoint host | Class | Model name sent |
-|---|---|---|
-| `openrouter.ai` | `ChatOpenAI(base_url=…/v1)` (or `ChatOpenRouter`) | full `provider/model` |
-| `api.openai.com` | `ChatOpenAI` | `model` (prefix stripped) |
-| `api.anthropic.com` | `ChatAnthropic` | `model` (prefix stripped) |
-| anything else (MiniMax, Ollama, …) | `ChatOpenAI(base_url=…/v1)` (OpenAI-compatible) | `model` (prefix stripped) |
-
-- A name with no `/` is passed unchanged.
+- Model name: the full `provider/model` is sent to `openrouter.ai`; for any other host the
+  `provider/` prefix is stripped. A name with no `/` is sent unchanged.
 - `/v1` is appended to the base URL if missing, as `llm.py` does today.
-- Pick between `ChatOpenAI` and `langchain-openrouter`'s `ChatOpenRouter` for OpenRouter during 237b,
-  based on which surfaces OpenRouter's 200-with-error-object responses more reliably (section 3.9).
+- A dedicated class (e.g. `ChatAnthropic`) is added only when a provider needs one; out of scope here.
 
 ### 3.8 Redaction: unchanged
 
@@ -328,7 +323,7 @@ agents/review-pull-request/
 
 - Pin Python 3.12 (`requires-python = "~=3.12.0"`, `.python-version`). The reference notes newer
   versions are problematic with these LangGraph modules.
-- Add: `langgraph`, `langchain-core`, `langchain-openai`, `langchain-anthropic`,
+- Add: `langgraph`, `langchain-core`, `langchain-openai`,
   `langgraph-checkpoint-aws`, `boto3`; dev: `langgraph-checkpoint-sqlite` (kill tests).
   Use the versions in the reference `uv.lock` as the floor.
 - Remove `httpx` only if nothing else still uses it (`tools.py` / `github.py` do today; keep it).
@@ -422,7 +417,7 @@ tests).
   with: a 404 on a call with tools is retried twice with tools (backoff patched), succeeds if a later
   attempt succeeds, else raises `LLMError` naming tool support and the `--model` resume hint; a call
   without tools is never made.
-- Model construction table (3.7), including prefix stripping and `/v1` handling.
+- Model construction (3.7): prefix kept for OpenRouter, stripped elsewhere, `/v1` handling.
 - `thread_id` / `policy_hash` stability (pattern order does not matter; any pattern change does).
 - `test_architecture.py`: new modules may not import chat-model classes, `httpx`, readers or the
   checkpointer directly.
@@ -445,7 +440,7 @@ tests).
 
 Each sub-ticket follows the workflow: tests first (red for the stated reason) → implement → green →
 commit → deploy if infra → push → `mesh review-pull-request <PR>` loop (stop when no HIGH/MEDIUM
-findings in the ticket's changes; 2 passes) → DONE with a Jira comment.
+findings in the ticket's changes; up to 10 passes) → DONE with a Jira comment.
 
 | Sub-ticket | Scope | Done when |
 |---|---|---|
