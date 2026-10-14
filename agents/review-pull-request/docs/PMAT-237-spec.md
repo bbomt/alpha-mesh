@@ -238,7 +238,7 @@ The stages talk to the model through `session.review_llm.chat(messages, tools)`,
 | 404 with tools: retry without tools | **No fallback without tools (owner decision, 2026-10-14):** without tools the review cannot read files, so the fallback silently gave a weaker review. Instead the **same call, with tools,** is retried twice with backoff: on OpenRouter a 404 here means no provider that supports tools is reachable for the model *right now*, which can be transient. After 3 attempts: `LLMError` (see below). Deliberate behaviour change, covered by tests. PMAT-236 later moves this into its single classification |
 
 `LLMError` stays as the exception the CLI catches, so the fatal-error message
-(model, API host, "nothing was posted") is unchanged. LangChain/SDK exceptions are mapped to them in
+(model, API host, "nothing was posted") is unchanged. LangChain/SDK exceptions are mapped to `LLMError` in
 `session.py`.
 
 **Knowing to switch model.** The overview call has no tools, so the first call with tools is file
