@@ -205,6 +205,10 @@ and it covers OpenRouter, OpenAI, MiniMax, Ollama and Anthropic's OpenAI-compati
   `provider/` prefix is stripped. A name with no `/` is sent unchanged.
 - `/v1` is appended to the base URL if missing, as `llm.py` does today.
 - A dedicated class (e.g. `ChatAnthropic`) is added only when a provider needs one; out of scope here.
+  **Exception allowed (owner decision, 2026-10-14):** if the ported provider-error test (5.3) shows
+  `ChatOpenAI` does not surface OpenRouter's 200-with-error-object, `openrouter.ai` may use
+  LangChain's OpenRouter chat model class (confirm the package and class name in PMAT-265) instead of
+  `LangChainLLM` inspecting the raw response. Every other host stays on `ChatOpenAI`.
 
 ### 3.8 Redaction: unchanged
 
@@ -231,7 +235,7 @@ The stages talk to the model through `session.review_llm.chat(messages, tools)`,
 | 3 attempts, backoff 2/4/8 s on 429/500/502/503, timeouts, connection errors | SDK `max_retries=2` (3 attempts): exponential backoff **with jitter**, honours `Retry-After`, also retries 408/409 and all 5xx |
 | 120 s request timeout | `timeout=120` |
 | Malformed 200 body retried, then `LLMError` | `.with_retry(retry_if_exception_type=(MalformedResponse,), stop_after_attempt=3)` on a small parse check |
-| 200 body with an error object: `ProviderError`, fails fast with its message | Same: detect the error object and raise `ProviderError`, not retried (PMAT-236 may change this). The ported test (5.3) is written first and decides how: if `ChatOpenAI` does not surface the provider's message, `LangChainLLM` inspects the raw response itself |
+| 200 body with an error object: `ProviderError`, fails fast with its message | Same: detect the error object and raise `ProviderError`, not retried (PMAT-236 may change this). The ported test (5.3) is written first and decides how: if `ChatOpenAI` does not surface the provider's message, either OpenRouter uses LangChain's OpenRouter class (3.7) or `LangChainLLM` inspects the raw response itself, whichever is smaller |
 | 404 with tools: retry without tools | **No fallback without tools (owner decision, 2026-10-14):** without tools the review cannot read files, so the fallback silently gave a weaker review. Instead the **same call, with tools,** is retried twice with backoff: on OpenRouter a 404 here means no provider that supports tools is reachable for the model *right now*, which can be transient. After 3 attempts: `LLMError` (see below). Deliberate behaviour change, covered by tests. PMAT-236 later moves this into its single classification |
 
 `LLMError` / `ProviderError` stay as the exceptions the CLI catches, so the fatal-error message
@@ -393,13 +397,17 @@ does not.
 
 Invariant: *excluded content and tokens never reach the model or the checkpoint store, by any path.*
 Paths: overview prompt, per-file prompt, `read_file` results, folder listings and not-found hints
-(as today), **plus** the saved checkpoint state, scanned through `SqliteSaver` in tests (C2: the
-saved content is the same whichever saver writes it).
+(as today), **plus** the saved checkpoint state, scanned through `SqliteSaver` in tests.
+
+**Accepted residual risk (owner decision, 2026-10-14):** the store scan (C2) runs only through
+`SqliteSaver`. It is not repeated against the real DynamoDB table and S3 bucket, because
+`DynamoDBSaver`'s compression and S3 offload are lossless transforms of the same serialized state:
+they shrink or move those bytes but cannot add content that is not in the state.
 
 | # | Test |
 |---|---|
 | C1 | All existing canary tests pass against the LangChain path (recording fake model sits behind `GuardedLLM`, as today) |
-| C2 | **Secret scan of the store:** plant a canary in an excluded file and tokens in ordinary files; run a full review, a killed run and its resume (`SqliteSaver`). Search every saved checkpoint and pending write: the canary and tokens never appear. The scan checks the state's content, which is the same whichever saver writes it, so it is not repeated against DynamoDB/S3 |
+| C2 | **Secret scan of the store:** plant a canary in an excluded file and tokens in ordinary files; run a full review, a killed run and its resume (`SqliteSaver`). Search every saved checkpoint and pending write: the canary and tokens never appear. Not repeated against DynamoDB/S3 (accepted residual risk, above) |
 | C3 | **Does the scan work?** A test-only graph variant that also saves the diff in the state. The C2 search must find the canary, so C2 cannot pass by accident |
 | C5 | **Only these fields:** `ReviewState` and `FileResult` contain exactly the fields in 3.3. A new field that could hold raw content fails this test until it is changed on purpose |
 | C4 | A token in an allowed file is redacted before the model sees it (existing test, new path) |
