@@ -84,14 +84,18 @@ A checkpoint is written after each node: `overview`, each `review_next_file` ste
 Inside one file's review nothing is checkpointed. A file whose review was in flight when the run died
 has no result and is reviewed again. A half-finished file is never reported as reviewed.
 
-**What is saved is results only, so it is safe by construction.** The state (3.3) holds file
-paths and model output: the overview, each file's summary and findings, missing paths, model names
-and the report. It holds no diff, no file contents, no prompts and no conversation with the model.
+**What is saved is results only, so it adds no new exposure.** The state (3.3) holds file paths,
+model output (the overview, each file's summary and findings, missing paths, the report) and small
+values (model names, tool-call counts, incomplete flags). It holds no diff, no file contents, no
+prompts and no conversation with the model.
 
-- The model only ever sees input that has passed the exclusion policy and `GuardedLLM`'s redaction,
-  so excluded content and known tokens cannot reach its output, and so cannot reach the state.
-- Everything in the state also ends up in the posted PR comment. The checkpoint store holds nothing
-  that is not already on GitHub.
+- The model's input has passed the exclusion policy and `GuardedLLM`'s redaction. `GuardedLLM`
+  redacts what goes *to* the model, not what comes back, so the model could only repeat a secret
+  that already reached it unredacted. That same model output is what the PR comment publishes
+  today (reports are not redacted), so saving it in the checkpoint exposes nothing the comment
+  does not. A made-up token-shaped string is not a secret.
+- File paths are those in the PR's own diff (excluded ones are removed); the small values hold no
+  content.
 - No extra redaction on saving: the standard `DynamoDBSaver` (and `SqliteSaver` in tests) is used
   as is. The guarantee is proven by tests instead (5.2): a scan of everything saved for planted
   secrets, a run with a deliberate leak to show the scan works, and a test that the state contains
@@ -391,7 +395,7 @@ tests).
 | # | Test |
 |---|---|
 | C1 | All existing canary tests pass against the LangChain path (recording fake model sits behind `GuardedLLM`, as today) |
-| C2 | **Secret scan of the store:** plant a canary in an excluded file and tokens in ordinary files; run a full review, a killed run and its resume (`SqliteSaver`). Search every saved checkpoint and pending write: the canary and tokens never appear |
+| C2 | **Secret scan of the store:** plant a canary in an excluded file and tokens in ordinary files; run a full review, a killed run and its resume (`SqliteSaver`). Search every saved checkpoint and pending write: the canary and tokens never appear. The scan checks the state's content, which is the same whichever saver writes it, so it is not repeated against DynamoDB/S3 |
 | C3 | **Does the scan work?** A test-only graph variant that also saves the diff in the state. The C2 search must find the canary, so C2 cannot pass by accident |
 | C5 | **Only these fields:** `ReviewState` and `FileResult` contain exactly the fields in 3.3. A new field that could hold raw content fails this test until it is changed on purpose |
 | C4 | A token in an allowed file is redacted before the model sees it (existing test, new path) |
