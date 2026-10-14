@@ -234,10 +234,10 @@ The stages talk to the model through `session.review_llm.chat(messages, tools)`,
 | 3 attempts, backoff 2/4/8 s on 429/500/502/503, timeouts, connection errors | SDK `max_retries=2` (3 attempts): exponential backoff **with jitter**, honours `Retry-After`, also retries 408/409 and all 5xx |
 | 120 s request timeout | `timeout=120` |
 | Malformed 200 body retried, then `LLMError` | `.with_retry(retry_if_exception_type=(MalformedResponse,), stop_after_attempt=3)` on a small parse check |
-| 200 body with an error object: `ProviderError`, fails fast with its message | Same: detect the error object and raise `ProviderError`, not retried (PMAT-236 may change this). PMAT-265 starts with a one-off manual check against real OpenRouter: does `ChatOpenRouter` raise an error carrying OpenRouter's message? The result is recorded in the ticket; if it does not, work stops and the owner decides (no raw-response workaround). The ported test (5.3) then pins the mapping to `ProviderError` with a fake |
+| 200 body with an error object: `ProviderError`, fails fast with its message | **Not specially detected (owner decision, 2026-10-14).** Seen twice in the logs, both provider timeouts (`A Timeout Occurred`, `Upstream idle timeout exceeded`), which belong to PMAT-236. Whatever the chat model class raises, or a reply that cannot be parsed, becomes `LLMError`. Known limitation: the provider's own message may be lost in that case; the run still stops with nothing posted |
 | 404 with tools: retry without tools | **No fallback without tools (owner decision, 2026-10-14):** without tools the review cannot read files, so the fallback silently gave a weaker review. Instead the **same call, with tools,** is retried twice with backoff: on OpenRouter a 404 here means no provider that supports tools is reachable for the model *right now*, which can be transient. After 3 attempts: `LLMError` (see below). Deliberate behaviour change, covered by tests. PMAT-236 later moves this into its single classification |
 
-`LLMError` / `ProviderError` stay as the exceptions the CLI catches, so the fatal-error message
+`LLMError` stays as the exception the CLI catches, so the fatal-error message
 (model, API host, "nothing was posted") is unchanged. LangChain/SDK exceptions are mapped to them in
 `session.py`.
 
@@ -349,7 +349,7 @@ explains the rare duplicate this allows.
 |---|---|
 | `review.py` | CLI only: args, PR/diff resolution, thread key, run lock, session, checkpointer, start/resume/retry/skip, error mapping. The review loop moves to `graph.py` |
 | `graph.py` (new) | `ReviewState`, the four nodes (calling `stage1` / `stage2` unchanged), `build_review_graph(session, checkpointer)` |
-| `llm.py` | `HttpLLM` replaced by `LangChainLLM` (same `chat` interface, 3.8); HTTP code removed; `LLMError` / `ProviderError` kept |
+| `llm.py` | `HttpLLM` replaced by `LangChainLLM` (same `chat` interface, 3.8); HTTP code and `ProviderError` removed; `LLMError` kept |
 | `session.py` | Builds the chat model from URL + model name (3.7) and wraps it in `GuardedLLM` as today |
 | `stage1.py`, `stage2.py`, `guard.py` | Unchanged |
 | `checkpoints.py` (new) | `make_checkpointer(config)` (standard `DynamoDBSaver` from SSM/env), `thread_id(...)`, `policy_hash(...)`, the run lock (3.6a) |
@@ -379,7 +379,7 @@ does not.
 | A2 | **Hung call, SIGKILL:** fake model blocks on file K; kill; resume | Files 1..K-1 from checkpoint (not re-sent); K.. reviewed; every file once |
 | A3 | Hung call, SIGINT and SIGTERM (parametrised) | As A2; no partial result recorded for K |
 | A4 | Hung **overview**, killed | Nothing posted; resume re-runs overview; no file results to reuse |
-| A5 | Provider error object on file K (`Upstream idle timeout exceeded`) | Run fails noisily as today (exit 1, nothing posted); resume keeps files 1..K-1 **and their findings** |
+| A5 | Model error on file K (`LLMError`) | Run fails noisily as today (exit 1, nothing posted); resume keeps files 1..K-1 **and their findings** |
 | A6 | Resume with a **different model** | Files 1..K-1 keep their original model; K.. use the new one; header lists both models; each file's summary names its own model |
 | A7 | Head SHA changed between runs | New thread; nothing reused |
 | A8 | Exclusion policy changed between runs | New thread; nothing reused |
@@ -413,9 +413,9 @@ they shrink or move those bytes but cannot add content that is not in the state.
 
 ### 5.3 Unit tests
 
-- `test_llm.py` → `test_model_errors.py`: port five existing tests (malformed 200 retried;
-  non-JSON body, no `choices`, non-object tool arguments → `LLMError`; provider error object →
-  `ProviderError` without retry). Replace `test_malformed_body_on_the_no_tools_fallback_is_retried_too`
+- `test_llm.py` → `test_model_errors.py`: port four existing tests (malformed 200 retried;
+  non-JSON body, no `choices`, non-object tool arguments → `LLMError`). The provider-error-object
+  test is dropped (3.9). Replace `test_malformed_body_on_the_no_tools_fallback_is_retried_too`
   with: a 404 on a call with tools is retried twice with tools (backoff patched), succeeds if a later
   attempt succeeds, else raises `LLMError` naming tool support and the `--model` resume hint; a call
   without tools is never made.
