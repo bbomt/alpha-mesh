@@ -201,6 +201,8 @@ One function in `session.py` builds the chat model from `CODE_REVIEW_URL` (owner
 **`openrouter.ai` uses `ChatOpenRouter` (`langchain-openrouter`, as in the reference
 `quickstart.py`); every other endpoint uses `ChatOpenAI`** with `base_url` set (OpenAI, MiniMax,
 Ollama, Anthropic's OpenAI-compatible endpoint), as `llm.py` does today.
+Both classes get the key from `CODE_REVIEW_TOKEN` and the URL from `CODE_REVIEW_URL` passed explicitly
+(never a provider-specific env var), and the same retry and timeout settings (3.9).
 
 - Model name: the full `provider/model` is sent to `openrouter.ai`; for any other host the
   `provider/` prefix is stripped. A name with no `/` is sent unchanged.
@@ -232,7 +234,7 @@ The stages talk to the model through `session.review_llm.chat(messages, tools)`,
 | 3 attempts, backoff 2/4/8 s on 429/500/502/503, timeouts, connection errors | SDK `max_retries=2` (3 attempts): exponential backoff **with jitter**, honours `Retry-After`, also retries 408/409 and all 5xx |
 | 120 s request timeout | `timeout=120` |
 | Malformed 200 body retried, then `LLMError` | `.with_retry(retry_if_exception_type=(MalformedResponse,), stop_after_attempt=3)` on a small parse check |
-| 200 body with an error object: `ProviderError`, fails fast with its message | Same: detect the error object and raise `ProviderError`, not retried (PMAT-236 may change this). The ported test (5.3) is written first, for both classes (3.7): where a class does not surface the provider's message, `LangChainLLM` inspects the raw response itself |
+| 200 body with an error object: `ProviderError`, fails fast with its message | Same: detect the error object and raise `ProviderError`, not retried (PMAT-236 may change this). PMAT-265 starts with a one-off manual check against real OpenRouter: does `ChatOpenRouter` raise an error carrying OpenRouter's message? The result is recorded in the ticket; if it does not, work stops and the owner decides (no raw-response workaround). The ported test (5.3) then pins the mapping to `ProviderError` with a fake |
 | 404 with tools: retry without tools | **No fallback without tools (owner decision, 2026-10-14):** without tools the review cannot read files, so the fallback silently gave a weaker review. Instead the **same call, with tools,** is retried twice with backoff: on OpenRouter a 404 here means no provider that supports tools is reachable for the model *right now*, which can be transient. After 3 attempts: `LLMError` (see below). Deliberate behaviour change, covered by tests. PMAT-236 later moves this into its single classification |
 
 `LLMError` / `ProviderError` stay as the exceptions the CLI catches, so the fatal-error message
