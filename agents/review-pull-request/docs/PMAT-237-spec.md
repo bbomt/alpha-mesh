@@ -19,7 +19,6 @@ Work specification for `mesh review-pull-request`. Written so it can be handed t
 
 What this enables: run a full review on a free model, and when it throttles after file 5 of 20, rerun
 it (same or another free model) until every file is done. Low token cost, more wall-clock time.
-Incremental (`--since-last-review`) reviews can keep using paid models.
 
 ### What does not change
 
@@ -128,8 +127,7 @@ class ReviewState(TypedDict):
 ```
 
 `results` is a plain field: `review_next_file` returns the whole dict with its new result added
-(`{"results": {**state["results"], path: result}}`), and RETRY (3.5) overwrites it. There is no custom
-merge rule to define or test.
+(`{"results": {**state["results"], path: result}}`). There is no custom merge rule to define or test.
 
 The diff is fetched again on resume; it is deterministic for the same head SHA (and base SHA for
 incremental reviews), which the thread key guarantees. Chunks are rebuilt from `SafeDiff`.
@@ -150,7 +148,7 @@ policy_hash = sha256 of the sorted, normalised exclusion patterns (first 12 hex 
   stale result is ever reused. (Resuming only the files unchanged between two head SHAs is out of
   scope; see section 9.)
 
-### 3.5 Start / resume / retry / skip
+### 3.5 Start / resume / skip
 
 The CLI reads `graph.get_state(config)`, as the reference `invoke_thread_with_recovery` does:
 
@@ -158,14 +156,13 @@ The CLI reads `graph.get_state(config)`, as the reference `invoke_thread_with_re
 |---|---|---|
 | none | **START** with the initial input | `Starting review (thread …)` |
 | `next` non-empty (stopped mid-run) | **RESUME**: `graph.stream(None, config)` | `Resuming: N file(s) from checkpoint, M to review` + both lists |
-| reached END, some results incomplete | **RETRY**: overwrite `results` with a copy that leaves out the incomplete files, `graph.update_state(config, {"results": complete_only}, as_node="overview")`, then `graph.stream(None, config)`. A different `--model` may be used | `Retrying N incomplete file(s)` + list |
-| reached END, no incomplete results | **SKIP**: print the stored report, post nothing | `Already completed (thread …)` |
+| reached END | **SKIP**: print the stored report, post nothing | `Already completed (thread …)` |
 
-- `review_next_file` reviews the first file in `files` that has no result. A file that comes back
-  incomplete again has a result, so it is not picked twice in one run; the next rerun retries it.
-- `overview` does nothing if an overview exists, so RETRY reuses it.
-- RETRY reaches `report` again, which builds a new report that `post` posts as a new PR comment,
-  as a rerun does today.
+- `review_next_file` reviews the first file in `files` that has no result. On RESUME, the file that
+  was in progress when the run stopped has no result, so it is reviewed again.
+- **No retry of incomplete files (owner decision, 2026-10-15).** A run that reaches END is complete,
+  even if some files are incomplete, as today: the report marks them incomplete. Re-reviewing only
+  the incomplete files is a possible later feature (PMAT-271, `--retry-incomplete-files`).
 - `--fresh` discards the thread (`checkpointer.delete_thread(thread_id)`) and starts.
 
 ### 3.6 Posting
@@ -276,13 +273,13 @@ hang cheap to recover from.
   context per environment. The stack writes it to SSM (`…/checkpoint-ttl-days`); the agent reads it
   and passes `ttl_seconds` to `DynamoDBSaver` (the saver stamps the `ttl` attribute on write).
   A checkpoint that has expired simply means the next run starts fresh.
-- S3 objects must not outlive their checkpoints. The reference IAM grants
-  `PutBucketLifecycleConfiguration`, which suggests `DynamoDBSaver` sets the bucket lifecycle from
-  `ttl_seconds` itself. 237a confirms this. If it does, the stack defines no lifecycle rule; if not,
-  the stack sets one from the same `checkpointTtlDays`.
+- S3 expiry is standard saver behaviour: given `ttl_seconds`, `DynamoDBSaver` tags each S3 object
+  `ttl-days` and adds a matching lifecycle rule to the bucket itself (`langgraph-checkpoint-aws`
+  1.2.3, `storage_strategy.py` `_ensure_s3_lifecycle_policy`). The stack defines no lifecycle rule;
+  I1 checks the rule exists after a real run.
 - Table and bucket names are read from SSM:
   `/pmat/{env}/alpha-mesh/review-pull-request/checkpoint-table` and `…/checkpoint-bucket`.
-  `CODE_REVIEW_CHECKPOINT_TABLE` / `CODE_REVIEW_CHECKPOINT_BUCKET` override them (integration tests).
+  `ALPHA_MESH_REVIEW_PULL_REQ_CHECKPOINT_TABLE` / `ALPHA_MESH_REVIEW_PULL_REQ_CHECKPOINT_BUCKET` override them (integration tests).
   `DEPLOY_ENV` defaults to `dev`.
 - `--dry-run` uses `InMemorySaver` and a fake model, and needs no AWS.
 
@@ -311,8 +308,8 @@ agents/review-pull-request/
   teardown; that role is CDK's and grants the agent nothing. The reference's policy attached to an IAM user is a pre-SSO
   setup and is not copied.
 - Actions the agent needs: DynamoDB GetItem, PutItem, DeleteItem (`--fresh`), Query, BatchGetItem,
-  BatchWriteItem; S3 PutObject, GetObject, DeleteObject, PutObjectTagging, and
-  Get/PutBucketLifecycleConfiguration if the saver sets lifecycle itself.
+  BatchWriteItem; S3 PutObject, GetObject, DeleteObject, PutObjectTagging,
+  Get/PutBucketLifecycleConfiguration (the saver sets the lifecycle rule, above).
 - 2026-10-14 probe with `dev-EC2`: list/describe tables, `get-item`, and listing an S3 bucket work.
   Writes are not yet proven: **237a's first check** after deploy is a put / get / delete on its own
   table and in its own bucket. If any is denied, stop and
@@ -347,7 +344,7 @@ explains the rare duplicate this allows.
 
 | Module | Change |
 |---|---|
-| `review.py` | CLI only: args, PR/diff resolution, thread key, run lock, session, checkpointer, start/resume/retry/skip, error mapping. The review loop moves to `graph.py` |
+| `review.py` | CLI only: args, PR/diff resolution, thread key, run lock, session, checkpointer, start/resume/skip, error mapping. The review loop moves to `graph.py` |
 | `graph.py` (new) | `ReviewState`, the four nodes (calling `stage1` / `stage2` unchanged), `build_review_graph(session, checkpointer)` |
 | `llm.py` | `HttpLLM` replaced by `LangChainLLM` (same `chat` interface, 3.8); HTTP code and `ProviderError` removed; `LLMError` kept |
 | `session.py` | Builds the chat model from URL + model name (3.7) and wraps it in `GuardedLLM` as today |
@@ -365,7 +362,7 @@ inject a `SqliteSaver`, fake chat models and fake GitHub calls.
 
 Tests use **fake chat models** (a small `BaseChatModel` subclass with scripted replies that supports
 `bind_tools`, and a variant that blocks forever on a chosen file). They may build fakes directly; the
-production code still builds models only in `ReviewSession`. No test calls a real model.
+production code creates chat model objects (`ChatOpenAI` / `ChatOpenRouter`) only in `ReviewSession`. No test calls a real model.
 
 ### 5.1 Acceptance tests (boundary: the CLI process)
 
@@ -384,13 +381,11 @@ does not.
 | A7 | Head SHA changed between runs | New thread; nothing reused |
 | A8 | Exclusion policy changed between runs | New thread; nothing reused |
 | A10 | Completed and posted thread run again | SKIP: stored report printed, no model call, no post |
-| A11 | Run that finished with an incomplete file, run again | Only the incomplete file is reviewed again; a new report is posted; other files not re-sent |
 | A12 | `--since-last-review` killed and resumed | Same as A1 for the incremental diff; key uses `since-{base}` |
 | A13 | `--fresh` | Existing thread discarded; every file reviewed |
 | A14 | Resume console output | Lists files from checkpoint and files reviewed now |
 | A16 | Second process on a thread while the first is running | Exits 1 with "another review is running (pid N)"; first run unaffected |
 | A17 | Run killed by SIGKILL, resumed at once | The OS released the lock; resume proceeds |
-| A20 | File incomplete again on its RETRY run | Not picked a second time in that run; report marks it incomplete; the next rerun retries it |
 
 ### 5.2 Security (canary, `tests/test_canary.py`)
 
@@ -447,8 +442,8 @@ findings in the ticket's changes; up to 10 passes) → DONE with a Jira comment.
 | Sub-ticket | Scope | Done when |
 |---|---|---|
 | **PMAT-264 (237a) — Checkpoint infra (CDK)** | `infra/cdk`, `infra/scripts`, `scripts/deploy-dev-from-ec2.sh`, CDK assertion tests, README section | `deploy-dev-from-ec2.sh` deploys; table, bucket and SSM params exist; write probe (3.10) passes with `dev-EC2`; a manual `DynamoDBSaver` put/get works from EC2 |
-| **PMAT-265 (237b) — LangGraph + LangChain models, no behaviour change** | 3.7–3.9, 3.11, 3.12, graph with `InMemorySaver` calling `stage1`/`stage2` unchanged, `LangChainLLM` behind `GuardedLLM`, ported unit and canary tests (C1, C4), `CLAUDE_LANGGRAPH.md` | All existing tests pass; a real review of a small PR gives the same report shape as before |
-| **PMAT-266 (237c) — Durable checkpoints and resume** | `checkpoints.py`, thread key, start/resume/skip, incomplete retry, multi-model header, `--fresh`, local run lock (3.6a), results-only state tests (C2, C3, C5), A1–A8, A10–A14, A16, A17, A20, I1, README (resume, `--fresh`, free-model workflow, AWS prerequisites, the rare duplicate comment), `.env.example` | Acceptance tests green; a real review killed mid-run resumes from the right file |
+| **PMAT-265 (237b) — LangGraph + LangChain models, no behaviour change** | 3.7–3.9, 3.11, 3.12, graph with `InMemorySaver` calling `stage1`/`stage2` unchanged, `LangChainLLM` behind `GuardedLLM`, ported unit and canary tests (C1, C4), `CLAUDE_LANGGRAPH.md` | All existing tests pass. **Old vs new comparison:** run `master` and the new code on the same PR with the same model, once full and once `--since-last-review`. Same files reviewed, same excluded-file notice, same report sections and incomplete marking. Findings text differs between any two runs (the model is not deterministic), so findings are compared by eye and noted in the ticket, not asserted |
+| **PMAT-266 (237c) — Durable checkpoints and resume** | `checkpoints.py`, thread key, start/resume/skip, multi-model header, `--fresh`, local run lock (3.6a), results-only state tests (C2, C3, C5), A1–A8, A10, A12–A14, A16, A17, I1, README (resume, `--fresh`, free-model workflow, AWS prerequisites, the rare duplicate comment), `.env.example` | Acceptance tests green; a real review killed mid-run resumes from the right file |
 
 237a and 237b can run in parallel; 237c needs both. (237d, exactly-once posting, was dropped: see 3.6.)
 
