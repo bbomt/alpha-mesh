@@ -24,3 +24,7 @@ uv.lock
 # Claude Code and alpha-mesh runtime dirs (settings.json can hold tokens; MEMORY.md holds session text)
 .claude/
 .mesh/
+
+# CDK
+node_modules/
+cdk.out/
