@@ -426,7 +426,8 @@ they shrink or move those bytes but cannot add content that is not in the state.
 ### 5.4 Integration (after deploy)
 
 - I1: one real run of the graph against the deployed DynamoDB/S3 with a fake model: start, kill,
-  resume, then delete the thread (tests clean up after themselves).
+  resume, then delete the thread (tests clean up after themselves). It also checks that the bucket
+  has the saver's `ttl-days` lifecycle rule, with expiry equal to `checkpointTtlDays` (3.10).
 - CDK assertions test (`infra/cdk/test`): table keys, TTL, bucket encryption and public-access block,
   SSM parameters (incl. ttl-days), and no IAM resource that grants access to the table or bucket:
   no `AWS::IAM::ManagedPolicy`, no `AWS::IAM::User`, and no role or policy whose statements name the
