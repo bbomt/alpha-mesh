@@ -30,7 +30,8 @@ echo "[START] Deploying PmatAlphaMeshReviewCheckpointsStack-${DEPLOY_ENV} to ${A
 cd "${CDK_DIR}"
 pnpm install --frozen-lockfile
 pnpm test
-pnpm cdk:deploy -c config="${DEPLOY_ENV}" --region "${AWS_REGION}"
+# cdk deploy has no --region option; the CLI takes the region from AWS_REGION
+pnpm cdk:deploy -c config="${DEPLOY_ENV}"
 
 echo "[DONE] SSM parameters:"
 aws ssm get-parameters-by-path \
