@@ -163,7 +163,8 @@ The CLI reads `graph.get_state(config)`, as the reference `invoke_thread_with_re
 - **No retry of incomplete files (owner decision, 2026-10-15).** A run that reaches END is complete,
   even if some files are incomplete, as today: the report marks them incomplete. Re-reviewing only
   the incomplete files is a possible later feature (PMAT-271, `--retry-incomplete-files`).
-- `--fresh` discards the thread (`checkpointer.delete_thread(thread_id)`) and starts.
+- `--force-rerun` discards the thread (`checkpointer.delete_thread(thread_id)`) and starts, whatever
+  its state: the way to review the same commit again after it finished (e.g. it had incomplete files).
 
 ### 3.6 Posting
 
@@ -280,7 +281,8 @@ hang cheap to recover from.
 - Table and bucket names are read from SSM:
   `/pmat/{env}/alpha-mesh/review-pull-request/checkpoint-table` and `…/checkpoint-bucket`.
   `ALPHA_MESH_REVIEW_PULL_REQ_CHECKPOINT_TABLE` / `ALPHA_MESH_REVIEW_PULL_REQ_CHECKPOINT_BUCKET` override them (integration tests).
-  `DEPLOY_ENV` defaults to `dev`.
+  `DEPLOY_ENV` defaults to `dev`. These sit beside the existing `CODE_REVIEW_MODEL` / `_URL` /
+  `_TOKEN`, which keep their names (owner accepted the mix, 2026-10-15).
 - `--dry-run` uses `InMemorySaver` and a fake model, and needs no AWS.
 
 Infrastructure is AWS CDK (TypeScript, pnpm), in this agent's folder, following
@@ -307,7 +309,7 @@ agents/review-pull-request/
   dev, `autoDeleteObjects` makes CDK add its own Lambda and execution role to empty the bucket on
   teardown; that role is CDK's and grants the agent nothing. The reference's policy attached to an IAM user is a pre-SSO
   setup and is not copied.
-- Actions the agent needs: DynamoDB GetItem, PutItem, DeleteItem (`--fresh`), Query, BatchGetItem,
+- Actions the agent needs: DynamoDB GetItem, PutItem, DeleteItem (`--force-rerun`), Query, BatchGetItem,
   BatchWriteItem; S3 PutObject, GetObject, DeleteObject, PutObjectTagging,
   Get/PutBucketLifecycleConfiguration (the saver sets the lifecycle rule, above).
 - 2026-10-14 probe with `dev-EC2`: list/describe tables, `get-item`, and listing an S3 bucket work.
@@ -382,7 +384,7 @@ does not.
 | A8 | Exclusion policy changed between runs | New thread; nothing reused |
 | A10 | Completed and posted thread run again | SKIP: stored report printed, no model call, no post |
 | A12 | `--since-last-review` killed and resumed | Same as A1 for the incremental diff; key uses `since-{base}` |
-| A13 | `--fresh` | Existing thread discarded; every file reviewed |
+| A13 | `--force-rerun` | Existing thread discarded; every file reviewed |
 | A14 | Resume console output | Lists files from checkpoint and files reviewed now |
 | A16 | Second process on a thread while the first is running | Exits 1 with "another review is running (pid N)"; first run unaffected |
 | A17 | Run killed by SIGKILL, resumed at once | The OS released the lock; resume proceeds |
@@ -443,7 +445,7 @@ findings in the ticket's changes; up to 10 passes) → DONE with a Jira comment.
 |---|---|---|
 | **PMAT-264 (237a) — Checkpoint infra (CDK)** | `infra/cdk`, `infra/scripts`, `scripts/deploy-dev-from-ec2.sh`, CDK assertion tests, README section | `deploy-dev-from-ec2.sh` deploys; table, bucket and SSM params exist; write probe (3.10) passes with `dev-EC2`; a manual `DynamoDBSaver` put/get works from EC2 |
 | **PMAT-265 (237b) — LangGraph + LangChain models, no behaviour change** | 3.7–3.9, 3.11, 3.12, graph with `InMemorySaver` calling `stage1`/`stage2` unchanged, `LangChainLLM` behind `GuardedLLM`, ported unit and canary tests (C1, C4), `CLAUDE_LANGGRAPH.md` | All existing tests pass. **Old vs new comparison:** run `master` and the new code on the same PR with the same model, once full and once `--since-last-review`. Same files reviewed, same excluded-file notice, same report sections and incomplete marking. Findings text differs between any two runs (the model is not deterministic), so findings are compared by eye and noted in the ticket, not asserted |
-| **PMAT-266 (237c) — Durable checkpoints and resume** | `checkpoints.py`, thread key, start/resume/skip, multi-model header, `--fresh`, local run lock (3.6a), results-only state tests (C2, C3, C5), A1–A8, A10, A12–A14, A16, A17, I1, README (resume, `--fresh`, free-model workflow, AWS prerequisites, the rare duplicate comment), `.env.example` | Acceptance tests green; a real review killed mid-run resumes from the right file |
+| **PMAT-266 (237c) — Durable checkpoints and resume** | `checkpoints.py`, thread key, start/resume/skip, multi-model header, `--force-rerun`, local run lock (3.6a), results-only state tests (C2, C3, C5), A1–A8, A10, A12–A14, A16, A17, I1, README (resume, `--force-rerun`, free-model workflow, AWS prerequisites, the rare duplicate comment), `.env.example` | Acceptance tests green; a real review killed mid-run resumes from the right file |
 
 237a and 237b can run in parallel; 237c needs both. (237d, exactly-once posting, was dropped: see 3.6.)
 
@@ -452,7 +454,7 @@ findings in the ticket's changes; up to 10 passes) → DONE with a Jira comment.
 ## 7. User-visible changes
 
 - A rerun of the same command after a failure resumes, and says so.
-- `--fresh` flag.
+- `--force-rerun` flag.
 - Report header lists every model used (`**Models:**` instead of `**Model:**` when more than one),
   and each file's summary names the model that reviewed it, e.g.
   `` `src/x.py` (model: `z-ai/glm-5.3-flash`) — summary… ``. The overview names its model too.
