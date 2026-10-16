@@ -71,6 +71,16 @@ def test_non_object_tool_call_arguments_raise_llm_error(monkeypatch):
         llm.chat(MESSAGES, TOOLS)
 
 
+@pytest.mark.parametrize("error", [{"message": "context_length_exceeded: too many tokens"},
+                                   "context_length_exceeded: too many tokens"])
+def test_provider_error_object_in_a_200_body_fails_fast_with_its_message(monkeypatch, error):
+    llm, sent = _llm(monkeypatch, [(200, {"error": error})] * 3)
+
+    with pytest.raises(LLMError, match="context_length_exceeded: too many tokens"):
+        llm.chat(MESSAGES, None)
+    assert len(sent) == 1
+
+
 def test_one_malformed_200_body_is_retried_before_giving_up(monkeypatch):
     llm, sent = _llm(monkeypatch, [(200, {}), (200, OK)])
 
@@ -102,6 +112,7 @@ def test_a_404_with_tools_after_three_attempts_names_tool_support_and_the_model_
     assert "model 'openai/gpt-oss-120b' has no endpoint that supports tool calls" in message
     assert "openrouter.ai" in message and "after 3 attempts" in message
     assert "--model <provider/model>" in message
+    assert "No endpoints found that support tool use" in message
     assert len(sent) == 3
     assert all(body.get("tools") for body in sent), "a call without tools must never be made"
 

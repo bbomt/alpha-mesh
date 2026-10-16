@@ -63,7 +63,8 @@ def test_safe_diff_is_only_built_in_its_own_module():
         assert not re.search(r"\bSafeDiff\(", module.read_text(encoding="utf-8")), f"{module.name} builds a SafeDiff directly"
 
 
-CHAT_MODEL_NAMES = {"LangChainLLM", "ChatOpenAI", "langchain_openai", "BaseChatModel", "language_models"}
+CHAT_MODEL_NAMES = {"LangChainLLM", "ChatOpenAI", "langchain_openai", "BaseChatModel", "language_models",
+                    "chat_models", "init_chat_model", "make_chat_model", "openai"}
 
 
 def test_only_the_session_and_llm_modules_touch_chat_model_classes():
@@ -74,7 +75,8 @@ def test_only_the_session_and_llm_modules_touch_chat_model_classes():
         assert not offending, f"{module.name} uses {sorted(offending)}"
 
 
-GRAPH_FORBIDDEN = CHAT_MODEL_NAMES | {"httpx", "requests", "subprocess", "_inner", "open",
+GRAPH_FORBIDDEN = CHAT_MODEL_NAMES | {"httpx", "requests", "subprocess", "_inner", "open", "os", "Path",
+                                      "pathlib", "read_text", "read_bytes", "importlib", "__import__",
                                       "GitHubFileReader", "LocalFileReader", "PolicyFileReader",
                                       "github_reader", "post_comment"}
 

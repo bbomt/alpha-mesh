@@ -156,10 +156,11 @@ On failure it:
 
 Retries before giving up: the model SDK retries rate limits (`429`), `408`/`409`, server errors (`5xx`),
 timeouts and connection errors (3 attempts, exponential backoff with jitter, honouring `Retry-After`;
-120 s per request). A malformed reply is retried up to 3 times. A `404` on a call with tools (on
+120 s per request). A malformed reply is retried up to 3 times. A `200` reply carrying an error object
+(e.g. `context_length_exceeded`) is not retried: the review stops with the provider's message. A `404` on a call with tools (on
 OpenRouter: no provider that supports tool calls is reachable for the model right now) is retried
 twice **with tools**; there is no fallback without tools, because without `read_file` the review would
-silently be weaker. After the third `404` the error names the model, the host and the fix
+silently be weaker. After the third `404` the error names the model, the host, the provider's reply and the fix
 (`--model <provider/model>` with a model that supports tool calls).
 
 `--dry-run` runs the same review graph with a scripted model (no model API call, nothing posted).

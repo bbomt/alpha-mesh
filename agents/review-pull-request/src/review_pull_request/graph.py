@@ -102,6 +102,7 @@ def build_review_graph(checkpointer):
     builder.add_node("post", post)
     builder.add_edge(START, "overview")
     builder.add_conditional_edges("overview", after_review, ["review_next_file", "report"])
+    # One super-step per file: LangGraph's default recursion_limit (10007) is far above any PR size.
     builder.add_conditional_edges("review_next_file", after_review, ["review_next_file", "report"])
     builder.add_edge("report", "post")
     builder.add_edge("post", END)

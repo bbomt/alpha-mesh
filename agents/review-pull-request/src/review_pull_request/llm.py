@@ -7,6 +7,7 @@ HTTP retries (429, 5xx, timeouts) are the SDK's own.
 """
 
 import json
+import traceback
 from dataclasses import dataclass
 
 import openai
@@ -48,6 +49,15 @@ class _NoToolEndpoint(Exception):
     """404 on a call with tools: on OpenRouter, no tool-capable provider is reachable right now."""
 
 
+def _provider_error(e: Exception) -> str | None:
+    """The message of an error object in a 200 body: ChatOpenAI raises it as ValueError(body["error"])."""
+    if not (isinstance(e, ValueError) and len(e.args) == 1
+            and traceback.extract_tb(e.__traceback__)[-1].name == "_create_chat_result"):
+        return None
+    err = e.args[0]
+    return err.get("message", err) if isinstance(err, dict) else err
+
+
 def _to_response(message: AIMessage) -> ChatResponse:
     if message.invalid_tool_calls:
         raise _Malformed(f"unparseable tool call: {message.invalid_tool_calls[0].get('error')}")
@@ -80,6 +90,8 @@ class LangChainLLM:
             except openai.APIError as e:
                 raise LLMError(str(e)) from e
             except _MALFORMED_ERRORS as e:
+                if (message := _provider_error(e)) is not None:  # deterministic, so never retried
+                    raise LLMError(f"API returned an error object: {message}") from e
                 raise _Malformed(f"{type(e).__name__}: {e}") from e
             return _to_response(reply)
 
@@ -95,7 +107,7 @@ class LangChainLLM:
         except _NoToolEndpoint as e:
             raise LLMError(
                 f"model '{self._model}' has no endpoint that supports tool calls\n"
-                f"  at {self._api_host} (404, after {ATTEMPTS} attempts).\n"
+                f"  at {self._api_host} (404, after {ATTEMPTS} attempts): {e}\n"
                 "  The review needs tool calls (read_file). Run it again with a model that supports them:\n"
                 "    mesh review-pull-request <url> --model <provider/model>"
             ) from e
