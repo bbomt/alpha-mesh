@@ -195,12 +195,15 @@ A second process on a thread that is already being reviewed must stop, not inter
 Model names follow `{provider}/{modelname}` (the OpenRouter standard), e.g. `openai/gpt-oss-120b`,
 `anthropic/claude-sonnet-5-5`, `minimax/minimax-m2`.
 
-One function in `session.py` builds the chat model from `CODE_REVIEW_URL` (owner decision, 2026-10-14):
-**`openrouter.ai` uses `ChatOpenRouter` (`langchain-openrouter`, as in the reference
-`quickstart.py`); every other endpoint uses `ChatOpenAI`** with `base_url` set (OpenAI, MiniMax,
-Ollama, Anthropic's OpenAI-compatible endpoint), as `llm.py` does today.
-Both classes get the key from `CODE_REVIEW_TOKEN` and the URL from `CODE_REVIEW_URL` passed explicitly
-(never a provider-specific env var), and the same retry and timeout settings (3.9).
+One function in `session.py` builds the chat model from `CODE_REVIEW_URL`: **every endpoint uses
+`ChatOpenAI`** with `base_url` set (OpenRouter, OpenAI, MiniMax, Ollama, Anthropic's OpenAI-compatible
+endpoint), as `llm.py` did. It gets the key from `CODE_REVIEW_TOKEN` and the URL from `CODE_REVIEW_URL`
+passed explicitly (never a provider-specific env var), and the retry and timeout settings in 3.9.
+
+*Changed in PMAT-265 (owner decision, 2026-10-16):* the 2026-10-14 decision used `ChatOpenRouter`
+(`langchain-openrouter`) for `openrouter.ai`. Probing it showed its Speakeasy `openrouter` SDK retries
+only 5xx, **not 429** (the throttling free models hit most), takes the timeout in milliseconds and
+caps retries by elapsed time, not attempts. `ChatOpenAI`'s SDK behaves as 3.9 describes.
 
 - Model name: the full `provider/model` is sent to `openrouter.ai`; for any other host the
   `provider/` prefix is stripped. A name with no `/` is sent unchanged.
@@ -324,8 +327,8 @@ agents/review-pull-request/
 
 - Pin Python 3.12 (`requires-python = "~=3.12.0"`, `.python-version`). The reference notes newer
   versions are problematic with these LangGraph modules.
-- Add: `langgraph`, `langchain-core`, `langchain-openai`, `langchain-openrouter` (3.7),
-  `langgraph-checkpoint-aws`, `boto3`; dev: `langgraph-checkpoint-sqlite` (kill tests).
+- Add: `langgraph`, `langchain-core`, `langchain-openai` (PMAT-265); `langgraph-checkpoint-aws`,
+  `boto3`; dev: `langgraph-checkpoint-sqlite` (kill tests) (PMAT-266). No `langchain-openrouter` (3.7).
   Use the versions in the reference `uv.lock` as the floor.
 - Remove `httpx` only if nothing else still uses it (`tools.py` / `github.py` do today; keep it).
 
@@ -364,7 +367,7 @@ inject a `SqliteSaver`, fake chat models and fake GitHub calls.
 
 Tests use **fake chat models** (a small `BaseChatModel` subclass with scripted replies that supports
 `bind_tools`, and a variant that blocks forever on a chosen file). They may build fakes directly; the
-production code creates chat model objects (`ChatOpenAI` / `ChatOpenRouter`) only in `ReviewSession`. No test calls a real model.
+production code creates chat model objects (`ChatOpenAI`) only in `ReviewSession`. No test calls a real model.
 
 ### 5.1 Acceptance tests (boundary: the CLI process)
 

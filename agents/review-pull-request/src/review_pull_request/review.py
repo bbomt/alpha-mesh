@@ -8,6 +8,8 @@ import sys
 import time
 from urllib.parse import urlparse
 
+from langgraph.checkpoint.memory import InMemorySaver
+
 from review_pull_request.config import load_config
 from review_pull_request.formatter import _code_span, render_report
 from review_pull_request.git import (
@@ -17,7 +19,8 @@ from review_pull_request.git import (
     parse_pr_url,
 )
 from review_pull_request.github import _get_github_token, post_comment
-from review_pull_request.llm import LLMError
+from review_pull_request.graph import ReviewContext, build_review_graph, initial_state, next_file
+from review_pull_request.llm import DRY_RUN_MODEL, LLMError
 from review_pull_request.incremental import (
     find_last_review_comment,
     get_commits_between,
@@ -25,12 +28,12 @@ from review_pull_request.incremental import (
     reviewed_sha,
 )
 from review_pull_request.session import ReviewSession
-from review_pull_request.stage1 import run_overview
-from review_pull_request.stage2 import run_file_review
+from review_pull_request.stage2 import Issue
 from review_pull_request.tools import GitHubFileReader
 
 
-DRY_RUN_MODEL = "dry-run-model"
+class PostFailed(Exception):
+    """GitHub did not accept the review comment."""
 
 
 def _safe_url(url: str) -> str:
@@ -81,21 +84,6 @@ def _mock_llm_config(config):
         setattr(dc, k, v)
     setattr(dc, "model", DRY_RUN_MODEL)
     return dc
-
-
-MOCK_OVERVIEW = (
-    "This pull request refactors the dream core module into a separate agent "
-    "directory, following the established pattern from PMAT-189. It introduces "
-    "a thin proxy at bin/dream that delegates to agents/dream/dream/bin/dream, "
-    "while filtering out system-generated Claude Code messages from the session "
-    "data fed to the LLM."
-)
-
-MOCK_FILE_RESULT = {
-    "summary": "Delegates to the inner dream bash runner after loading .env "
-               "credentials. Adds dry-run handling to skip env validation.",
-    "issues": [],
-}
 
 
 def _verbose_print(config, *args, **kwargs):
@@ -228,6 +216,8 @@ Examples:
         return 1
     # Kept local, never on config: stages see only the policy-wrapped reader in the session.
     github_reader = GitHubFileReader(owner, repo, head_sha, _token)
+    if args.dry_run:
+        config.model = DRY_RUN_MODEL  # the session gets the scripted dry-run model, no network
     # Everything that reaches the model or the file reader goes through this session's policy.
     session = ReviewSession.create(config, inner_reader=github_reader, secrets=[_token])
     _verbose_print(config, f"read_file: GitHub API (ref={head_sha[:8]})")
@@ -351,66 +341,58 @@ Examples:
 
         excluded_files = list(safe.excluded)
         print(f"Diff: {len(chunks)} file chunk(s) to review", file=sys.stderr)
-
         if args.dry_run:
             print("=== review-pull-request [DRY-RUN] ===", file=sys.stderr)
-            overview = MOCK_OVERVIEW
-            all_issues = []
-            all_summaries = []
-            for i, chunk in enumerate(chunks):
-                print(f"[{i+1}/{len(chunks)}] reviewing {chunk.file_path}...", file=sys.stderr)
-                all_summaries.append((chunk.file_path, MOCK_FILE_RESULT["summary"]))
-            model = DRY_RUN_MODEL
-        else:
-            current_step = "overview pass"
-            print("Stage 1: Overview pass...", file=sys.stderr)
-            overview = run_overview(safe, pr_desc, session)
-            print(f"Overview: {overview[:80]}...", file=sys.stderr)
 
-            all_issues = []
-            all_summaries = []
-            for i, chunk in enumerate(chunks):
-                current_step = chunk.file_path
-                print(f"[{i+1}/{len(chunks)}] reviewing {chunk.file_path}...", file=sys.stderr)
-                result = run_file_review(chunk, overview, session)
-                all_issues.extend(result.issues)
-                all_summaries.append((chunk.file_path, result.summary))
-                if result.incomplete:
-                    incomplete_files.append(chunk.file_path)
-                print(
-                    f"  → {len(result.issues)} issue(s), "
-                    f"{result.tool_calls_made} tool call(s)", file=sys.stderr,
-                )
-            model = config.model
-
-        # Before listing_failed is read: this may be the first (and only) fetch of the repo tree.
-        repo_symlinks = [] if args.dry_run else session.symlinks()
-        report = render_report(
-            overview=overview,
-            issues=all_issues,
-            summaries=all_summaries,
-            config=config,
-            model=model,
-            incremental_info=incremental_info,
-            head_sha=head_sha,
-            incomplete=incomplete_files,
-            excluded=excluded_files,
-            missing=session.missing_paths,
-            listing_failed=session.listing_failed,
-            symlinks=repo_symlinks,
-        )
-
-        # stdout: hide_pr_comment means print body to stdout only if NOT hiding
         post_to_pr = not args.dry_run and not args.no_post_comment and args.pr_url
         show_comment = not args.no_output and not (args.hide_pr_comment and post_to_pr)
-        if show_comment:
-            print(report)
 
-        if post_to_pr:
-            print("Posting to PR...", file=sys.stderr)
-            if not post_comment(report, args.pr_url, config):
-                print("ERROR: could not post the review to the PR (see warning above).", file=sys.stderr)
-                return 1
+        def render(state) -> str:
+            results = [state["results"][f] for f in state["files"]]
+            missing: dict[str, list[str]] = {}
+            for r in results:
+                for path in r["missing"]:
+                    missing.setdefault(path, []).append(r["file_path"])
+            incomplete_files[:] = [r["file_path"] for r in results if r["incomplete"]]  # idempotent node
+            # Before listing_failed is read: this may be the first (and only) fetch of the repo tree.
+            repo_symlinks = [] if args.dry_run else session.symlinks()
+            return render_report(
+                overview=state["overview"],
+                issues=[Issue(**i) for r in results for i in r["issues"]],
+                summaries=[(r["file_path"], r["summary"]) for r in results],
+                config=config,
+                model=config.model,
+                incremental_info=incremental_info,
+                head_sha=head_sha,
+                incomplete=incomplete_files,
+                excluded=excluded_files,
+                missing=missing,
+                listing_failed=session.listing_failed,
+                symlinks=repo_symlinks,
+            )
+
+        def publish(report: str) -> None:
+            if show_comment:
+                print(report)
+            if post_to_pr:
+                print("Posting to PR...", file=sys.stderr)
+                if not post_comment(report, args.pr_url, config):
+                    raise PostFailed()
+
+        graph = build_review_graph(InMemorySaver())
+        run_config = {"configurable": {"thread_id": f"{owner}/{repo}#{pr_number}:{head_sha}"}}
+        context = ReviewContext(session=session, diff=safe, pr_description=pr_desc,
+                                model=config.model, render=render, publish=publish)
+        try:
+            graph.invoke(initial_state(safe), run_config, context=context)
+        except PostFailed:
+            print("ERROR: could not post the review to the PR (see warning above).", file=sys.stderr)
+            return 1
+        except LLMError:
+            state = graph.get_state(run_config)
+            pending = next_file(state.values) if "review_next_file" in state.next else None
+            current_step = pending or "overview pass"
+            raise
 
         elapsed = time.time() - start_time
         mins, secs = divmod(int(elapsed), 60)

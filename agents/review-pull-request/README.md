@@ -154,7 +154,15 @@ On failure it:
 - posts nothing to the PR
 - exits with a non-zero code (`1`)
 
-`--dry-run` uses mocked responses and is not affected.
+Retries before giving up: the model SDK retries rate limits (`429`), `408`/`409`, server errors (`5xx`),
+timeouts and connection errors (3 attempts, exponential backoff with jitter, honouring `Retry-After`;
+120 s per request). A malformed reply is retried up to 3 times. A `404` on a call with tools (on
+OpenRouter: no provider that supports tool calls is reachable for the model right now) is retried
+twice **with tools**; there is no fallback without tools, because without `read_file` the review would
+silently be weaker. After the third `404` the error names the model, the host and the fix
+(`--model <provider/model>` with a model that supports tool calls).
+
+`--dry-run` runs the same review graph with a scripted model (no model API call, nothing posted).
 
 ## --since-last-review (Incremental Mode)
 
@@ -213,14 +221,25 @@ patterns = [
 | `CODE_REVIEW_TOKEN` | API token / bearer token |
 | `CODE_REVIEW_MODEL` | Model used for the whole review, both the overview pass and the per-file reviews (e.g. `deepseek/deepseek-r1`); `--model` overrides it |
 
+Model names use `{provider}/{modelname}` (the OpenRouter standard, e.g. `openai/gpt-oss-120b`). For
+`openrouter.ai` the full name is sent; for any other endpoint (OpenAI, MiniMax, Ollama, Anthropic's
+OpenAI-compatible API) the `provider/` prefix is stripped. A name without `/` is sent unchanged.
+`/v1` is appended to `CODE_REVIEW_URL` if missing. Every endpoint is called through LangChain's
+`ChatOpenAI`, with the key and URL from `.env` (never a provider-specific variable such as `OPENAI_API_KEY`).
+
 At startup the agent prints the model and API URL it is using to stderr, so you can confirm which `.env` values took effect. The token is never printed.
 
 ## Tests
+
+Requires Python 3.12 (pinned in `.python-version`; newer versions are problematic with the LangGraph modules).
 
 ```bash
 cd agents/review-pull-request
 uv run pytest tests/ -v
 ```
+
+The review runs as a LangGraph graph (`graph.py`: overview → one step per file → report → post),
+calling the stage 1 and stage 2 code unchanged. Conventions: `alpha-mesh/CLAUDE_LANGGRAPH.md`.
 
 ## Checkpoint infrastructure (AWS CDK)
 

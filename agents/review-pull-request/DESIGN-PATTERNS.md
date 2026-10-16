@@ -63,7 +63,7 @@ Policies combine with `|` (`PathPolicy(a) | PathPolicy(b)`), which is the compos
 
 ### 4. Decorator, used as a proxy: `GuardedLLM` (`guard.py`)
 
-**What it is:** a wrapper with the same `chat(messages, tools)` method as the real model client (`HttpLLM`). Before passing messages on, it redacts known secrets: the API token, the GitHub token, and token-shaped strings such as `sk-…`, `ghp_…` and `AKIA…`.
+**What it is:** a wrapper with the same `chat(messages, tools)` method as the real model client (`LangChainLLM`). Before passing messages on, it redacts known secrets: the API token, the GitHub token, and token-shaped strings such as `sk-…`, `ghp_…` and `AKIA…`.
 
 **Why:** defence in depth. The policy keeps excluded *files* out; this catches a credential that someone pasted into an ordinary file.
 
@@ -79,7 +79,7 @@ Policies combine with `|` (`PathPolicy(a) | PathPolicy(b)`), which is the compos
   - It plants a unique secret in every path in: the diff, case variants, nested `.env.*` files, the incremental diff, and `read_file` requests (including `../` tricks).
   - It runs the real pipeline against a fake model that records everything it is shown, and asserts the secret never appears.
   - It also runs once with protection switched off and checks that the secret *does* appear, so the test can't pass by accident.
-- **`tests/test_architecture.py`:** checks that the stages can't bypass the session, that only `policy.py` compares paths, and that only `safe_diff.py` builds a `SafeDiff`.
+- **`tests/test_architecture.py`:** checks that the stages can't bypass the session, that only `policy.py` compares paths, that only `safe_diff.py` builds a `SafeDiff`, that only `session.py` / `llm.py` touch LangChain chat-model classes, and that the review graph (`graph.py`) reaches the model, files and GitHub only through what it is given.
 - Unit tests for each piece: `test_policy.py`, `test_safe_diff.py`, `test_policy_reader.py` and `test_guard.py`.
 
 ## Adding something new

@@ -4,6 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 @.mesh/MEMORY.md
 @~/environment/pmat/architecture/CLAUDE_ENGINEERING.md
+@CLAUDE_LANGGRAPH.md
 
 ## Project Purpose
 

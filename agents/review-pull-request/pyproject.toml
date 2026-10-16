@@ -2,9 +2,12 @@
 name = "review-pull-request"
 version = "0.1.0"
 description = "review-pull-request agent — LLM-powered code review with full codebase context"
-requires-python = ">=3.11"
+requires-python = "~=3.12.0"
 dependencies = [
     "httpx>=0.27.0",
+    "langchain-core>=1.6.2",
+    "langchain-openai>=1.7.2",
+    "langgraph>=1.2.11",
     "python-dotenv>=1.0.0",
     "toml>=0.10.2",
 ]

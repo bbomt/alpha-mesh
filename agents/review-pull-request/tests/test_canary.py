@@ -13,7 +13,7 @@ import pytest
 
 from review_pull_request.config import Config, SENSITIVE_PATTERNS
 from review_pull_request.review import main
-from tests.helpers import http_llm_factory
+from tests.helpers import chat_model_factory
 
 CANARY = "CANARY-7f3a9c-do-not-leak"
 LAST_REVIEW = f"# AI Code Review (full review of aaaaaaa)\n\n> **Reviewed commit:** `{'a' * 40}`\n"
@@ -98,7 +98,7 @@ def _run(diff, extra_argv=(), incremental=False, exclusions=None):
         patch("review_pull_request.review.get_pr_description", return_value="Adds an app."),
         patch("review_pull_request.review.GitHubFileReader", FakeReader),
         patch("review_pull_request.review.post_comment", return_value=True),
-        patch("review_pull_request.session.HttpLLM", http_llm_factory(model)),
+        patch("review_pull_request.session.make_chat_model", chat_model_factory(model)),
         patch("subprocess.run", return_value=MagicMock(returncode=0, stdout=GITHUB_TOKEN)),
     ]
     if incremental:

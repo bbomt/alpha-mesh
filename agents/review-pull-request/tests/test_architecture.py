@@ -15,7 +15,8 @@ def _source(name):
 
 
 STAGE_FORBIDDEN = {"_inner", "open", "read_text", "read_bytes", "Path", "os",
-                   "llm", "HttpLLM", "GitHubFileReader", "LocalFileReader", "github_reader",
+                   "llm", "LangChainLLM", "ChatOpenAI", "langchain_openai", "BaseChatModel",
+                   "GitHubFileReader", "LocalFileReader", "github_reader",
                    "httpx", "requests", "urllib", "socket", "subprocess", "importlib", "__import__"}
 
 
@@ -62,8 +63,22 @@ def test_safe_diff_is_only_built_in_its_own_module():
         assert not re.search(r"\bSafeDiff\(", module.read_text(encoding="utf-8")), f"{module.name} builds a SafeDiff directly"
 
 
-def test_only_the_session_and_guard_modules_talk_to_the_http_client():
+CHAT_MODEL_NAMES = {"LangChainLLM", "ChatOpenAI", "langchain_openai", "BaseChatModel", "language_models"}
+
+
+def test_only_the_session_and_llm_modules_touch_chat_model_classes():
     for module in SRC.rglob("*.py"):
-        if module.name in ("llm.py", "session.py", "guard.py"):
+        if module.name in ("llm.py", "session.py"):
             continue
-        assert "HttpLLM" not in module.read_text(encoding="utf-8"), f"{module.name} uses HttpLLM"
+        offending = _identifiers(module) & CHAT_MODEL_NAMES
+        assert not offending, f"{module.name} uses {sorted(offending)}"
+
+
+GRAPH_FORBIDDEN = CHAT_MODEL_NAMES | {"httpx", "requests", "subprocess", "_inner", "open",
+                                      "GitHubFileReader", "LocalFileReader", "PolicyFileReader",
+                                      "github_reader", "post_comment"}
+
+
+def test_the_graph_reaches_the_model_files_and_github_only_through_what_it_is_given():
+    offending = _identifiers(SRC / "graph.py") & GRAPH_FORBIDDEN
+    assert not offending, f"graph.py uses {sorted(offending)}"

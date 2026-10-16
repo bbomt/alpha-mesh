@@ -13,12 +13,42 @@ Stages receive the session, not the raw pieces, so they have no way around the p
 
 import posixpath
 import sys
+from urllib.parse import urlparse
+
+from langchain_openai import ChatOpenAI
 
 from review_pull_request.guard import GuardedLLM, Redactor
-from review_pull_request.llm import HttpLLM
+from review_pull_request.llm import DRY_RUN_MODEL, DryRunChatModel, LangChainLLM
 from review_pull_request.policy import PathPolicy, normalise
 from review_pull_request.readers import PolicyFileReader
 from review_pull_request.safe_diff import SafeDiff
+
+
+OPENROUTER_HOST = "openrouter.ai"
+
+
+def _host(url: str) -> str:
+    try:
+        return urlparse(url).hostname or ""
+    except ValueError:  # e.g. unbalanced IPv6 brackets
+        return ""
+
+
+def make_chat_model(config, model: str):
+    """The chat model for CODE_REVIEW_URL: ChatOpenAI for every OpenAI-compatible endpoint.
+
+    Names are `{provider}/{modelname}`: openrouter.ai gets the full name, other hosts get it
+    without the `provider/` prefix. Key and URL come from config, never a provider env var.
+    """
+    if model == DRY_RUN_MODEL:
+        return DryRunChatModel()
+    if _host(config.api_url) != OPENROUTER_HOST and "/" in model:
+        model = model.split("/", 1)[1]
+    base_url = config.api_url.rstrip("/")
+    if not base_url.endswith("/v1"):
+        base_url += "/v1"
+    return ChatOpenAI(model=model, api_key=config.api_token, base_url=base_url,
+                      temperature=0.2, max_retries=2, timeout=120)
 
 
 class ReviewSession:
@@ -32,14 +62,15 @@ class ReviewSession:
         self.missing_paths: dict[str, list[str]] = {}  # missing path -> files whose review asked for it
 
     @classmethod
-    def create(cls, config, inner_reader, llm_factory=None, secrets=()) -> "ReviewSession":
-        factory = llm_factory or HttpLLM
+    def create(cls, config, inner_reader, chat_model_factory=None, secrets=()) -> "ReviewSession":
+        factory = chat_model_factory or make_chat_model
         policy = PathPolicy(config.exclusions)
         redactor = Redactor([config.api_token, *secrets])
+        llm = LangChainLLM(factory(config, config.model), config.model, _host(config.api_url) or "(invalid URL)")
         return cls(
             config=config,
             policy=policy,
-            review_llm=GuardedLLM(factory(config, config.model), redactor),
+            review_llm=GuardedLLM(llm, redactor),
             reader=PolicyFileReader(inner_reader, policy),
         )
 

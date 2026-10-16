@@ -1,23 +1,23 @@
-"""httpx-based OpenAI-compatible LLM client.
+"""Model client: a LangChain chat model behind the stages' chat(messages, tools) interface.
 
-No vendor SDK — makes raw HTTP calls to /v1/chat/completions.
-Works with OpenRouter, Anthropic compat layer, Ollama, OpenAI, etc.
+session.py builds the chat model (ChatOpenAI for every OpenAI-compatible endpoint). This module
+maps today's OpenAI-format message dicts in and a ChatResponse out, retries what the SDK does not
+(malformed replies, a 404 on a call with tools) and turns every failure into LLMError.
+HTTP retries (429, 5xx, timeouts) are the SDK's own.
 """
 
-import copy
 import json
-import time
 from dataclasses import dataclass
 
-import httpx
+import openai
+from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import AIMessage
+from langchain_core.outputs import ChatGeneration, ChatResult
+from langchain_core.runnables import RunnableLambda
 
 
 class LLMError(Exception):
     """Raised on non-retryable LLM API errors."""
-
-
-class ProviderError(LLMError):
-    """The provider answered 200 with an error object: deterministic, so never retried."""
 
 
 @dataclass
@@ -33,150 +33,102 @@ class ChatResponse:
     tool_calls: list[ToolCall]
 
 
-TRANSIENT_ERROR_CODES = (429, 500, 502, 503)
-RETRIES = 3
-BACKOFF = [2, 4, 8]
+ATTEMPTS = 3
+RETRY_BACKOFF = {"multiplier": 2, "max": 8}  # seconds between our own retries, with jitter
+
+# What a malformed 200 body raises inside the chat model class (non-JSON, no choices, bad arguments).
+_MALFORMED_ERRORS = (ValueError, TypeError, KeyError, IndexError, AttributeError)
 
 
-def _parse_chat_response(response) -> ChatResponse:
-    """Parse a 200 response body; any malformed body is an LLMError."""
-    try:
-        data = response.json()
-        if isinstance(data, dict) and isinstance(data.get("error"), (dict, str)):
-            err = data["error"]
-            message = err.get("message", err) if isinstance(err, dict) else err
-            raise ProviderError(f"API returned an error object: {message}")
-        choice = data["choices"][0]
-        if choice.get("finish_reason", "") == "tool_calls":
-            tool_calls = []
-            for tc in choice.get("message", {}).get("tool_calls", []):
-                func = tc.get("function", {})
-                arguments = json.loads(func.get("arguments", "{}"))
-                if not isinstance(arguments, dict):
-                    raise ValueError(f"tool call arguments must be an object, got {type(arguments).__name__}")
-                tool_calls.append(ToolCall(
-                    id=tc["id"],
-                    name=func["name"],
-                    arguments=arguments,
-                ))
-            return ChatResponse(content=None, tool_calls=tool_calls)
-        return ChatResponse(content=choice["message"].get("content"), tool_calls=[])
-    except (ValueError, KeyError, IndexError, TypeError, AttributeError) as e:
-        raise LLMError(f"Malformed API response ({type(e).__name__}: {e})") from e
+class _Malformed(Exception):
+    """A reply that cannot be used: can be a one-off provider glitch, so retried."""
 
 
-def _parse_or_retry(response, attempt: int) -> "ChatResponse | None":
-    """Parse a 200 body. A malformed body can be a one-off provider glitch: sleep and
-    return None to retry, until the last attempt, where the LLMError is raised."""
-    try:
-        return _parse_chat_response(response)
-    except ProviderError:
-        raise
-    except LLMError:
-        if attempt >= RETRIES - 1:
-            raise
-        time.sleep(BACKOFF[attempt] if attempt < len(BACKOFF) else BACKOFF[-1])
-        return None
+class _NoToolEndpoint(Exception):
+    """404 on a call with tools: on OpenRouter, no tool-capable provider is reachable right now."""
 
 
-def chat(
-    messages: list[dict],
-    tools: list[dict] | None,
-    config,
-) -> ChatResponse:
-    """Send a chat completion request to the OpenAI-compatible endpoint.
-
-    Args:
-        messages: list of {"role": ..., "content": ...} dicts
-        tools: list of OpenAI tool schemas (optional)
-        config: Config instance with model, api_url, api_token
-
-    Returns:
-        ChatResponse with either content or tool_calls
-    """
-    payload: dict = {
-        "model": config.model,
-        "temperature": 0.2,
-        "messages": messages,
-    }
-    if tools:
-        payload["tools"] = tools
-        payload["tool_choice"] = "auto"
-
-    url = f"{config.api_url.rstrip('/')}/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {config.api_token}",
-        "Content-Type": "application/json",
-    }
-
-    last_error = ""
-    for attempt in range(RETRIES):
-        try:
-            response = httpx.post(
-                url,
-                json=payload,
-                headers=headers,
-                timeout=120.0,
-            )
-            last_error = f"HTTP {response.status_code}: {response.text[:200]}"
-
-            if response.status_code == 404 and tools:
-                # Some providers doesn't support tools. Retry without them.
-                retry_payload = {k: v for k, v in payload.items() if k != "tools"}
-                retry_payload.pop("tool_choice", None)
-                retry_response = httpx.post(
-                    url,
-                    json=retry_payload,
-                    headers=headers,
-                    timeout=120.0,
-                )
-                last_error = f"404 with tools, retry: {retry_response.status_code}"
-                if retry_response.status_code == 200:
-                    parsed = _parse_or_retry(retry_response, attempt)
-                    if parsed is not None:
-                        return parsed
-                    continue
-                raise LLMError(f"API returned 404 with tools, retry also failed: {last_error}")
-
-            if response.status_code in TRANSIENT_ERROR_CODES and attempt < RETRIES - 1:
-                sleep_time = BACKOFF[attempt] if attempt < len(BACKOFF) else BACKOFF[-1]
-                time.sleep(sleep_time)
-                continue
-
-            if response.status_code != 200:
-                raise LLMError(f"API returned {response.status_code}: {response.text[:200]}")
-
-            parsed = _parse_or_retry(response, attempt)
-            if parsed is not None:
-                return parsed
-            continue
-
-        except httpx.TimeoutException:
-            last_error = "Request timed out"
-            if attempt < RETRIES - 1:
-                sleep_time = BACKOFF[attempt] if attempt < len(BACKOFF) else BACKOFF[-1]
-                time.sleep(sleep_time)
-                continue
-            raise LLMError("Request timed out after retries.")
-
-        except httpx.HTTPError as e:
-            last_error = str(e)
-            if attempt < RETRIES - 1:
-                sleep_time = BACKOFF[attempt] if attempt < len(BACKOFF) else BACKOFF[-1]
-                time.sleep(sleep_time)
-                continue
-            raise LLMError(f"HTTP error: {e}")
-
-    raise LLMError(f"Failed after {RETRIES} retries. Last error: {last_error}")
+def _to_response(message: AIMessage) -> ChatResponse:
+    if message.invalid_tool_calls:
+        raise _Malformed(f"unparseable tool call: {message.invalid_tool_calls[0].get('error')}")
+    if message.tool_calls:
+        return ChatResponse(content=None, tool_calls=[
+            ToolCall(id=tc["id"], name=tc["name"], arguments=tc["args"]) for tc in message.tool_calls])
+    return ChatResponse(content=message.text, tool_calls=[])
 
 
-class HttpLLM:
-    """The real model client: chat(messages, tools) against the configured endpoint and model."""
+class LangChainLLM:
+    """The real model client: chat(messages, tools) through a LangChain chat model."""
 
-    def __init__(self, config, model: str | None = None) -> None:
-        self._config = copy.copy(config)
-        if model:
-            self._config.model = model
+    def __init__(self, chat_model, model: str, api_host: str) -> None:
+        self._chat_model = chat_model
+        self._model = model
+        self._api_host = api_host
 
     def chat(self, messages: list[dict], tools=None) -> ChatResponse:
-        return chat(messages, tools, self._config)
+        model = self._chat_model.bind_tools(tools, tool_choice="auto") if tools else self._chat_model
+
+        def call(msgs):
+            try:
+                reply = model.invoke(msgs)
+            except LLMError:
+                raise
+            except openai.NotFoundError as e:
+                if tools:
+                    raise _NoToolEndpoint(str(e)) from e
+                raise LLMError(f"API returned 404: {e}") from e
+            except openai.APIError as e:
+                raise LLMError(str(e)) from e
+            except _MALFORMED_ERRORS as e:
+                raise _Malformed(f"{type(e).__name__}: {e}") from e
+            return _to_response(reply)
+
+        retrying = RunnableLambda(call).with_retry(
+            retry_if_exception_type=(_Malformed, _NoToolEndpoint),
+            stop_after_attempt=ATTEMPTS,
+            exponential_jitter_params=RETRY_BACKOFF,
+        )
+        try:
+            return retrying.invoke(messages)
+        except _Malformed as e:
+            raise LLMError(f"Malformed API response ({e})") from e
+        except _NoToolEndpoint as e:
+            raise LLMError(
+                f"model '{self._model}' has no endpoint that supports tool calls\n"
+                f"  at {self._api_host} (404, after {ATTEMPTS} attempts).\n"
+                "  The review needs tool calls (read_file). Run it again with a model that supports them:\n"
+                "    mesh review-pull-request <url> --model <provider/model>"
+            ) from e
+
+
+DRY_RUN_MODEL = "dry-run-model"
+
+DRY_RUN_OVERVIEW = (
+    "This pull request refactors the dream core module into a separate agent "
+    "directory, following the established pattern from PMAT-189. It introduces "
+    "a thin proxy at bin/dream that delegates to agents/dream/dream/bin/dream, "
+    "while filtering out system-generated Claude Code messages from the session "
+    "data fed to the LLM."
+)
+
+DRY_RUN_FILE_SUMMARY = (
+    "Delegates to the inner dream bash runner after loading .env "
+    "credentials. Adds dry-run handling to skip env validation."
+)
+
+
+class DryRunChatModel(BaseChatModel):
+    """--dry-run: a scripted model, no network. The overview call (no tools) gets
+    DRY_RUN_OVERVIEW; every file review (with tools) gets a clean result."""
+
+    @property
+    def _llm_type(self) -> str:
+        return DRY_RUN_MODEL
+
+    def bind_tools(self, tools, **kwargs):
+        return self.bind(file_review=True)
+
+    def _generate(self, messages, stop=None, run_manager=None, file_review=False, **kwargs):
+        content = (json.dumps({"summary": DRY_RUN_FILE_SUMMARY, "issues": []}) if file_review
+                   else DRY_RUN_OVERVIEW)
+        return ChatResult(generations=[ChatGeneration(message=AIMessage(content=content))])
