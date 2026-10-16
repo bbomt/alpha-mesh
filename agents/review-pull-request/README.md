@@ -221,3 +221,33 @@ At startup the agent prints the model and API URL it is using to stderr, so you 
 cd agents/review-pull-request
 uv run pytest tests/ -v
 ```
+
+## Checkpoint infrastructure (AWS CDK)
+
+Storage for resumable reviews (PMAT-237). The agent does not use it yet; PMAT-266 wires it in.
+
+`infra/cdk` deploys `PmatAlphaMeshReviewCheckpointsStack-{env}`:
+
+| Resource | Details |
+|----------|---------|
+| DynamoDB table `pmat_{env}_ALPHA_MESH_REVIEW_CHECKPOINTS` | `PK`/`SK` strings, on-demand, TTL attribute `ttl` |
+| S3 bucket `pmat-{env}-alpha-mesh-review-checkpoints-{account}` | Public access blocked, SSE-S3. No lifecycle rule in the stack: `DynamoDBSaver` adds its own `ttl-days` rule |
+| SSM `/pmat/{env}/alpha-mesh/review-pull-request/checkpoint-table`, `…/checkpoint-bucket`, `…/checkpoint-ttl-days` | Names the agent reads at runtime |
+
+- TTL: `checkpointTtlDays` in `infra/cdk/cdk.json` context, per environment (default 2).
+- Dev destroys the table and bucket on teardown; staging and prod retain them.
+- The stack creates no IAM access: the agent runs on EC2 through the SSO `dev-EC2` permission set,
+  like the PMATFE-mfe-* projects.
+
+Deploy to dev (needs `aws sso login`, Node and pnpm):
+
+```bash
+agents/review-pull-request/scripts/deploy-dev-from-ec2.sh
+```
+
+CDK assertion tests:
+
+```bash
+cd agents/review-pull-request/infra/cdk
+pnpm install && pnpm test
+```

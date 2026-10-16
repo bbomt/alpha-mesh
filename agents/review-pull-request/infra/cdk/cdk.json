@@ -1,0 +1,14 @@
+{
+  "app": "pnpm exec ts-node --prefer-ts-exts bin/cdk.ts",
+  "context": {
+    "dev": {
+      "checkpointTtlDays": 2
+    },
+    "staging": {
+      "checkpointTtlDays": 2
+    },
+    "prod": {
+      "checkpointTtlDays": 2
+    }
+  }
+}
