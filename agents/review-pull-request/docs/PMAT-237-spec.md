@@ -195,16 +195,22 @@ A second process on a thread that is already being reviewed must stop, not inter
 Model names follow `{provider}/{modelname}` (the OpenRouter standard), e.g. `openai/gpt-oss-120b`,
 `anthropic/claude-sonnet-5-5`, `minimax/minimax-m2`.
 
-One function in `session.py` builds the chat model from `CODE_REVIEW_URL` (owner decision, 2026-10-14):
-**`openrouter.ai` uses `ChatOpenRouter` (`langchain-openrouter`, as in the reference
-`quickstart.py`); every other endpoint uses `ChatOpenAI`** with `base_url` set (OpenAI, MiniMax,
-Ollama, Anthropic's OpenAI-compatible endpoint), as `llm.py` does today.
-Both classes get the key from `CODE_REVIEW_TOKEN` and the URL from `CODE_REVIEW_URL` passed explicitly
-(never a provider-specific env var), and the same retry and timeout settings (3.9).
+One function in `session.py` builds the chat model from `CODE_REVIEW_URL`: **every endpoint uses
+`ChatOpenAI`** with `base_url` set (OpenRouter, OpenAI, MiniMax, Ollama, Anthropic's OpenAI-compatible
+endpoint), as `llm.py` did. It gets the key from `CODE_REVIEW_TOKEN` and the URL from `CODE_REVIEW_URL`
+passed explicitly (never a provider-specific env var), and the retry and timeout settings in 3.9.
+
+*Changed in PMAT-265 (owner decision, 2026-10-16):* the 2026-10-14 decision used `ChatOpenRouter`
+(`langchain-openrouter`) for `openrouter.ai`. Probing it showed its Speakeasy `openrouter` SDK retries
+only 5xx, **not 429** (the throttling free models hit most), takes the timeout in milliseconds and
+caps retries by elapsed time, not attempts. `ChatOpenAI`'s SDK behaves as 3.9 describes.
 
 - Model name: the full `provider/model` is sent to `openrouter.ai`; for any other host the
   `provider/` prefix is stripped. A name with no `/` is sent unchanged.
 - `/v1` is appended to the base URL if missing, as `llm.py` does today.
+- Known limits (owner decision, 2026-10-19, follow-up PMAT-276): an id with a real `/` off OpenRouter
+  and a base URL that must not end in `/v1` are not supported. Off OpenRouter a `404` fails at once,
+  naming the full URL, the model as configured and as sent, and these rules.
 - Any other dedicated class (e.g. `ChatAnthropic`) is added only when a provider needs one; out of scope here.
 
 ### 3.8 Redaction: unchanged
@@ -232,8 +238,8 @@ The stages talk to the model through `session.review_llm.chat(messages, tools)`,
 | 3 attempts, backoff 2/4/8 s on 429/500/502/503, timeouts, connection errors | SDK `max_retries=2` (3 attempts): exponential backoff **with jitter**, honours `Retry-After`, also retries 408/409 and all 5xx |
 | 120 s request timeout | `timeout=120` |
 | Malformed 200 body retried, then `LLMError` | `.with_retry(retry_if_exception_type=(MalformedResponse,), stop_after_attempt=3)` on a small parse check |
-| 200 body with an error object: `ProviderError`, fails fast with its message | **Not specially detected (owner decision, 2026-10-14).** Seen twice in the logs, both provider timeouts (`A Timeout Occurred`, `Upstream idle timeout exceeded`), which belong to PMAT-236. Whatever the chat model class raises, or a reply that cannot be parsed, becomes `LLMError`. Known limitation: the provider's own message may be lost in that case; the run still stops with nothing posted |
-| 404 with tools: retry without tools | **No fallback without tools (owner decision, 2026-10-14):** without tools the review cannot read files, so the fallback silently gave a weaker review. Instead the **same call, with tools,** is retried twice with backoff: on OpenRouter a 404 here means no provider that supports tools is reachable for the model *right now*, which can be transient. After 3 attempts: `LLMError` (see below). Deliberate behaviour change, covered by tests. PMAT-236 later moves this into its single classification |
+| 200 body with an error object: `ProviderError`, fails fast with its message | **Kept (owner decision, 2026-10-19, replacing "not specially detected" of 2026-10-14):** `ChatOpenAI` raises such a body as `ValueError(body["error"])`; `llm.py` recognises it and raises `LLMError("API returned an error object: <message>")` at once, without retries, as master did. The check relies on a LangChain internal (the raising function's name), pinned by a test so an upgrade that changes it fails loudly. Any other reply that cannot be parsed is retried, then becomes `LLMError` |
+| 404 with tools: retry without tools | **No fallback without tools (owner decision, 2026-10-14):** without tools the review cannot read files, so the fallback silently gave a weaker review. Instead the **same call, with tools,** is retried twice with backoff: on OpenRouter a 404 here means no provider that supports tools is reachable for the model *right now*, which can be transient. After 3 attempts: `LLMError` (see below). On any other host a 404 fails at once, naming the URL and model as sent (3.7, PMAT-276). Deliberate behaviour change, covered by tests. PMAT-236 later moves this into its single classification |
 
 `LLMError` stays as the exception the CLI catches, so the fatal-error message
 (model, API host, "nothing was posted") is unchanged. LangChain/SDK exceptions are mapped to `LLMError` in
@@ -324,8 +330,8 @@ agents/review-pull-request/
 
 - Pin Python 3.12 (`requires-python = "~=3.12.0"`, `.python-version`). The reference notes newer
   versions are problematic with these LangGraph modules.
-- Add: `langgraph`, `langchain-core`, `langchain-openai`, `langchain-openrouter` (3.7),
-  `langgraph-checkpoint-aws`, `boto3`; dev: `langgraph-checkpoint-sqlite` (kill tests).
+- Add: `langgraph`, `langchain-core`, `langchain-openai` (PMAT-265); `langgraph-checkpoint-aws`,
+  `boto3`; dev: `langgraph-checkpoint-sqlite` (kill tests) (PMAT-266). No `langchain-openrouter` (3.7).
   Use the versions in the reference `uv.lock` as the floor.
 - Remove `httpx` only if nothing else still uses it (`tools.py` / `github.py` do today; keep it).
 
@@ -348,7 +354,7 @@ explains the rare duplicate this allows.
 |---|---|
 | `review.py` | CLI only: args, PR/diff resolution, thread key, run lock, session, checkpointer, start/resume/skip, error mapping. The review loop moves to `graph.py` |
 | `graph.py` (new) | `ReviewState`, the four nodes (calling `stage1` / `stage2` unchanged), `build_review_graph(session, checkpointer)` |
-| `llm.py` | `HttpLLM` replaced by `LangChainLLM` (same `chat` interface, 3.8); HTTP code and `ProviderError` removed; `LLMError` kept |
+| `llm.py` | `HttpLLM` replaced by `LangChainLLM` (same `chat` interface, 3.8); HTTP code and the `ProviderError` class removed (its fail-fast behaviour kept, 3.9); `LLMError` kept |
 | `session.py` | Builds the chat model from URL + model name (3.7) and wraps it in `GuardedLLM` as today |
 | `stage1.py`, `stage2.py`, `guard.py` | Unchanged |
 | `checkpoints.py` (new) | `make_checkpointer(config)` (standard `DynamoDBSaver` from SSM/env), `thread_id(...)`, `policy_hash(...)`, the run lock (3.6a) |
@@ -364,7 +370,8 @@ inject a `SqliteSaver`, fake chat models and fake GitHub calls.
 
 Tests use **fake chat models** (a small `BaseChatModel` subclass with scripted replies that supports
 `bind_tools`, and a variant that blocks forever on a chosen file). They may build fakes directly; the
-production code creates chat model objects (`ChatOpenAI` / `ChatOpenRouter`) only in `ReviewSession`. No test calls a real model.
+production code creates chat model objects (`ChatOpenAI`) only in `ReviewSession`. No test calls a real model
+endpoint: the model-error tests run a real `ChatOpenAI` against a scripted `httpx.MockTransport`.
 
 ### 5.1 Acceptance tests (boundary: the CLI process)
 
@@ -412,10 +419,12 @@ they shrink or move those bytes but cannot add content that is not in the state.
 
 - `test_llm.py` → `test_model_errors.py`: port four existing tests (malformed 200 retried;
   non-JSON body, no `choices`, non-object tool arguments → `LLMError`). The provider-error-object
-  test is dropped (3.9). Replace `test_malformed_body_on_the_no_tools_fallback_is_retried_too`
+  test is kept: one attempt, the provider's message in the `LLMError` (3.9). Replace `test_malformed_body_on_the_no_tools_fallback_is_retried_too`
   with: a 404 on a call with tools is retried twice with tools (backoff patched), succeeds if a later
   attempt succeeds, else raises `LLMError` naming tool support and the `--model` resume hint; a call
-  without tools is never made.
+  without tools is never made. That retry is for openrouter.ai only: on any other host a 404, with or
+  without tools, fails after one request, naming the full URL (no credentials), the model as
+  configured and as sent, and PMAT-276 (3.7).
 - Model construction (3.7): prefix kept for OpenRouter, stripped elsewhere, `/v1` handling.
 - `thread_id` / `policy_hash` stability (pattern order does not matter; any pattern change does).
 - `test_architecture.py`: new modules may not import chat-model classes, `httpx`, readers or the
@@ -484,7 +493,7 @@ findings in the ticket's changes; up to 10 passes) → DONE with a Jira comment.
 
 ## 10. Decisions (owner, 2026-10-14)
 
-1. **404 with tools:** no fallback without tools; retry the same call twice with backoff, then fail with an `LLMError` that says to resume with a tool-capable `--model` (3.9).
+1. **404 with tools:** no fallback without tools; on openrouter.ai retry the same call twice with backoff (other hosts fail at once, 3.7), then fail with an `LLMError` that says to resume with a tool-capable `--model` (3.9).
 2. **TTL:** configurable, default 2 days (3.10).
 3. **Models in the report:** header lists every model; each file names its model (section 7).
 4. **Access:** same as the PMATFE-mfe-* projects; no IAM access grants (CDK's auto-delete role in dev excepted), rely on the SSO `dev-EC2`

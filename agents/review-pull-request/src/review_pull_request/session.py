@@ -13,12 +13,75 @@ Stages receive the session, not the raw pieces, so they have no way around the p
 
 import posixpath
 import sys
+from urllib.parse import urlparse
+
+from langchain_openai import ChatOpenAI
 
 from review_pull_request.guard import GuardedLLM, Redactor
-from review_pull_request.llm import HttpLLM
+from review_pull_request.llm import DRY_RUN_MODEL, DryRunChatModel, LangChainLLM
 from review_pull_request.policy import PathPolicy, normalise
 from review_pull_request.readers import PolicyFileReader
 from review_pull_request.safe_diff import SafeDiff
+
+
+OPENROUTER_HOST = "openrouter.ai"
+
+
+def _host(url: str) -> str:
+    try:
+        return urlparse(url).hostname or ""
+    except ValueError:  # e.g. unbalanced IPv6 brackets
+        return ""
+
+
+def _safe_url(url: str) -> str:
+    """URL without userinfo or query string, safe to print."""
+    try:
+        p = urlparse(url)
+    except ValueError:  # e.g. unbalanced IPv6 brackets
+        return "(invalid URL)"
+    if not p.hostname:
+        return "(invalid URL)"
+    try:
+        port = f":{p.port}" if p.port else ""
+    except ValueError:  # malformed port in a hand-edited .env
+        return "(invalid URL)"
+    return f"{p.scheme}://{p.hostname}{port}{p.path}"
+
+
+def _sent(config, model: str) -> tuple[str, str]:
+    """The model name and base URL as sent: openrouter.ai gets the full name, other hosts get it
+    without the `provider/` prefix; /v1 is appended to the URL if missing (spec 3.7, PMAT-276)."""
+    if _host(config.api_url) != OPENROUTER_HOST and "/" in model:
+        model = model.split("/", 1)[1]
+    base_url = config.api_url.rstrip("/")
+    if not base_url.endswith("/v1"):
+        base_url += "/v1"
+    return model, base_url
+
+
+def not_found_reason(config) -> str | None:
+    """Off openrouter.ai, a 404 most likely comes from the name and URL rules: say what was sent."""
+    if _host(config.api_url) == OPENROUTER_HOST or config.model == DRY_RUN_MODEL:
+        return None
+    model, base_url = _sent(config, config.model)
+    return (f"model '{model}' not found (404) at {_safe_url(base_url)}/chat/completions\n"
+            f"  CODE_REVIEW_MODEL '{config.model}' was sent as '{model}': for hosts other than openrouter.ai\n"
+            "  the provider/ prefix is stripped, and /v1 is appended to CODE_REVIEW_URL if missing.\n"
+            "  Model ids with a real '/' and URLs not ending in /v1 are not supported yet (PMAT-276).")
+
+
+def make_chat_model(config, model: str):
+    """The chat model for CODE_REVIEW_URL: ChatOpenAI for every OpenAI-compatible endpoint.
+
+    Names are `{provider}/{modelname}`: openrouter.ai gets the full name, other hosts get it
+    without the `provider/` prefix. Key and URL come from config, never a provider env var.
+    """
+    if model == DRY_RUN_MODEL:
+        return DryRunChatModel()
+    model, base_url = _sent(config, model)
+    return ChatOpenAI(model=model, api_key=config.api_token, base_url=base_url,
+                      temperature=0.2, max_retries=2, timeout=120)
 
 
 class ReviewSession:
@@ -32,14 +95,16 @@ class ReviewSession:
         self.missing_paths: dict[str, list[str]] = {}  # missing path -> files whose review asked for it
 
     @classmethod
-    def create(cls, config, inner_reader, llm_factory=None, secrets=()) -> "ReviewSession":
-        factory = llm_factory or HttpLLM
+    def create(cls, config, inner_reader, chat_model_factory=None, secrets=()) -> "ReviewSession":
+        factory = chat_model_factory or make_chat_model
         policy = PathPolicy(config.exclusions)
         redactor = Redactor([config.api_token, *secrets])
+        llm = LangChainLLM(factory(config, config.model), config.model, _host(config.api_url) or "(invalid URL)",
+                           not_found=not_found_reason(config))
         return cls(
             config=config,
             policy=policy,
-            review_llm=GuardedLLM(factory(config, config.model), redactor),
+            review_llm=GuardedLLM(llm, redactor),
             reader=PolicyFileReader(inner_reader, policy),
         )
 

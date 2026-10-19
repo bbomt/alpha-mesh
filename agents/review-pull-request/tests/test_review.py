@@ -8,7 +8,7 @@ from review_pull_request.review import main
 
 import pytest
 
-from tests.helpers import FakeLLM, StubReader, http_llm_factory
+from tests.helpers import FakeLLM, StubReader, chat_model_factory
 
 
 @pytest.fixture(autouse=True)
@@ -97,7 +97,7 @@ def _run_main_with_llm_error(capsys, argv_extra=(), overview_ok=False):
          patch("review_pull_request.review.get_pr_info", return_value=_mock_pr_info()), \
          patch("review_pull_request.review.get_pr_description", return_value=""), \
          patch("review_pull_request.review.get_diff", return_value=DIFF), \
-         patch("review_pull_request.session.HttpLLM", http_llm_factory(responder)), \
+         patch("review_pull_request.session.make_chat_model", chat_model_factory(responder)), \
          patch("review_pull_request.review.post_comment") as mock_post, \
          patch("subprocess.run", return_value=MagicMock(returncode=0, stdout="ghtoken")):
         sys.argv = ["review", "https://github.com/owner/repo/pull/42", *argv_extra]
@@ -178,7 +178,7 @@ def test_startup_banner_and_error_never_print_url_credentials(capsys):
          patch("review_pull_request.review.get_pr_info", return_value=_mock_pr_info()), \
          patch("review_pull_request.review.get_pr_description", return_value=""), \
          patch("review_pull_request.review.get_diff", return_value=DIFF), \
-         patch("review_pull_request.session.HttpLLM", http_llm_factory(_raise_404)), \
+         patch("review_pull_request.session.make_chat_model", chat_model_factory(_raise_404)), \
          patch("subprocess.run", return_value=MagicMock(returncode=0, stdout="ghtoken")):
         sys.argv = ["review", "https://github.com/owner/repo/pull/42"]
         main()
@@ -199,7 +199,7 @@ def test_read_cache_is_cleared_when_main_exits(capsys):
          patch("review_pull_request.review.get_pr_info", return_value=_mock_pr_info()), \
          patch("review_pull_request.review.get_pr_description", return_value=""), \
          patch("review_pull_request.review.get_diff", return_value=DIFF), \
-         patch("review_pull_request.session.HttpLLM", http_llm_factory(_raise_404)), \
+         patch("review_pull_request.session.make_chat_model", chat_model_factory(_raise_404)), \
          patch("subprocess.run", return_value=MagicMock(returncode=0, stdout="ghtoken")):
         sys.argv = ["review", "https://github.com/owner/repo/pull/42"]
         main()
@@ -224,7 +224,7 @@ def test_verbose_output_never_prints_url_credentials(capsys):
          patch("review_pull_request.review.get_pr_info", return_value=_mock_pr_info()), \
          patch("review_pull_request.review.get_pr_description", return_value=""), \
          patch("review_pull_request.review.get_diff", return_value=DIFF), \
-         patch("review_pull_request.session.HttpLLM", http_llm_factory(_raise_404)), \
+         patch("review_pull_request.session.make_chat_model", chat_model_factory(_raise_404)), \
          patch("subprocess.run", return_value=MagicMock(returncode=0, stdout="ghtoken")):
         sys.argv = ["review", "https://github.com/owner/repo/pull/42", "--verbose"]
         main()
@@ -256,8 +256,8 @@ def _run_main_with_results(file_review, diff, exclusions=(), extra_argv=()):
          patch("review_pull_request.review.get_pr_info", return_value=_mock_pr_info()), \
          patch("review_pull_request.review.get_pr_description", return_value=""), \
          patch("review_pull_request.review.get_diff", return_value=diff), \
-         patch("review_pull_request.review.run_overview", return_value="An overview."), \
-         patch("review_pull_request.review.run_file_review", side_effect=file_review), \
+         patch("review_pull_request.graph.run_overview", return_value="An overview."), \
+         patch("review_pull_request.graph.run_file_review", side_effect=file_review), \
          patch("review_pull_request.review.post_comment") as mock_post, \
          patch("subprocess.run", return_value=MagicMock(returncode=0, stdout="ghtoken")):
         sys.argv = ["review", "https://github.com/owner/repo/pull/42", *extra_argv]
@@ -317,7 +317,7 @@ def test_overview_failure_names_the_configured_model(capsys):
          patch("review_pull_request.review.get_pr_info", return_value=_mock_pr_info()), \
          patch("review_pull_request.review.get_pr_description", return_value=""), \
          patch("review_pull_request.review.get_diff", return_value=DIFF), \
-         patch("review_pull_request.session.HttpLLM", http_llm_factory(_raise_404)), \
+         patch("review_pull_request.session.make_chat_model", chat_model_factory(_raise_404)), \
          patch("subprocess.run", return_value=MagicMock(returncode=0, stdout="ghtoken")):
         sys.argv = ["review", "https://github.com/owner/repo/pull/42"]
         main()
@@ -351,8 +351,8 @@ def test_failed_post_of_a_normal_report_fails_the_run(capsys):
          patch("review_pull_request.review.get_pr_info", return_value=_mock_pr_info()), \
          patch("review_pull_request.review.get_pr_description", return_value=""), \
          patch("review_pull_request.review.get_diff", return_value=DIFF), \
-         patch("review_pull_request.review.run_overview", return_value="ov"), \
-         patch("review_pull_request.review.run_file_review",
+         patch("review_pull_request.graph.run_overview", return_value="ov"), \
+         patch("review_pull_request.graph.run_file_review",
                side_effect=lambda c, o, cfg: FileReviewResult(c.file_path, "s", [], 0)), \
          patch("review_pull_request.review.post_comment", return_value=False), \
          patch("subprocess.run", return_value=MagicMock(returncode=0, stdout="ghtoken")):
@@ -422,8 +422,8 @@ def test_excluded_files_never_reach_the_overview_prompt():
          patch("review_pull_request.review.get_pr_info", return_value=_mock_pr_info()), \
          patch("review_pull_request.review.get_pr_description", return_value=""), \
          patch("review_pull_request.review.get_diff", return_value=secret_diff + DIFF), \
-         patch("review_pull_request.review.run_overview", return_value="ov") as overview, \
-         patch("review_pull_request.review.run_file_review",
+         patch("review_pull_request.graph.run_overview", return_value="ov") as overview, \
+         patch("review_pull_request.graph.run_file_review",
                side_effect=lambda c, o, cf: FileReviewResult(c.file_path, "s", [], 0)), \
          patch("review_pull_request.review.post_comment", return_value=True), \
          patch("subprocess.run", return_value=MagicMock(returncode=0, stdout="ghtoken")):
@@ -587,7 +587,7 @@ def test_report_lists_only_the_missing_paths_the_model_did_not_recover_from():
          patch("review_pull_request.review.get_pr_description", return_value=""), \
          patch("review_pull_request.review.get_diff", return_value=DIFF), \
          patch("review_pull_request.review.GitHubFileReader", lambda *a, **k: repo), \
-         patch("review_pull_request.session.HttpLLM", http_llm_factory(responder)), \
+         patch("review_pull_request.session.make_chat_model", chat_model_factory(responder)), \
          patch("review_pull_request.review.post_comment") as mock_post, \
          patch("subprocess.run", return_value=MagicMock(returncode=0, stdout="ghtoken")):
         sys.argv = ["review", "https://github.com/owner/repo/pull/42"]
@@ -614,3 +614,56 @@ def test_report_notes_an_unavailable_listing_even_if_it_is_first_fetched_for_the
         rc, mock_post = _run_main_with_results(review, DIFF)
 
     assert "listing was unavailable" in mock_post.call_args[0][0]
+
+
+def test_dry_run_reviews_every_file_through_the_graph_without_a_real_model_or_posting(capsys):
+    from review_pull_request.llm import DRY_RUN_OVERVIEW
+
+    diff = DIFF + DIFF.replace("src/a.py", "src/b.py")
+    with patch("review_pull_request.review.load_config", return_value=_stub_config()), \
+         patch("review_pull_request.review.parse_pr_url", return_value=("owner", "repo", 42)), \
+         patch("review_pull_request.review.get_pr_info", return_value=_mock_pr_info()), \
+         patch("review_pull_request.review.get_pr_description", return_value=""), \
+         patch("review_pull_request.review.get_diff", return_value=diff), \
+         patch("review_pull_request.session.ChatOpenAI", side_effect=AssertionError("real model built")), \
+         patch("review_pull_request.review.post_comment") as mock_post, \
+         patch("subprocess.run", return_value=MagicMock(returncode=0, stdout="ghtoken")):
+        sys.argv = ["review", "https://github.com/owner/repo/pull/42", "--dry-run"]
+        rc = main()
+
+    out, err = capsys.readouterr()
+    assert rc == 0
+    mock_post.assert_not_called()
+    assert DRY_RUN_OVERVIEW in out
+    assert "dry-run-model" in out
+    assert "**Files reviewed:** 2" in out
+    assert "[1/2] reviewing src/a.py" in err and "[2/2] reviewing src/b.py" in err
+
+
+def test_a_pr_with_many_files_is_reviewed_to_the_end():
+    from review_pull_request.stage2 import FileReviewResult
+
+    diff = "".join(DIFF.replace("src/a.py", f"src/f{i}.py") for i in range(30))
+    reviewed = []
+
+    def review(chunk, overview, session):
+        reviewed.append(chunk.file_path)
+        return FileReviewResult(chunk.file_path, "s", [], 0)
+
+    rc, mock_post = _run_main_with_results(review, diff)
+
+    assert rc == 0
+    assert reviewed == [f"src/f{i}.py" for i in range(30)]
+    assert "**Files reviewed:** 30" in mock_post.call_args[0][0]
+
+
+def test_a_failed_file_review_names_that_file_as_the_failed_step(capsys):
+    _, _, out, _ = _run_main_with_llm_error(capsys, overview_ok=True)
+
+    assert "LLM API call failed during src/a.py" in out.err
+
+
+def test_a_failed_overview_names_the_overview_as_the_failed_step(capsys):
+    _, _, out, _ = _run_main_with_llm_error(capsys)
+
+    assert "LLM API call failed during overview pass" in out.err
