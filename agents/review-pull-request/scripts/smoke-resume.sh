@@ -3,18 +3,20 @@
 # flight, resume it with another model, and check the resume kept files 1..K-1 and names both models.
 # Nothing is posted (--no-post-comment). Needs AWS credentials (checkpoint store) and gh auth.
 #
-# Usage: scripts/smoke-resume.sh <pr-url> <model-a> <model-b> [kill-at-file (default 2)]
-# Env:   SMOKE_TIMEOUT  seconds to wait for each run (default 3600)
+# Usage: scripts/smoke-resume.sh <pr-url> <model-a> <model-b> [kill-at-file (default: last)]
+#   The default kills while the last file is in flight, so model B (e.g. a slow free model) reviews
+#   only that file on resume.
+# Env:   SMOKE_TIMEOUT  seconds to wait for each run (default 7200)
 set -euo pipefail
 
 if [[ $# -lt 3 ]]; then
-  echo "Usage: $0 <pr-url> <model-a> <model-b> [kill-at-file (default 2)]" >&2
+  echo "Usage: $0 <pr-url> <model-a> <model-b> [kill-at-file (default: last)]" >&2
   exit 2
 fi
-PR_URL="$1"; MODEL_A="$2"; MODEL_B="$3"; KILL_AT="${4:-2}"
-TIMEOUT="${SMOKE_TIMEOUT:-3600}"
-if [[ "$KILL_AT" -lt 2 ]]; then
-  echo "kill-at-file must be >= 2, so at least one file is resumed from the checkpoint" >&2
+PR_URL="$1"; MODEL_A="$2"; MODEL_B="$3"; KILL_AT="${4:-last}"
+TIMEOUT="${SMOKE_TIMEOUT:-7200}"
+if [[ "$KILL_AT" != "last" ]] && ! [[ "$KILL_AT" =~ ^[0-9]+$ && "$KILL_AT" -ge 2 ]]; then
+  echo "kill-at-file must be 'last' or a number >= 2, so at least one file is resumed from the checkpoint" >&2
   exit 2
 fi
 
@@ -35,12 +37,17 @@ wait_for() {
 }
 
 # --- Run 1: model A from scratch, killed while file KILL_AT is in flight ---------------------------
-echo "=== run 1: $MODEL_A, kill -9 at file $KILL_AT"
+echo "=== run 1: $MODEL_A"
 setsid mesh review-pull-request "$PR_URL" --model "$MODEL_A" --no-post-comment --force-rerun \
   > "$OUT_DIR/run1.log" 2>&1 < /dev/null &
 RUN1=$!
 wait_for "$OUT_DIR/run1.log" "^Starting review \(thread " "$RUN1"
 THREAD="$(sed -n 's/^Starting review (thread \(.*\))$/\1/p' "$OUT_DIR/run1.log")"
+wait_for "$OUT_DIR/run1.log" "^\[1/[0-9]+\] reviewing " "$RUN1"
+TOTAL="$(sed -n 's|^\[1/\([0-9]*\)\] reviewing .*|\1|p' "$OUT_DIR/run1.log")"
+[[ "$KILL_AT" == "last" ]] && KILL_AT="$TOTAL"
+(( KILL_AT >= 2 && KILL_AT <= TOTAL )) || fail "kill-at-file $KILL_AT must be between 2 and $TOTAL (files in the PR)"
+echo "    $TOTAL file(s); killing at file $KILL_AT"
 wait_for "$OUT_DIR/run1.log" "^\[${KILL_AT}/[0-9]+\] reviewing " "$RUN1"
 
 # The review process holds the thread's run lock and has written its pid into it (spec 3.6a).
