@@ -239,7 +239,7 @@ The stages talk to the model through `session.review_llm.chat(messages, tools)`,
 | 120 s request timeout | `timeout=120` |
 | Malformed 200 body retried, then `LLMError` | `.with_retry(retry_if_exception_type=(MalformedResponse,), stop_after_attempt=3)` on a small parse check |
 | 200 body with an error object: `ProviderError`, fails fast with its message | **Not specially detected (owner decision, 2026-10-14).** Seen twice in the logs, both provider timeouts (`A Timeout Occurred`, `Upstream idle timeout exceeded`), which belong to PMAT-236. Whatever the chat model class raises, or a reply that cannot be parsed, becomes `LLMError`. Known limitation: the provider's own message may be lost in that case; the run still stops with nothing posted |
-| 404 with tools: retry without tools | **No fallback without tools (owner decision, 2026-10-14):** without tools the review cannot read files, so the fallback silently gave a weaker review. Instead the **same call, with tools,** is retried twice with backoff: on OpenRouter a 404 here means no provider that supports tools is reachable for the model *right now*, which can be transient. After 3 attempts: `LLMError` (see below). Deliberate behaviour change, covered by tests. PMAT-236 later moves this into its single classification |
+| 404 with tools: retry without tools | **No fallback without tools (owner decision, 2026-10-14):** without tools the review cannot read files, so the fallback silently gave a weaker review. Instead the **same call, with tools,** is retried twice with backoff: on OpenRouter a 404 here means no provider that supports tools is reachable for the model *right now*, which can be transient. After 3 attempts: `LLMError` (see below). On any other host a 404 fails at once, naming the URL and model as sent (3.7, PMAT-276). Deliberate behaviour change, covered by tests. PMAT-236 later moves this into its single classification |
 
 `LLMError` stays as the exception the CLI catches, so the fatal-error message
 (model, API host, "nothing was posted") is unchanged. LangChain/SDK exceptions are mapped to `LLMError` in
@@ -491,7 +491,7 @@ findings in the ticket's changes; up to 10 passes) → DONE with a Jira comment.
 
 ## 10. Decisions (owner, 2026-10-14)
 
-1. **404 with tools:** no fallback without tools; retry the same call twice with backoff, then fail with an `LLMError` that says to resume with a tool-capable `--model` (3.9).
+1. **404 with tools:** no fallback without tools; on openrouter.ai retry the same call twice with backoff (other hosts fail at once, 3.7), then fail with an `LLMError` that says to resume with a tool-capable `--model` (3.9).
 2. **TTL:** configurable, default 2 days (3.10).
 3. **Models in the report:** header lists every model; each file names its model (section 7).
 4. **Access:** same as the PMATFE-mfe-* projects; no IAM access grants (CDK's auto-delete role in dev excepted), rely on the SSO `dev-EC2`
