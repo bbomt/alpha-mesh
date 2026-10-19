@@ -370,7 +370,8 @@ inject a `SqliteSaver`, fake chat models and fake GitHub calls.
 
 Tests use **fake chat models** (a small `BaseChatModel` subclass with scripted replies that supports
 `bind_tools`, and a variant that blocks forever on a chosen file). They may build fakes directly; the
-production code creates chat model objects (`ChatOpenAI`) only in `ReviewSession`. No test calls a real model.
+production code creates chat model objects (`ChatOpenAI`) only in `ReviewSession`. No test calls a real model
+endpoint: the model-error tests run a real `ChatOpenAI` against a scripted `httpx.MockTransport`.
 
 ### 5.1 Acceptance tests (boundary: the CLI process)
 
