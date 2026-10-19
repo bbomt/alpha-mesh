@@ -208,6 +208,9 @@ caps retries by elapsed time, not attempts. `ChatOpenAI`'s SDK behaves as 3.9 de
 - Model name: the full `provider/model` is sent to `openrouter.ai`; for any other host the
   `provider/` prefix is stripped. A name with no `/` is sent unchanged.
 - `/v1` is appended to the base URL if missing, as `llm.py` does today.
+- Known limits (owner decision, 2026-10-19, follow-up PMAT-276): an id with a real `/` off OpenRouter
+  and a base URL that must not end in `/v1` are not supported. Off OpenRouter a `404` fails at once,
+  naming the full URL, the model as configured and as sent, and these rules.
 - Any other dedicated class (e.g. `ChatAnthropic`) is added only when a provider needs one; out of scope here.
 
 ### 3.8 Redaction: unchanged

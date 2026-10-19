@@ -161,7 +161,9 @@ timeouts and connection errors (3 attempts, exponential backoff with jitter, hon
 OpenRouter: no provider that supports tool calls is reachable for the model right now) is retried
 twice **with tools**; there is no fallback without tools, because without `read_file` the review would
 silently be weaker. After the third `404` the error names the model, the host, the provider's reply and the fix
-(`--model <provider/model>` with a model that supports tool calls).
+(`--model <provider/model>` with a model that supports tool calls). On any other host a `404` stops the
+review at once: the error shows the full URL called (without credentials), the model as configured and as
+sent, and the naming rules below.
 
 `--dry-run` runs the same review graph with a scripted model (no model API call, nothing posted).
 
@@ -225,7 +227,9 @@ patterns = [
 Model names use `{provider}/{modelname}` (the OpenRouter standard, e.g. `openai/gpt-oss-120b`). For
 `openrouter.ai` the full name is sent; for any other endpoint (OpenAI, MiniMax, Ollama, Anthropic's
 OpenAI-compatible API) the `provider/` prefix is stripped. A name without `/` is sent unchanged.
-`/v1` is appended to `CODE_REVIEW_URL` if missing. Every endpoint is called through LangChain's
+`/v1` is appended to `CODE_REVIEW_URL` if missing. Not supported yet (PMAT-276): model ids with a real
+`/` off OpenRouter (e.g. vLLM's `meta-llama/Meta-Llama-3-8B-Instruct`) and base URLs that must not end in
+`/v1` (e.g. `.../v1beta/openai`); both end in a `404` that names the cause. Every endpoint is called through LangChain's
 `ChatOpenAI`, with the key and URL from `.env` (never a provider-specific variable such as `OPENAI_API_KEY`).
 
 At startup the agent prints the model and API URL it is using to stderr, so you can confirm which `.env` values took effect. The token is never printed.

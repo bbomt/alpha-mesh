@@ -70,10 +70,11 @@ def _to_response(message: AIMessage) -> ChatResponse:
 class LangChainLLM:
     """The real model client: chat(messages, tools) through a LangChain chat model."""
 
-    def __init__(self, chat_model, model: str, api_host: str) -> None:
+    def __init__(self, chat_model, model: str, api_host: str, not_found: str | None = None) -> None:
         self._chat_model = chat_model
         self._model = model
         self._api_host = api_host
+        self._not_found = not_found  # set off OpenRouter: a 404 then fails at once with this text
 
     def chat(self, messages: list[dict], tools=None) -> ChatResponse:
         model = self._chat_model.bind_tools(tools, tool_choice="auto") if tools else self._chat_model
@@ -84,6 +85,8 @@ class LangChainLLM:
             except LLMError:
                 raise
             except openai.NotFoundError as e:
+                if self._not_found:
+                    raise LLMError(f"{self._not_found}\n  Provider reply: {e}") from e
                 if tools:
                     raise _NoToolEndpoint(str(e)) from e
                 raise LLMError(f"API returned 404: {e}") from e

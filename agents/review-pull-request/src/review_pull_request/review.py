@@ -27,28 +27,13 @@ from review_pull_request.incremental import (
     build_incremental_diff,
     reviewed_sha,
 )
-from review_pull_request.session import ReviewSession
+from review_pull_request.session import ReviewSession, _safe_url
 from review_pull_request.stage2 import Issue
 from review_pull_request.tools import GitHubFileReader
 
 
 class PostFailed(Exception):
     """GitHub did not accept the review comment."""
-
-
-def _safe_url(url: str) -> str:
-    """URL without userinfo or query string, safe to print."""
-    try:
-        p = urlparse(url)
-    except ValueError:  # e.g. unbalanced IPv6 brackets
-        return "(invalid URL)"
-    if not p.hostname:
-        return "(invalid URL)"
-    try:
-        port = f":{p.port}" if p.port else ""
-    except ValueError:  # malformed port in a hand-edited .env
-        return "(invalid URL)"
-    return f"{p.scheme}://{p.hostname}{port}{p.path}"
 
 
 MAX_LISTED_FILES = 50
