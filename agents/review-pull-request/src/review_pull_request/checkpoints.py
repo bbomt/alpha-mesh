@@ -53,6 +53,8 @@ def lock_thread(thread: str):
     locks = Path.home() / ".mesh" / "locks"
     locks.mkdir(parents=True, exist_ok=True)
     name = hashlib.sha256(thread.encode()).hexdigest()[:16]
+    # The file is never deleted: unlinking it on release would let a third run lock a new file while
+    # a second still holds the old one. One small file per thread is the price.
     f = open(locks / f"review-pull-request-{name}.lock", "a+")
     try:
         fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)

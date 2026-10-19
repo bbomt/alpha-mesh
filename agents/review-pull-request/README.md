@@ -315,6 +315,14 @@ credentials and deletes its thread afterwards:
 RUN_AWS_INTEGRATION=1 uv run pytest tests/test_integration_checkpoints.py -v
 ```
 
+End-to-end check with real models, run by hand (nothing is posted): start a review with model A,
+`kill -9` it once file K is in flight, resume it with model B, and check the resume kept files 1..K-1
+and the report names both models. Output goes to `~/environment/logs/ai/claude/smoke-resume-*/`.
+
+```bash
+scripts/smoke-resume.sh https://github.com/org/repo/pull/123 z-ai/glm-5.3-flash nvidia/nemotron-3.5-lightning:free 3
+```
+
 ## Checkpoint infrastructure (AWS CDK)
 
 Storage for resumable reviews (PMAT-237): every non-dry run saves its progress here (see
