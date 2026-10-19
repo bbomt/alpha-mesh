@@ -84,3 +84,14 @@ GRAPH_FORBIDDEN = CHAT_MODEL_NAMES | {"httpx", "requests", "subprocess", "_inner
 def test_the_graph_reaches_the_model_files_and_github_only_through_what_it_is_given():
     offending = _identifiers(SRC / "graph.py") & GRAPH_FORBIDDEN
     assert not offending, f"graph.py uses {sorted(offending)}"
+
+
+SAVER_NAMES = {"InMemorySaver", "SqliteSaver", "DynamoDBSaver", "langgraph_checkpoint_aws", "checkpoint", "boto3"}
+
+
+def test_only_the_checkpoints_module_builds_a_checkpoint_saver():
+    for module in SRC.rglob("*.py"):
+        if module.name == "checkpoints.py":
+            continue
+        offending = _identifiers(module) & SAVER_NAMES
+        assert not offending, f"{module.name} uses {sorted(offending)}"

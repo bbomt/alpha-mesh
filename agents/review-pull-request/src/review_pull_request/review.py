@@ -8,8 +8,7 @@ import sys
 import time
 from urllib.parse import urlparse
 
-from langgraph.checkpoint.memory import InMemorySaver
-
+from review_pull_request.checkpoints import ThreadBusy, lock_thread, make_checkpointer, thread_id
 from review_pull_request.config import load_config
 from review_pull_request.formatter import _code_span, render_report
 from review_pull_request.git import (
@@ -76,7 +75,7 @@ def _verbose_print(config, *args, **kwargs):
         print(*args, **kwargs, file=sys.stderr, flush=True)
 
 
-def main() -> int:
+def main(argv=None, *, checkpointer=None) -> int:
     parser = argparse.ArgumentParser(
         description="review-pull-request — LLM-powered code review with full codebase context",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -87,6 +86,9 @@ Examples:
   mesh review-pull-request https://github.com/org/repo/pull/123 --dry-run
   mesh review-pull-request https://github.com/org/repo/pull/123 --no-post-comment
   mesh review-pull-request https://github.com/org/repo/pull/123 --since-last-review
+  mesh review-pull-request https://github.com/org/repo/pull/123 --force-rerun
+
+Rerunning the same command after a failure resumes from the file it stopped at.
 """,
     )
     parser.add_argument(
@@ -151,7 +153,13 @@ Examples:
         ),
     )
 
-    args = parser.parse_args()
+    parser.add_argument(
+        "--force-rerun",
+        action="store_true",
+        help="Discard the saved progress of this review (same PR, commit and mode) and start again",
+    )
+
+    args = parser.parse_args(argv)
 
     config = load_config(args)
     print(
@@ -216,6 +224,8 @@ Examples:
     current_step = "review"
     incomplete_files: list[str] = []
     prior_review_exists = False
+    run_lock = None
+    kept = ""
     try:
         # ── Incremental diff (--since-last-review) ──────────────────────────
         if args.since_last_review and not args.dry_run:
@@ -354,6 +364,8 @@ Examples:
                 missing=missing,
                 listing_failed=session.listing_failed,
                 symlinks=repo_symlinks,
+                overview_model=state["overview_model"],
+                file_models={r["file_path"]: r["model"] for r in results},
             )
 
         def publish(report: str) -> None:
@@ -364,12 +376,43 @@ Examples:
                 if not post_comment(report, args.pr_url, config):
                     raise PostFailed()
 
-        graph = build_review_graph(InMemorySaver())
-        run_config = {"configurable": {"thread_id": f"{owner}/{repo}#{pr_number}:{head_sha}"}}
+        mode = f"since-{incremental_info['base_sha']}" if incremental_info else "full"
+        thread = thread_id(owner, repo, pr_number, head_sha, mode, config.exclusions)
+        if not args.dry_run:
+            try:
+                run_lock = lock_thread(thread)
+            except ThreadBusy as e:
+                print(f"ERROR: {e}", file=sys.stderr)
+                return 1
+        if checkpointer is None:
+            checkpointer = make_checkpointer(dry_run=args.dry_run)
+        graph = build_review_graph(checkpointer)
+        run_config = {"configurable": {"thread_id": thread}}
+        if args.force_rerun:
+            checkpointer.delete_thread(thread)
+        state = graph.get_state(run_config)
+        if state.values and not state.next:
+            print(f"Already completed (thread {thread}): printing the stored report, posting nothing.\n"
+                  "  Use --force-rerun to review this commit again.", file=sys.stderr)
+            if not args.no_output:
+                print(state.values["report"])
+            return 1 if any(r["incomplete"] for r in state.values["results"].values()) else 0
+        if state.values:
+            done = [f for f in state.values["files"] if f in state.values["results"]]
+            todo = [f for f in state.values["files"] if f not in state.values["results"]]
+            print(f"Resuming: {len(done)} file(s) from checkpoint, {len(todo)} to review (thread {thread})\n"
+                  f"  From checkpoint: {', '.join(done) or '(none)'}\n"
+                  f"  To review now: {', '.join(todo) or '(none)'}", file=sys.stderr)
+            graph_input = None
+        else:
+            print(f"Starting review (thread {thread})", file=sys.stderr)
+            graph_input = initial_state(safe)
         context = ReviewContext(session=session, diff=safe, pr_description=pr_desc,
                                 model=config.model, render=render, publish=publish)
         try:
-            graph.invoke(initial_state(safe), run_config, context=context)
+            # sync: each node's checkpoint is saved before the next node starts, so a kill loses
+            # at most the file in flight.
+            graph.invoke(graph_input, run_config, context=context, durability="sync")
         except PostFailed:
             print("ERROR: could not post the review to the PR (see warning above).", file=sys.stderr)
             return 1
@@ -377,6 +420,9 @@ Examples:
             state = graph.get_state(run_config)
             pending = next_file(state.values) if "review_next_file" in state.next else None
             current_step = pending or "overview pass"
+            if state.values.get("overview") and not args.dry_run:
+                kept = (f"  Completed work is kept: overview + {len(state.values['results'])} file(s). "
+                        "Run the same command to resume (--model may name another model).\n")
             raise
 
         elapsed = time.time() - start_time
@@ -401,6 +447,7 @@ Examples:
             f"  model: {config.model}\n"
             f"  api host: {host}\n"
             "  The model API is unusable, so the review was aborted and nothing was posted.\n"
+            f"{kept}"
             "  Check CODE_REVIEW_MODEL / CODE_REVIEW_URL / CODE_REVIEW_TOKEN in .env.",
             file=sys.stderr,
         )
@@ -414,6 +461,8 @@ Examples:
         config.read_cache.clear()
         config.read_cache_bytes = 0
         github_reader.close()
+        if run_lock:
+            run_lock.close()
 
 
 if __name__ == "__main__":

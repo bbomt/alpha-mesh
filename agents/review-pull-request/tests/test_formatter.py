@@ -237,3 +237,32 @@ def test_symlinks_in_the_repository_are_warned_about():
 
     assert "Symlinks" in body and "`docs/link.md`" in body
     assert "Symlinks" not in plain and "Paths not found" not in plain
+
+
+# --- models in the report (PMAT-237 section 7) ---
+
+def test_one_model_keeps_the_singular_header_and_names_it_on_overview_and_files():
+    body = render_report("ov", [], summaries=[("a.py", "checks a")], config=MockConfig, model="m/one",
+                         overview_model="m/one", file_models={"a.py": "m/one"})
+
+    assert "> **Model:** `m/one`" in body
+    assert "**Models:**" not in body
+    assert "## Overview\n\n(model: `m/one`)" in body
+    assert "- `a.py` (model: `m/one`) — checks a" in body
+
+
+def test_a_resumed_review_lists_every_model_and_each_files_own():
+    body = render_report("ov", [], summaries=[("a.py", "s1"), ("b.py", "s2")], config=MockConfig,
+                         model="m/new", overview_model="m/old", file_models={"a.py": "m/old", "b.py": "m/new"})
+
+    assert "> **Models:** `m/old` · `m/new`" in body
+    assert "- `a.py` (model: `m/old`) — s1" in body
+    assert "- `b.py` (model: `m/new`) — s2" in body
+    assert "model: `m/old` · `m/new`</sub>" in body
+
+
+def test_a_multi_line_summary_stays_on_its_files_line():
+    body = render_report("ov", [], summaries=[("a.py", "line one\n\n## not a heading")], config=MockConfig,
+                         model="m", file_models={"a.py": "m"})
+
+    assert "- `a.py` (model: `m`) — line one ## not a heading" in body
