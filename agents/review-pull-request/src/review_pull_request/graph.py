@@ -103,7 +103,8 @@ def build_review_graph(checkpointer):
     builder.add_edge(START, "overview")
     builder.add_conditional_edges("overview", after_review, ["review_next_file", "report"])
     # One super-step per file. LangGraph >= 1.2's default recursion_limit is 10007 (it was 25 before),
-    # far above any PR size; test_a_pr_with_many_files_is_reviewed_to_the_end runs 30 files through main().
+    # far above any PR size (pyproject.toml requires langgraph>=1.2.11);
+    # test_a_pr_with_many_files_is_reviewed_to_the_end runs 30 files through main().
     builder.add_conditional_edges("review_next_file", after_review, ["review_next_file", "report"])
     builder.add_edge("report", "post")
     builder.add_edge("post", END)
