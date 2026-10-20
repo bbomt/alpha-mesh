@@ -89,9 +89,3 @@ mesh test-alpha-mesh  # broken into test/test/run-all
 - Everything that reaches the model or reads a file goes through `ReviewSession`
   (see `agents/review-pull-request/DESIGN-PATTERNS.md`). Stages never call the HTTP client or a reader directly.
 - A new input to the model must be added to `agents/review-pull-request/tests/test_canary.py` first.
-- During development, prefer the free models for review passes (`mesh review-pull-request <PR> --model <model>`),
-  alternating between them when one throttles or fails (rerun with the other to resume):
-  - `nvidia/nemotron-3-ultra-550b-a55b:free`
-  - `nvidia/nemotron-3.5-lightning:free`
-
-  Use the paid `.env` model (`CODE_REVIEW_MODEL`, no `--model`) only when asked.
