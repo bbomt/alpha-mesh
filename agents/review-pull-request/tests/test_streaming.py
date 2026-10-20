@@ -75,3 +75,32 @@ def test_the_streamed_run_posts_the_same_report_as_invoke():
     assert rc_stream == rc_invoke == 0
     assert streamed == invoked
     assert "src/a.py" in streamed and "src/b.py" in streamed and "nit" in streamed
+
+
+def test_node_events_arrive_while_the_graph_runs_not_after_it():
+    """Each node's event comes before that node's model call, so progress is live."""
+    from langgraph.checkpoint.memory import InMemorySaver
+
+    from review_pull_request.graph import ReviewContext, build_review_graph, initial_state, run_review
+    from review_pull_request.safe_diff import SafeDiff
+    from review_pull_request.session import ReviewSession
+    from tests.helpers import StubReader
+
+    order = []
+
+    def responder(messages, tools):
+        order.append("model")
+        return _responder(messages, tools)
+
+    config = Config(model="m", api_url="http://x", api_token="secret-token-123")
+    with patch("review_pull_request.session.make_chat_model", chat_model_factory(responder)):
+        session = ReviewSession.create(config, inner_reader=StubReader())
+    diff = SafeDiff.from_raw(DIFF, session.policy)
+    context = ReviewContext(session=session, diff=diff, pr_description="", model="m",
+                            render=lambda state: "report", publish=lambda report: order.append("published"))
+
+    run_review(build_review_graph(InMemorySaver()), initial_state(diff), {"configurable": {"thread_id": "t"}},
+               context, on_node=lambda name: order.append(name))
+
+    assert order == ["overview", "model", "review_next_file", "model", "review_next_file", "model",
+                     "report", "post", "published"]
