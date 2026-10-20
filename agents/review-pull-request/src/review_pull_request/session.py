@@ -15,13 +15,16 @@ import posixpath
 import sys
 from urllib.parse import urlparse
 
+import httpx
 from langchain_openai import ChatOpenAI
 
+from review_pull_request import llm
 from review_pull_request.guard import GuardedLLM, Redactor
 from review_pull_request.llm import DRY_RUN_MODEL, DryRunChatModel, LangChainLLM
 from review_pull_request.policy import PathPolicy, normalise
 from review_pull_request.readers import PolicyFileReader
 from review_pull_request.safe_diff import SafeDiff
+from review_pull_request.watchdog import WatchdogTransport
 
 
 OPENROUTER_HOST = "openrouter.ai"
@@ -76,12 +79,21 @@ def make_chat_model(config, model: str):
 
     Names are `{provider}/{modelname}`: openrouter.ai gets the full name, other hosts get it
     without the `provider/` prefix. Key and URL come from config, never a provider env var.
+    The reply is streamed so a hung call can be told from a slow one (PMAT-236): the watchdog
+    transport and LangChainLLM's retry loop own timeouts and retries, so the SDK never retries.
     """
     if model == DRY_RUN_MODEL:
         return DryRunChatModel()
     model, base_url = _sent(config, model)
-    return ChatOpenAI(model=model, api_key=config.api_token, base_url=base_url,
-                      temperature=0.2, max_retries=2, timeout=120)
+    client = httpx.Client(transport=WatchdogTransport(http_transport()),
+                          timeout=httpx.Timeout(llm.IDLE_TIMEOUT, connect=30))
+    return ChatOpenAI(model=model, api_key=config.api_token, base_url=base_url, temperature=0.2,
+                      streaming=True, max_retries=0, http_client=client)
+
+
+def http_transport() -> httpx.BaseTransport:
+    """The network transport under the watchdog; tests replace it with a scripted one."""
+    return httpx.HTTPTransport()
 
 
 class ReviewSession:

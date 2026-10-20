@@ -165,10 +165,23 @@ On failure it:
 - says how much completed work is kept (`Completed work is kept: overview + N file(s)`)
 - exits with a non-zero code (`1`)
 
-Retries before giving up: the model SDK retries rate limits (`429`), `408`/`409`, server errors (`5xx`),
-timeouts and connection errors (3 attempts, exponential backoff with jitter, honouring `Retry-After`;
-120 s per request). A malformed reply is retried up to 3 times. A `200` reply carrying an error object
-(e.g. `context_length_exceeded`) is not retried: the review stops with the provider's message. A `404` on a call with tools (on
+Retries before giving up (PMAT-236; one retry loop in `llm.py`, the SDK itself never retries).
+Every failed model call is classified:
+
+| Class | What | Attempts |
+|---|---|---|
+| timeout | no reply data for 60 s (hung), or past the call's deadline | 2 |
+| transient | `408`, `429`, `5xx`, connection errors; error objects saying timeout, rate limit, overloaded or temporarily unavailable (e.g. "Upstream idle timeout exceeded") | 6 |
+| credits | `402`, or a credits/quota error (also a `429`, e.g. OpenRouter admission control) | 1: fails at once, "add credits" |
+| permanent | other `4xx` (`400`, `401`, `403`), other error objects (e.g. `context_length_exceeded`) | 1 |
+
+Replies are streamed. Keep-alive padding and `: comment` lines do not count as reply data, so a provider
+that keeps a stalled call open is still cut off. The deadline scales with the prompt: 120 s plus 1 s per
+500 characters, at most 300 s. Waits between attempts are exponential with jitter (about 2, 4, 8 … s,
+capped at 60 s). A `Retry-After` header is honoured, also capped at 60 s. One call stops retrying after
+15 minutes in total. Each retry is logged to stderr, e.g.
+`retrying in 8s (attempt 3/6): transient: provider error: Upstream idle timeout exceeded`.
+A malformed reply (including an empty stream with no finish reason) is retried up to 3 times. A `404` on a call with tools (on
 OpenRouter: no provider that supports tool calls is reachable for the model right now) is retried
 twice **with tools**; there is no fallback without tools, because without `read_file` the review would
 silently be weaker. After the third `404` the error names the model, the host, the provider's reply and the fix

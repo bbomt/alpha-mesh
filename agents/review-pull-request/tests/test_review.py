@@ -650,3 +650,39 @@ def test_a_failed_overview_names_the_overview_as_the_failed_step(capsys):
     _, _, out, _ = _run_main_with_llm_error(capsys)
 
     assert "LLM API call failed during overview pass" in out.err
+
+
+def test_a_transient_model_error_mid_review_is_retried_and_the_run_completes(capsys, monkeypatch):
+    """PMAT-236: a 503 on a file review is retried; the review is posted and the run succeeds."""
+    import httpx
+    import openai
+
+    monkeypatch.setattr("review_pull_request.llm._sleep", lambda s: None)
+    failed = []
+
+    def responder(messages, tools):
+        if tools is None:
+            return MagicMock(content="An overview.", tool_calls=[])
+        if not failed:
+            failed.append(1)
+            raise openai.InternalServerError(
+                "Error code: 503 - upstream unavailable",
+                response=httpx.Response(503, request=httpx.Request("POST", "http://x")), body=None)
+        return MagicMock(content='{"summary": "ok", "issues": []}', tool_calls=[])
+
+    config = Config(model="m", api_url="http://x", api_token=SECRET)
+    with patch("review_pull_request.review.load_config", return_value=config), \
+         patch("review_pull_request.review.parse_pr_url", return_value=("owner", "repo", 42)), \
+         patch("review_pull_request.review.get_pr_info", return_value=_mock_pr_info()), \
+         patch("review_pull_request.review.get_pr_description", return_value=""), \
+         patch("review_pull_request.review.get_diff", return_value=DIFF), \
+         patch("review_pull_request.session.make_chat_model", chat_model_factory(responder)), \
+         patch("review_pull_request.review.post_comment") as mock_post, \
+         patch("subprocess.run", return_value=MagicMock(returncode=0, stdout="ghtoken")):
+        sys.argv = ["review", "https://github.com/owner/repo/pull/42"]
+        rc = main()
+
+    assert failed == [1]
+    assert rc == 0
+    mock_post.assert_called_once()
+    assert "retrying in" in capsys.readouterr().err
