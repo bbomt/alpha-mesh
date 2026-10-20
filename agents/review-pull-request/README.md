@@ -178,8 +178,8 @@ Every failed model call is classified:
 Replies are streamed. Keep-alive padding and `: comment` lines do not count as reply data, so a provider
 that keeps a stalled call open is still cut off. The deadline scales with the prompt: 120 s plus 1 s per
 500 characters, at most 300 s. Waits between attempts are exponential with jitter (about 2, 4, 8 … s,
-capped at 60 s). A `Retry-After` header is honoured, also capped at 60 s. One call stops retrying after
-15 minutes in total. Each retry is logged to stderr, e.g.
+capped at 60 s). A `Retry-After` header is honoured, also capped at 60 s. No retry starts once one call has
+spent 15 minutes in total (the attempt in flight may run past it, up to its deadline). Each retry is logged to stderr, e.g.
 `retrying in 8s (attempt 3/6): transient: provider error: Upstream idle timeout exceeded`.
 A malformed reply (including an empty stream with no finish reason) is retried up to 3 times. A `404` on a call with tools (on
 OpenRouter: no provider that supports tool calls is reachable for the model right now) is retried

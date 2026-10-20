@@ -366,3 +366,12 @@ def test_the_deadline_scales_with_prompt_size_between_its_bounds():
     assert small == llm_module.DEADLINE_MIN
     assert llm_module.DEADLINE_MIN < large < llm_module.DEADLINE_MAX
     assert huge == llm_module.DEADLINE_MAX
+
+
+def test_an_error_object_without_a_message_still_names_the_provider_error(monkeypatch):
+    llm, _ = _llm(monkeypatch, [(200, {"error": {"code": 400, "metadata": {"reason": "bad-input-xyz"}}})])
+
+    with pytest.raises(LLMError) as exc:
+        llm.chat(MESSAGES, None)
+
+    assert "None" not in str(exc.value) and "bad-input-xyz" in str(exc.value)

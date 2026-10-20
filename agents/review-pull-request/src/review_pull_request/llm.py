@@ -50,7 +50,7 @@ DEADLINE_MIN, DEADLINE_MAX = 120, 300  # seconds per call, scaled with the promp
 PROMPT_CHARS_PER_SECOND = 500
 ATTEMPTS = {"timeout": 2, "transient": 6, "malformed": 3, "no_tool_endpoint": 3}  # attempts in total
 BACKOFF_BASE, BACKOFF_CAP = 2, 60     # seconds: 2, 4, 8 ... capped, with equal jitter
-RETRY_BUDGET = 15 * 60                # seconds spent on one call, retries included
+RETRY_BUDGET = 15 * 60                # no retry starts once this is spent (one call can still overrun it by one attempt)
 _sleep = time.sleep
 
 TRANSIENT_STATUS = {408, 429, 500, 502, 503, 504}
@@ -78,6 +78,16 @@ def _watchdog_cause(e: BaseException | None) -> CallTimeout | None:
     return e
 
 
+def _provider_message(e: openai.APIError) -> str:
+    """An error object's text: a bare string as is; without a "message" the SDK only has a generic
+    one, so the error body is added."""
+    if isinstance(e.body, str):
+        return e.body
+    if isinstance(e.body, dict) and not e.body.get("message"):
+        return f"{e.message}: {json.dumps(e.body)}"
+    return e.message
+
+
 def _classify(e: Exception) -> tuple[str, str] | None:
     """(kind, reason) for one failed attempt; None for an exception that is not a model failure."""
     if isinstance(e, (openai.APITimeoutError, httpx.TimeoutException)):
@@ -93,7 +103,7 @@ def _classify(e: Exception) -> tuple[str, str] | None:
         return "transient", f"connection error: {e}"
     if isinstance(e, openai.APIError):  # an error object inside a 200 (streamed) reply
         text = _error_text(e)
-        message = e.body if isinstance(e.body, str) else e.message  # a bare string error has no "message"
+        message = _provider_message(e)
         if e.code == "402" or _CREDITS_TEXT.search(text):
             return "credits", message
         if e.code in {str(s) for s in TRANSIENT_STATUS} or _TRANSIENT_TEXT.search(message):
