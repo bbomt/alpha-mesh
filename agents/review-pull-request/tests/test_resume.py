@@ -284,3 +284,20 @@ def test_a16_second_process_on_a_running_thread_exits(tmp_path):
     finally:
         first.kill()
         first.communicate(timeout=30)
+
+
+# --- The diff changed under the same thread (e.g. the PR was retargeted to another base) ------------
+
+def test_resume_refuses_when_the_diff_no_longer_matches_the_saved_files(tmp_path):
+    r = Review(tmp_path)
+    r.kill_while_hung("src/f3.py")
+    (tmp_path / "diff.txt").write_text(make_diff(["src/f1.py", "src/f2.py", "src/f5.py"]))
+    before = len(r.calls())
+
+    resumed = r.run()
+
+    assert resumed.returncode == 1
+    assert "the PR's changed files differ from the saved review" in resumed.stderr
+    assert "--force-rerun" in resumed.stderr
+    assert len(r.calls()) == before  # nothing reviewed
+    assert r.posts() == []

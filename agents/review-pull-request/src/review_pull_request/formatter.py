@@ -147,13 +147,15 @@ def render_report(
                     lines.append(f"**Fix:** {iss.suggestion}\n")
                 lines.append("---\n")
 
-    if file_models:
+    not_done = set(incomplete or [])
+    reviewed = [(p, s) for p, s in summaries if p not in not_done]  # incomplete files are listed below
+    if file_models and reviewed:
         lines.append("\n## Files reviewed\n")
-        for path, summary in summaries[:MAX_LISTED_FILES]:
+        for path, summary in reviewed[:MAX_LISTED_FILES]:
             model_text = _code_span(file_models.get(path, effective_model))
             lines.append(f"- {_code_span(path)} (model: {model_text}) — {' '.join(summary.split())}")
-        if len(summaries) > MAX_LISTED_FILES:
-            lines.append(f"- … and {len(summaries) - MAX_LISTED_FILES} more")
+        if len(reviewed) > MAX_LISTED_FILES:
+            lines.append(f"- … and {len(reviewed) - MAX_LISTED_FILES} more")
         lines.append("")
 
     if incomplete:

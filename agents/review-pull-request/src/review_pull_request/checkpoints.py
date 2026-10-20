@@ -90,6 +90,13 @@ def make_checkpointer(dry_run: bool = False):
         table = os.environ.get(TABLE_ENV) or param("checkpoint-table")
         bucket = os.environ.get(BUCKET_ENV) or param("checkpoint-bucket")
         ttl_days = int(param("checkpoint-ttl-days"))
+        return DynamoDBSaver(
+            table_name=table,
+            region_name=region,
+            ttl_seconds=ttl_days * 86400,
+            enable_checkpoint_compression=True,
+            s3_offload_config={"bucket_name": bucket},
+        )
     except (BotoCoreError, ClientError, ValueError) as e:
         raise CheckpointStoreError(
             f"cannot reach the checkpoint store ({prefix}/* in SSM, {region}): {e}\n"
@@ -97,10 +104,3 @@ def make_checkpointer(dry_run: bool = False):
             "  Check `aws sts get-caller-identity` (`aws sso login` if the session expired),\n"
             "  or use --dry-run, which needs no AWS."
         ) from e
-    return DynamoDBSaver(
-        table_name=table,
-        region_name=region,
-        ttl_seconds=ttl_days * 86400,
-        enable_checkpoint_compression=True,
-        s3_offload_config={"bucket_name": bucket},
-    )

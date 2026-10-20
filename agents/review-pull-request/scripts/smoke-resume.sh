@@ -6,7 +6,7 @@
 # Usage: scripts/smoke-resume.sh <pr-url> <model-a> <model-b> [kill-at-file (default: last)]
 #   The default kills while the last file is in flight, so model B (e.g. a slow free model) reviews
 #   only that file on resume.
-# Env:   SMOKE_TIMEOUT  seconds to wait for each run (default 7200)
+# Env:   SMOKE_TIMEOUT  seconds to wait for each run (default 14400; slow models can take hours)
 set -euo pipefail
 
 if [[ $# -lt 3 ]]; then
@@ -14,7 +14,7 @@ if [[ $# -lt 3 ]]; then
   exit 2
 fi
 PR_URL="$1"; MODEL_A="$2"; MODEL_B="$3"; KILL_AT="${4:-last}"
-TIMEOUT="${SMOKE_TIMEOUT:-7200}"
+TIMEOUT="${SMOKE_TIMEOUT:-14400}"
 if [[ "$KILL_AT" != "last" ]] && ! [[ "$KILL_AT" =~ ^[0-9]+$ && "$KILL_AT" -ge 2 ]]; then
   echo "kill-at-file must be 'last' or a number >= 2, so at least one file is resumed from the checkpoint" >&2
   exit 2
@@ -24,7 +24,9 @@ OUT_DIR="${HOME}/environment/logs/ai/claude/smoke-resume-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$OUT_DIR"
 echo "=== smoke-resume: output in $OUT_DIR"
 
-fail() { echo "FAIL: $*" >&2; exit 1; }
+RUN1=""
+# On failure, also stop run 1 if it is still going: setsid made it a process group of its own.
+fail() { echo "FAIL: $*" >&2; [[ -n "$RUN1" ]] && kill -9 -- "-$RUN1" 2>/dev/null; exit 1; }
 
 # Wait until the file matches the pattern; fail if the pid ends first or the timeout passes.
 wait_for() {

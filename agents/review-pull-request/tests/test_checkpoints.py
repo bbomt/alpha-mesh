@@ -121,3 +121,19 @@ def test_dry_run_needs_no_aws(monkeypatch):
     from langgraph.checkpoint.memory import InMemorySaver
 
     assert isinstance(make_checkpointer(dry_run=True), InMemorySaver)
+
+
+def test_a_saver_that_cannot_be_built_is_the_same_clear_error(monkeypatch):
+    from botocore.exceptions import ClientError
+
+    ssm = _FakeSSM({f"{PREFIX}/checkpoint-table": "tbl", f"{PREFIX}/checkpoint-bucket": "bkt",
+                    f"{PREFIX}/checkpoint-ttl-days": "2"})
+    monkeypatch.setattr("review_pull_request.checkpoints._ssm_client", lambda region: ssm)
+
+    def broken_saver(**kw):
+        raise ClientError({"Error": {"Code": "AccessDenied", "Message": "no"}}, "PutBucketLifecycleConfiguration")
+
+    monkeypatch.setattr("review_pull_request.checkpoints.DynamoDBSaver", broken_saver)
+    with pytest.raises(CheckpointStoreError) as e:
+        make_checkpointer()
+    assert "AccessDenied" in str(e.value) and "--dry-run" in str(e.value)

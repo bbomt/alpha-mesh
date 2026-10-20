@@ -266,3 +266,12 @@ def test_a_multi_line_summary_stays_on_its_files_line():
                          model="m", file_models={"a.py": "m"})
 
     assert "- `a.py` (model: `m`) — line one ## not a heading" in body
+
+
+def test_an_incomplete_file_is_not_listed_as_reviewed():
+    body = render_report("ov", [], summaries=[("a.py", "ok"), ("b.py", "gave up")], config=MockConfig,
+                         model="m", file_models={"a.py": "m", "b.py": "m"}, incomplete=["b.py"])
+
+    files_reviewed = body.split("## Files reviewed")[1].split("\n## ")[0]
+    assert "`a.py`" in files_reviewed
+    assert "b.py" not in files_reviewed
