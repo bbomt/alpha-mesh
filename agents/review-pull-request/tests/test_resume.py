@@ -148,6 +148,7 @@ def test_a5_model_error_fails_noisily_and_resume_keeps_earlier_findings(tmp_path
     assert "LLM API call failed during src/f3.py" in failed.stderr
     assert "Completed work is kept: overview + 2 file(s)" in failed.stderr
     assert r.posts() == []
+    assert "No issues found" not in failed.stdout
     before = len(r.calls())
 
     resumed = r.run()
