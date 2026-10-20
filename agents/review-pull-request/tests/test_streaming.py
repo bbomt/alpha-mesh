@@ -36,7 +36,8 @@ def _run(argv=(), runner=None):
     ]
     if runner:
         patches.append(patch("review_pull_request.review.run_review", runner))
-    with patch("review_pull_request.review.post_comment", return_value=True) as post:
+    with patch("review_pull_request.review.post_comment", return_value=True) as post, \
+         patch.object(sys, "argv", list(sys.argv)):
         for p in patches:
             p.start()
         try:
