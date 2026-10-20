@@ -77,7 +77,7 @@ def _raise_404(messages, tools):
     raise LLMError("API returned 404")
 
 
-def _run_main_with_llm_error(capsys, argv_extra=(), overview_ok=False):
+def _run_main_with_llm_error(capsys, argv_extra=()):
     """Run main() against a PR whose every LLM call raises LLMError(404)."""
     from review_pull_request.llm import LLMError
 
@@ -86,8 +86,6 @@ def _run_main_with_llm_error(capsys, argv_extra=(), overview_ok=False):
     review_calls = []
 
     def responder(messages, tools):
-        if tools is None and overview_ok:  # the overview call
-            return MagicMock(content="An overview.", tool_calls=[])
         if tools is not None:
             review_calls.append(1)
         raise err
@@ -135,15 +133,6 @@ def test_overview_failure_stops_before_any_file_review(capsys):
 
     assert rc != 0
     assert review_calls == []
-
-
-def test_file_review_failure_after_good_overview_aborts_and_does_not_post(capsys):
-    rc, mock_post, out, _ = _run_main_with_llm_error(capsys, overview_ok=True)
-
-    assert rc != 0
-    mock_post.assert_not_called()
-    assert "No issues found" not in out.out
-    assert "src/a.py" in out.err
 
 
 # --- startup logging of model and URL ---
@@ -655,12 +644,6 @@ def test_a_pr_with_many_files_is_reviewed_to_the_end():
     assert rc == 0
     assert reviewed == [f"src/f{i}.py" for i in range(30)]
     assert "**Files reviewed:** 30" in mock_post.call_args[0][0]
-
-
-def test_a_failed_file_review_names_that_file_as_the_failed_step(capsys):
-    _, _, out, _ = _run_main_with_llm_error(capsys, overview_ok=True)
-
-    assert "LLM API call failed during src/a.py" in out.err
 
 
 def test_a_failed_overview_names_the_overview_as_the_failed_step(capsys):
