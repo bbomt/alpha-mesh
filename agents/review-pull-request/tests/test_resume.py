@@ -85,6 +85,7 @@ def file_calls(calls):
 def assert_each_file_once(report: str, files=FILES):
     for f in files:
         assert report.count(f"finding-in-{f}") == 1, f
+        assert report.count(f"- `{f}` (model: ") == 1, f
 
 
 # --- A1, A2, A17: SIGKILL while a file is in flight, resumed at once -----------------------------
@@ -177,6 +178,8 @@ def test_a6_resume_with_a_different_model(tmp_path):
     assert "#### `src/f2.py` · line 1 · model: `fake/model-a`" in report
     assert "#### `src/f3.py` · line 1 · model: `fake/model-b`" in report
     assert "#### `src/f4.py` · line 1 · model: `fake/model-b`" in report
+    assert "- `src/f1.py` (model: `fake/model-a`)\n" in report
+    assert "- `src/f4.py` (model: `fake/model-b`)\n" in report
 
 
 # --- A7, A8: a new head SHA or exclusion policy is a new thread --------------------------------------

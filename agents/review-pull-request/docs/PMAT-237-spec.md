@@ -373,7 +373,7 @@ explains the rare duplicate this allows.
 | `session.py` | Builds the chat model from URL + model name (3.7) and wraps it in `GuardedLLM` as today |
 | `stage1.py`, `stage2.py`, `guard.py` | Unchanged |
 | `checkpoints.py` (new) | `make_checkpointer(config)` (standard `DynamoDBSaver` from SSM/env), `thread_id(...)`, `policy_hash(...)`, the run lock (3.6a) |
-| `formatter.py` | Header lists every model used; each issue names the model that found it (also overview) |
+| `formatter.py` | Header lists every model used; each issue names the model that found it; *Files reviewed* lists each file with its model, no summary (also overview) |
 
 Seams for tests (no test hooks in production code): `main(argv, *, checkpointer=None,
 model_factory=None, github=None)` or an equivalent `run_review(...)` function the CLI calls, so tests
@@ -401,7 +401,7 @@ does not.
 | A3 | Hung call, SIGINT and SIGTERM (parametrised) | As A2; no partial result recorded for K |
 | A4 | Hung **overview**, killed | Nothing posted; resume re-runs overview; no file results to reuse |
 | A5 | Model error on file K (`LLMError`) | Run fails noisily as today (exit 1, nothing posted); resume keeps files 1..K-1 **and their findings** |
-| A6 | Resume with a **different model** | Files 1..K-1 keep their original model; K.. use the new one; header lists both models; each issue names the model that found it |
+| A6 | Resume with a **different model** | Files 1..K-1 keep their original model; K.. use the new one; header lists both models; each issue names the model that found it; *Files reviewed* lists each file with its model |
 | A7 | Head SHA changed between runs | New thread; nothing reused |
 | A8 | Exclusion policy changed between runs | New thread; nothing reused |
 | A10 | Completed and posted thread run again | SKIP: stored report printed, no model call, no post |
@@ -489,8 +489,10 @@ findings in the ticket's changes; up to 10 passes) → DONE with a Jira comment.
 - `--force-rerun` flag.
 - Report header lists every model used (`**Models:**` instead of `**Model:**` when more than one),
   and each issue names the model that found it, e.g. ``#### `src/x.py` · line 42 · model: `z-ai/glm-5.3-flash` ``.
-  The overview names its model too. *Changed in PMAT-266 (owner decision, 2026-10-20):* no list of
-  every file reviewed with its summary; it added noise, and the model is only needed where there is a finding.
+  The overview names its model too. A *Files reviewed* section lists each fully reviewed file with its
+  model, path and model only, e.g. `` - `src/x.py` (model: `z-ai/glm-5.3-flash`) ``; incomplete files are
+  listed under *Not fully reviewed* instead. *Changed in PMAT-266 (owner decision, 2026-10-20):* no
+  per-file summaries in the report; they added noise.
 - AWS credentials (DynamoDB/S3) are required for non-dry runs.
 
 ---

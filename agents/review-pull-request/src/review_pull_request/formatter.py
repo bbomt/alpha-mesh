@@ -64,7 +64,8 @@ def render_report(
         listing_failed: the repo file listing was unavailable, so the model got no path hints.
         symlinks: symlinks in the repo; warned about as a hidden dependency.
         overview_model: the model that wrote the overview (a resumed review may mix models).
-        file_models: file -> the model that reviewed it; every model is listed in the header.
+        file_models: file -> the model that reviewed it; listed under "Files reviewed" (path and model
+            only, no summary) and every model in the header.
         issue_models: the model that found each issue (same order as issues), named on its heading.
     """
     if summaries is None:
@@ -150,6 +151,16 @@ def render_report(
                 if iss.suggestion:
                     lines.append(f"**Fix:** {iss.suggestion}\n")
                 lines.append("---\n")
+
+    not_done = set(incomplete or [])
+    reviewed = [path for path, _ in summaries if path not in not_done]  # incomplete files are listed below
+    if file_models and reviewed:
+        lines.append("\n## Files reviewed\n")
+        for path in reviewed[:MAX_LISTED_FILES]:
+            lines.append(f"- {_code_span(path)} (model: {_code_span(file_models.get(path, effective_model))})")
+        if len(reviewed) > MAX_LISTED_FILES:
+            lines.append(f"- … and {len(reviewed) - MAX_LISTED_FILES} more")
+        lines.append("")
 
     if incomplete:
         lines.append("\n## ⚠️ Not fully reviewed\n")

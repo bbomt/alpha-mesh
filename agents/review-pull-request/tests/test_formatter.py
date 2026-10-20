@@ -268,9 +268,20 @@ def test_a_resumed_review_lists_every_model_and_each_issue_names_its_own():
     assert "model: `m/old` · `m/new`</sub>" in body
 
 
-def test_the_report_has_no_list_of_files_reviewed():
-    body = render_report("ov", [_issue("a.py")], summaries=[("a.py", "summary text")], config=MockConfig,
-                         model="m", file_models={"a.py": "m"}, issue_models=["m"])
+def test_files_reviewed_lists_each_file_with_its_model_and_no_summary():
+    body = render_report("ov", [], summaries=[("a.py", "summary text a"), ("b.py", "summary text b")],
+                         config=MockConfig, model="m/new", file_models={"a.py": "m/old", "b.py": "m/new"})
 
-    assert "## Files reviewed" not in body
+    files = body.split("## Files reviewed\n")[1].split("\n## ")[0]
+    assert "- `a.py` (model: `m/old`)\n" in files
+    assert "- `b.py` (model: `m/new`)\n" in files
     assert "summary text" not in body
+
+
+def test_an_incomplete_file_is_not_listed_as_reviewed():
+    body = render_report("ov", [], summaries=[("a.py", "ok"), ("b.py", "gave up")], config=MockConfig,
+                         model="m", file_models={"a.py": "m", "b.py": "m"}, incomplete=["b.py"])
+
+    files = body.split("## Files reviewed\n")[1].split("\n## ")[0]
+    assert "`a.py`" in files
+    assert "b.py" not in files

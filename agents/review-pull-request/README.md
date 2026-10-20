@@ -196,6 +196,7 @@ Resuming: 5 file(s) from checkpoint, 15 to review (thread review-pull-request:or
 - **Switching model on resume:** `--model` may name another model. Files already reviewed keep their
   result; the report header lists every model used (`**Models:**`), and each issue names the model
   that found it (``#### `src/x.py` · line 42 · model: `z-ai/glm-5.3-flash` ``; the overview names its model too).
+  *Files reviewed* lists each fully reviewed file with its model (path and model only).
 - **Free-model workflow:** review a large PR on a free model; when it throttles after file 5 of 20,
   rerun (same or another free model) until every file is done. Low token cost, more wall-clock time.
 - **A model without tool calls** fails on the first file (the overview is kept); resume with
