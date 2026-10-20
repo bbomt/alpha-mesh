@@ -7,6 +7,11 @@ Taken from the reference project `~/environment/learn/langgraph/checkpoints`.
   problematic with the LangGraph modules. Use `uv` for everything (`uv sync`, `uv run pytest`).
 - **Typed state.** Declare the graph state as a `TypedDict` (a Pydantic `BaseModel` only when it needs
   validation). Keep it to what must survive a crash: it is what a checkpointer saves.
+- **State schema changes are additive.** A checkpointed run saved before the change resumes with the
+  old state, so a new field is missing from it and crashes the resume. Make every new field optional
+  with a default (`NotRequired[...]`, read with `state.get("field", default)`), never rename or retype a
+  field in place (add the new one, keep reading the old), and remove a field only after every
+  checkpoint that could hold it has expired (the checkpoint TTL).
 - **Nodes return only the keys they update.** Treat the state as immutable inside a node; build new
   values (`{"results": {**state["results"], path: result}}`) rather than mutating the old ones.
 - **Node signature:** `def node_name(state: State, runtime: Runtime[Context]) -> dict`.
