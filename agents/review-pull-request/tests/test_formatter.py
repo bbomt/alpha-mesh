@@ -237,3 +237,51 @@ def test_symlinks_in_the_repository_are_warned_about():
 
     assert "Symlinks" in body and "`docs/link.md`" in body
     assert "Symlinks" not in plain and "Paths not found" not in plain
+
+
+# --- models in the report (PMAT-237 section 7) ---
+
+def _issue(file, line=3):
+    return Issue(file=file, line=line, severity="medium", comment=f"problem in {file}", suggestion="")
+
+
+def test_one_model_keeps_the_singular_header_and_names_it_on_overview_and_issues():
+    issue = _issue("a.py")
+    body = render_report("ov", [issue], summaries=[("a.py", "checks a")], config=MockConfig, model="m/one",
+                         overview_model="m/one", file_models={"a.py": "m/one"}, issue_models=["m/one"])
+
+    assert "> **Model:** `m/one`" in body
+    assert "**Models:**" not in body
+    assert "## Overview\n\n(model: `m/one`)" in body
+    assert "#### `a.py` · line 3 · model: `m/one`" in body
+
+
+def test_a_resumed_review_lists_every_model_and_each_issue_names_its_own():
+    issues = [_issue("b.py"), _issue("a.py")]
+    body = render_report("ov", issues, summaries=[("a.py", "s1"), ("b.py", "s2")], config=MockConfig,
+                         model="m/new", overview_model="m/old", file_models={"a.py": "m/old", "b.py": "m/new"},
+                         issue_models=["m/new", "m/old"])
+
+    assert "> **Models:** `m/old` · `m/new`" in body
+    assert "#### `a.py` · line 3 · model: `m/old`" in body  # issues are sorted; each keeps its model
+    assert "#### `b.py` · line 3 · model: `m/new`" in body
+    assert "model: `m/old` · `m/new`</sub>" in body
+
+
+def test_files_reviewed_lists_each_file_with_its_model_and_no_summary():
+    body = render_report("ov", [], summaries=[("a.py", "summary text a"), ("b.py", "summary text b")],
+                         config=MockConfig, model="m/new", file_models={"a.py": "m/old", "b.py": "m/new"})
+
+    files = body.split("## Files reviewed\n")[1].split("\n## ")[0]
+    assert "- `a.py` (model: `m/old`)\n" in files
+    assert "- `b.py` (model: `m/new`)\n" in files
+    assert "summary text" not in body
+
+
+def test_an_incomplete_file_is_not_listed_as_reviewed():
+    body = render_report("ov", [], summaries=[("a.py", "ok"), ("b.py", "gave up")], config=MockConfig,
+                         model="m", file_models={"a.py": "m", "b.py": "m"}, incomplete=["b.py"])
+
+    files = body.split("## Files reviewed\n")[1].split("\n## ")[0]
+    assert "`a.py`" in files
+    assert "b.py" not in files

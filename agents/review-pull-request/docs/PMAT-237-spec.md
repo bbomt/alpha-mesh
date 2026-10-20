@@ -80,6 +80,8 @@ this small; a LangGraph agent subgraph for the per-file review can come later if
 ### 3.2 Checkpoints and what they may contain (security)
 
 A checkpoint is written after each node: `overview`, each `review_next_file` step, `report`, `post`.
+It is saved synchronously (`graph.invoke(..., durability="sync")`), before the next node starts, so a
+kill loses at most the file in flight.
 Inside one file's review nothing is checkpointed. A file whose review was in flight when the run died
 has no result and is reviewed again. A half-finished file is never reported as reviewed.
 
@@ -165,6 +167,14 @@ The CLI reads `graph.get_state(config)`, as the reference `invoke_thread_with_re
   the incomplete files is a possible later feature (PMAT-271, `--retry-incomplete-files`).
 - `--force-rerun` discards the thread (`checkpointer.delete_thread(thread_id)`) and starts, whatever
   its state: the way to review the same commit again after it finished (e.g. it had incomplete files).
+- **Changed file list (added in PMAT-266 review):** before RESUME or SKIP, the CLI compares the saved `files`
+  with the current diff's files. If they differ (the same head SHA can give another diff when the PR
+  is retargeted or its base rewritten), it prints `ERROR: the PR's changed files differ from the saved
+  review` with the `--force-rerun` hint and exits 1, reviewing nothing. Without it, a file gone from
+  the diff made every resume fail, and a finished thread printed a report for the old diff.
+- **Known limitation (owner decision, 2026-10-20):** only the file list is compared, not the diff
+  content. A retarget that keeps the same files but changes their diffs is not detected; PRs are
+  rarely retargeted, and the README says to use `--force-rerun` after retargeting.
 
 ### 3.6 Posting
 
@@ -189,6 +199,8 @@ A second process on a thread that is already being reviewed must stop, not inter
   a run killed by hand can be resumed at once. No heartbeat, no expiry, nothing in DynamoDB.
 - Limitation: it protects runs on the same machine only. That matches how reviews run (one dev EC2);
   noted in the README.
+- Lock files are never deleted: unlinking on release would let a third run lock a new file while a
+  second still holds the old one. One small file per thread remains.
 
 ### 3.7 Model construction and naming
 
@@ -332,7 +344,10 @@ agents/review-pull-request/
   versions are problematic with these LangGraph modules.
 - Add: `langgraph`, `langchain-core`, `langchain-openai` (PMAT-265); `langgraph-checkpoint-aws`,
   `boto3`; dev: `langgraph-checkpoint-sqlite` (kill tests) (PMAT-266). No `langchain-openrouter` (3.7).
-  Use the versions in the reference `uv.lock` as the floor.
+  Floors are patched versions, not the reference `uv.lock` (PMAT-277, rolled into PMAT-266):
+  `langgraph-checkpoint>=4.1.1` (declared; CVE-2026-48775), `langgraph-checkpoint-aws>=1.2.5`,
+  `boto3>=1.43.114`, dev `langgraph-checkpoint-sqlite>=3.1.1` (CVE-2026-71433, CVE-2025-67644).
+  `pip-audit` of the locked versions found no known advisory (2026-10-19).
 - Remove `httpx` only if nothing else still uses it (`tools.py` / `github.py` do today; keep it).
 
 ### 3.12 Conventions
@@ -358,7 +373,7 @@ explains the rare duplicate this allows.
 | `session.py` | Builds the chat model from URL + model name (3.7) and wraps it in `GuardedLLM` as today |
 | `stage1.py`, `stage2.py`, `guard.py` | Unchanged |
 | `checkpoints.py` (new) | `make_checkpointer(config)` (standard `DynamoDBSaver` from SSM/env), `thread_id(...)`, `policy_hash(...)`, the run lock (3.6a) |
-| `formatter.py` | Header lists every model used; each file's summary line names its model (also overview) |
+| `formatter.py` | Header lists every model used; each issue names the model that found it; *Files reviewed* lists each file with its model, no summary (also overview) |
 
 Seams for tests (no test hooks in production code): `main(argv, *, checkpointer=None,
 model_factory=None, github=None)` or an equivalent `run_review(...)` function the CLI calls, so tests
@@ -386,7 +401,7 @@ does not.
 | A3 | Hung call, SIGINT and SIGTERM (parametrised) | As A2; no partial result recorded for K |
 | A4 | Hung **overview**, killed | Nothing posted; resume re-runs overview; no file results to reuse |
 | A5 | Model error on file K (`LLMError`) | Run fails noisily as today (exit 1, nothing posted); resume keeps files 1..K-1 **and their findings** |
-| A6 | Resume with a **different model** | Files 1..K-1 keep their original model; K.. use the new one; header lists both models; each file's summary names its own model |
+| A6 | Resume with a **different model** | Files 1..K-1 keep their original model; K.. use the new one; header lists both models; each issue names the model that found it; *Files reviewed* lists each file with its model |
 | A7 | Head SHA changed between runs | New thread; nothing reused |
 | A8 | Exclusion policy changed between runs | New thread; nothing reused |
 | A10 | Completed and posted thread run again | SKIP: stored report printed, no model call, no post |
@@ -395,6 +410,7 @@ does not.
 | A14 | Resume console output | Lists files from checkpoint and files reviewed now |
 | A16 | Second process on a thread while the first is running | Exits 1 with "another review is running (pid N)"; first run unaffected |
 | A17 | Run killed by SIGKILL, resumed at once | The OS released the lock; resume proceeds |
+| A23 | The diff's file list changed under the same thread (3.5), mid-run or finished | Rerun refuses: exit 1, `--force-rerun` hint; nothing reviewed, nothing posted, no stored report printed |
 
 ### 5.2 Security (canary, `tests/test_canary.py`)
 
@@ -437,6 +453,12 @@ they shrink or move those bytes but cannot add content that is not in the state.
 - I1: one real run of the graph against the deployed DynamoDB/S3 with a fake model: start, kill,
   resume, then delete the thread (tests clean up after themselves). It also checks that the bucket
   has the saver's `ttl-days` lifecycle rule, with expiry equal to `checkpointTtlDays` (3.10).
+  Opt-in: `RUN_AWS_INTEGRATION=1 uv run pytest tests/test_integration_checkpoints.py`.
+- Real-model smoke check, run by hand (`scripts/smoke-resume.sh <pr-url> <model-a> <model-b>
+  [kill-at-file]`): review with model A, `kill -9` it while file K (default the last) is in flight,
+  resume with model B, and check `Resuming: K-1 file(s) from checkpoint` and both models in the
+  report. Nothing is posted. It covers PMAT-266's "a real review killed mid-run resumes" with real
+  models, which the fakes cannot.
 - CDK assertions test (`infra/cdk/test`): table keys, TTL, bucket encryption and public-access block,
   SSM parameters (incl. ttl-days), and no IAM resource that grants access to the table or bucket:
   no `AWS::IAM::ManagedPolicy`, no `AWS::IAM::User`, and no role or policy whose statements name the
@@ -455,7 +477,7 @@ findings in the ticket's changes; up to 10 passes) → DONE with a Jira comment.
 |---|---|---|
 | **PMAT-264 (237a) — Checkpoint infra (CDK)** | `infra/cdk`, `infra/scripts`, `scripts/deploy-dev-from-ec2.sh`, CDK assertion tests, README section | `deploy-dev-from-ec2.sh` deploys; table, bucket and SSM params exist; write probe (3.10) passes with `dev-EC2`; a manual `DynamoDBSaver` put/get works from EC2 |
 | **PMAT-265 (237b) — LangGraph + LangChain models, no behaviour change** | 3.7–3.9, 3.11, 3.12, graph with `InMemorySaver` calling `stage1`/`stage2` unchanged, `LangChainLLM` behind `GuardedLLM`, ported unit and canary tests (C1, C4), `CLAUDE_LANGGRAPH.md` | All existing tests pass. **Old vs new comparison:** run `master` and the new code on the same PR with the same model, once full and once `--since-last-review`. Same files reviewed, same excluded-file notice, same report sections and incomplete marking. Findings text differs between any two runs (the model is not deterministic), so findings are compared by eye and noted in the ticket, not asserted. The four reports are attached to the ticket as the first labelled eval case for PMAT-269 (judge agent), with the by-eye verdict as the expected answer |
-| **PMAT-266 (237c) — Durable checkpoints and resume** | `checkpoints.py`, thread key, start/resume/skip, multi-model header, `--force-rerun`, local run lock (3.6a), results-only state tests (C2, C3, C5), A1–A8, A10, A12–A14, A16, A17, I1, README (resume, `--force-rerun`, free-model workflow, AWS prerequisites, the rare duplicate comment), `.env.example` | Acceptance tests green; a real review killed mid-run resumes from the right file |
+| **PMAT-266 (237c) — Durable checkpoints and resume** | `checkpoints.py`, thread key, start/resume/skip, multi-model header, `--force-rerun`, local run lock (3.6a), results-only state tests (C2, C3, C5), A1–A8, A10, A12–A14, A16, A17, A23, I1, `scripts/smoke-resume.sh`, README (resume, `--force-rerun`, free-model workflow, AWS prerequisites, the rare duplicate comment), `.env.example` | Acceptance tests green; a real review killed mid-run resumes from the right file |
 
 237a and 237b can run in parallel; 237c needs both. (237d, exactly-once posting, was dropped: see 3.6.)
 
@@ -466,8 +488,11 @@ findings in the ticket's changes; up to 10 passes) → DONE with a Jira comment.
 - A rerun of the same command after a failure resumes, and says so.
 - `--force-rerun` flag.
 - Report header lists every model used (`**Models:**` instead of `**Model:**` when more than one),
-  and each file's summary names the model that reviewed it, e.g.
-  `` `src/x.py` (model: `z-ai/glm-5.3-flash`) — summary… ``. The overview names its model too.
+  and each issue names the model that found it, e.g. ``#### `src/x.py` · line 42 · model: `z-ai/glm-5.3-flash` ``.
+  The overview names its model too. A *Files reviewed* section lists each fully reviewed file with its
+  model, path and model only, e.g. `` - `src/x.py` (model: `z-ai/glm-5.3-flash`) ``; incomplete files are
+  listed under *Not fully reviewed* instead. *Changed in PMAT-266 (owner decision, 2026-10-20):* no
+  per-file summaries in the report; they added noise.
 - AWS credentials (DynamoDB/S3) are required for non-dry runs.
 
 ---

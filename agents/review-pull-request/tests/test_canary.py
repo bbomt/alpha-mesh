@@ -245,3 +245,76 @@ def test_the_harness_detects_unusual_header_leaks_when_protection_is_off(shape):
     model = _run(shape + _file_diff("src/app.py", "x = 1"), exclusions=[])
 
     assert CANARY in model.seen[0], "the overview prompt (the diff) should carry the canary"
+
+
+# --- The checkpoint store (spec PMAT-237 3.2, 5.2: C2, C3, C5) -------------------------------------
+# Invariant: excluded content and tokens never reach the checkpoint store, by any path. The store is
+# the SqliteSaver file of tests/fixtures/run_review.py; the fake model echoes every per-file prompt
+# into its summary (RR_ECHO), so anything that reached the model would reach the store too.
+
+STORE_MODEL_TOKEN = "sk-or-v1-0123456789abcdefSTORECANARY"
+STORE_GH_TOKEN = "ghp_STORECANARY0123456789abcdefghijklmnop"
+STORE_SECRETS = (CANARY, STORE_MODEL_TOKEN, STORE_GH_TOKEN)
+
+
+def _store_diff():
+    return (_file_diff(".env", f"TOKEN={CANARY}")
+            + _file_diff("src/app.py", f"KEY = '{STORE_MODEL_TOKEN}'")
+            + _file_diff("src/b.py", f"GH = '{STORE_GH_TOKEN}'"))
+
+
+def _store_text(db) -> str:
+    """Every checkpoint, its metadata and every pending write in the store, as text."""
+    import sqlite3
+
+    con = sqlite3.connect(db)
+    try:
+        parts = []
+        for (table,) in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'"):
+            for row in con.execute(f'SELECT * FROM "{table}"'):
+                parts.extend(v.decode("utf-8", "replace") if isinstance(v, bytes) else str(v) for v in row)
+        return "\n".join(parts)
+    finally:
+        con.close()
+
+
+def _store_review(tmp_path, **env):
+    from tests.test_resume import Review
+
+    r = Review(tmp_path)
+    (tmp_path / "diff.txt").write_text(_store_diff())
+    r.env.update(RR_ECHO="1", RR_TOKEN=STORE_MODEL_TOKEN, RR_GH_TOKEN=STORE_GH_TOKEN, **env)
+    return r, tmp_path / "checkpoints.sqlite"
+
+
+def test_c2_no_secret_reaches_the_checkpoint_store_in_a_full_killed_and_resumed_run(tmp_path):
+    r, db = _store_review(tmp_path)
+
+    r.kill_while_hung("src/b.py")  # src/app.py's result is saved, src/b.py is in flight
+    killed = _store_text(db)
+    assert r.run().returncode == 0  # resume
+    resumed = _store_text(db)
+    assert r.run("--force-rerun").returncode == 0  # a full run from the start
+    full = _store_text(db)
+
+    for stage, text in (("killed", killed), ("resumed", resumed), ("full", full)):
+        assert "src/app.py" in text and "[REDACTED]" in text, f"{stage}: the scan saw no results"
+        for secret in STORE_SECRETS:
+            assert secret not in text, f"{stage}: {secret} is in the checkpoint store"
+
+
+def test_c3_the_store_scan_finds_a_deliberate_leak(tmp_path):
+    r, db = _store_review(tmp_path, RR_LEAK="1")
+
+    assert r.run().returncode == 0
+
+    text = _store_text(db)
+    assert all(secret in text for secret in STORE_SECRETS)
+
+
+def test_c5_the_state_holds_only_the_listed_fields():
+    from review_pull_request.graph import FileResult, ReviewState
+
+    assert set(ReviewState.__annotations__) == {"files", "overview", "overview_model", "results", "report"}
+    assert set(FileResult.__annotations__) == {"file_path", "summary", "issues", "tool_calls_made",
+                                               "incomplete", "missing", "model"}
