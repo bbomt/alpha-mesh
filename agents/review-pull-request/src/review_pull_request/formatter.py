@@ -43,6 +43,7 @@ def render_report(
     symlinks: list[str] | None = None,
     overview_model: str | None = None,
     file_models: dict[str, str] | None = None,
+    issue_models: list[str] | None = None,
 ) -> str:
     """Build a Markdown review report.
 
@@ -63,7 +64,8 @@ def render_report(
         listing_failed: the repo file listing was unavailable, so the model got no path hints.
         symlinks: symlinks in the repo; warned about as a hidden dependency.
         overview_model: the model that wrote the overview (a resumed review may mix models).
-        file_models: file -> the model that reviewed it; with it, each file's summary is listed.
+        file_models: file -> the model that reviewed it; every model is listed in the header.
+        issue_models: the model that found each issue (same order as issues), named on its heading.
     """
     if summaries is None:
         summaries = []
@@ -74,6 +76,7 @@ def render_report(
     file_models = file_models or {}
     models = list(dict.fromkeys(m for m in [overview_model, *file_models.values()] if m)) or [effective_model]
     models_text = " · ".join(_code_span(m) for m in models)
+    model_of = {id(i): m for i, m in zip(issues, issue_models or [])}
 
     if incomplete:
         # No REVIEW_SIGNATURE: a partial review must never become a --since-last-review baseline.
@@ -141,22 +144,12 @@ def render_report(
 
             for iss in sorted(group, key=lambda i: i.file):
                 line_str = f" · line {iss.line}" if iss.line else ""
-                lines.append(f"#### {_code_span(iss.file)}{line_str}\n")
+                model_str = f" · model: {_code_span(model_of[id(iss)])}" if id(iss) in model_of else ""
+                lines.append(f"#### {_code_span(iss.file)}{line_str}{model_str}\n")
                 lines.append(f"**Problem:** {iss.comment}\n")
                 if iss.suggestion:
                     lines.append(f"**Fix:** {iss.suggestion}\n")
                 lines.append("---\n")
-
-    not_done = set(incomplete or [])
-    reviewed = [(p, s) for p, s in summaries if p not in not_done]  # incomplete files are listed below
-    if file_models and reviewed:
-        lines.append("\n## Files reviewed\n")
-        for path, summary in reviewed[:MAX_LISTED_FILES]:
-            model_text = _code_span(file_models.get(path, effective_model))
-            lines.append(f"- {_code_span(path)} (model: {model_text}) — {' '.join(summary.split())}")
-        if len(reviewed) > MAX_LISTED_FILES:
-            lines.append(f"- … and {len(reviewed) - MAX_LISTED_FILES} more")
-        lines.append("")
 
     if incomplete:
         lines.append("\n## ⚠️ Not fully reviewed\n")

@@ -194,8 +194,8 @@ Resuming: 5 file(s) from checkpoint, 15 to review (thread review-pull-request:or
   the exclusion patterns. A new commit, another incremental base or changed exclusions start a new
   review; nothing stale is reused. The model is *not* part of it.
 - **Switching model on resume:** `--model` may name another model. Files already reviewed keep their
-  result; the report header lists every model used (`**Models:**`), and each file under
-  *Files reviewed* names the model that reviewed it (the overview names its model too).
+  result; the report header lists every model used (`**Models:**`), and each issue names the model
+  that found it (``#### `src/x.py` · line 42 · model: `z-ai/glm-5.3-flash` ``; the overview names its model too).
 - **Free-model workflow:** review a large PR on a free model; when it throttles after file 5 of 20,
   rerun (same or another free model) until every file is done. Low token cost, more wall-clock time.
 - **A model without tool calls** fails on the first file (the overview is kept); resume with

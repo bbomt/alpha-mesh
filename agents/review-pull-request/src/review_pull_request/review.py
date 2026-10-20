@@ -354,6 +354,7 @@ Rerunning the same command after a failure resumes from the file it stopped at.
             return render_report(
                 overview=state["overview"],
                 issues=[Issue(**i) for r in results for i in r["issues"]],
+                issue_models=[r["model"] for r in results for _ in r["issues"]],
                 summaries=[(r["file_path"], r["summary"]) for r in results],
                 config=config,
                 model=config.model,
