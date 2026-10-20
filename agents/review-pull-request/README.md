@@ -53,6 +53,30 @@ mesh review-pull-request https://github.com/org/repo/pull/123
 
 ## How It Works
 
+### Why a graph?
+
+A review is a long chain of slow, failure-prone model calls: one overview, then one call (or more)
+per file, then a report and a post. Run as a plain loop, any failure meant starting again from
+file 1 and paying for every call twice. As a LangGraph `StateGraph` each step is a node, and a
+checkpoint of the typed state is saved after every node, so a run that dies resumes at the file it
+stopped at, possibly on another model. The graph also makes the flow explicit: the conditional edge
+after each file decides "next file or report", and nothing outside the state survives a crash by
+accident. The graph runs with `stream_events` (v3), so node events are available while it runs
+(`--verbose` prints `node: <name>`) for per-call timing (PMAT-262) and live progress later.
+
+```mermaid
+flowchart LR
+    S((START)) --> O[overview]
+    O -->|files left| F[review_next_file]
+    O -->|no files| R[report]
+    F -->|files left| F
+    F -->|all reviewed| R
+    R --> P[post] --> E((END))
+```
+
+State (`graph.py` `ReviewState`): `files`, `overview`, `overview_model`, `results` (one entry per
+reviewed file) and `report`. No diff, file contents or prompts are stored.
+
 ### Stage 1 — Overview
 
 The full PR diff is sent to the LLM to produce a high-level narrative of what the PR does. This is used as context in Stage 2.
@@ -224,6 +248,30 @@ Resuming: 5 file(s) from checkpoint, 15 to review (thread review-pull-request:or
   missing paths, the report, model names and counts. No diff, no file contents, no prompts
   (`tests/test_canary.py` scans the store for planted secrets).
 
+### Demo: kill and resume
+
+```bash
+# 1. Start a review and kill it hard while a file is in flight
+mesh review-pull-request https://github.com/org/repo/pull/123 --no-post-comment &
+# wait for "[3/10] reviewing ..." then:
+kill -9 %1
+
+# 2. Run the same command again: finished files come from the checkpoint
+mesh review-pull-request https://github.com/org/repo/pull/123 --no-post-comment
+#   Resuming: 2 file(s) from checkpoint, 8 to review (thread review-pull-request:org/repo#123:...)
+
+# 3. Look at the saved checkpoints (thread id from the "Starting review (thread ...)" line)
+TABLE=$(aws ssm get-parameter --name /pmat/dev/alpha-mesh/review-pull-request/checkpoint-table \
+        --query Parameter.Value --output text)
+aws dynamodb query --table-name "$TABLE" --key-condition-expression "PK = :pk" \
+    --expression-attribute-values '{":pk": {"S": "CHECKPOINT_<thread id>"}}' --query "Items[].SK"
+```
+
+`scripts/smoke-resume.sh` runs the same check end to end with real models (kill, then resume on a
+second model). **Ctrl-C** exits at once with code `130` and the hint to rerun: the graph's nodes run
+on a worker thread that a signal cannot stop, so the run does not wait for the model call in flight
+(that file is reviewed again on resume).
+
 ### Known limitations
 
 - **A hung model call is not timed out.** A provider that keeps the connection open stalls the run
@@ -336,7 +384,10 @@ uv run pytest tests/ -v
 ```
 
 The review runs as a LangGraph graph (`graph.py`: overview → one step per file → report → post),
-calling the stage 1 and stage 2 code unchanged. Conventions: `alpha-mesh/CLAUDE_LANGGRAPH.md`.
+calling the stage 1 and stage 2 code unchanged. `graph.run_review` runs it with `stream_events`
+(v3) instead of `invoke`; `tests/test_streaming.py` checks the node order and that the report is the
+same as with `invoke`, and `tests/test_canary.py` records every stream event to check that no
+excluded content passes through them. Conventions: `alpha-mesh/CLAUDE_LANGGRAPH.md`.
 
 `tests/test_resume.py` runs the CLI in a subprocess (`tests/fixtures/run_review.py`: a `SqliteSaver`
 file, a fake model and fake GitHub), kills it (`SIGKILL`/`SIGINT`/`SIGTERM`, hung model calls) and

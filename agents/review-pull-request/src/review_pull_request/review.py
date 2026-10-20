@@ -4,6 +4,8 @@ mesh review-pull-request <pr_url> [flags]
 """
 
 import argparse
+import os
+import signal
 import sys
 import time
 from urllib.parse import urlparse
@@ -18,7 +20,7 @@ from review_pull_request.git import (
     parse_pr_url,
 )
 from review_pull_request.github import _get_github_token, post_comment
-from review_pull_request.graph import ReviewContext, build_review_graph, initial_state, next_file
+from review_pull_request.graph import ReviewContext, build_review_graph, initial_state, next_file, run_review
 from review_pull_request.llm import DRY_RUN_MODEL, LLMError
 from review_pull_request.incremental import (
     find_last_review_comment,
@@ -73,6 +75,16 @@ def _mock_llm_config(config):
 def _verbose_print(config, *args, **kwargs):
     if config.verbose:
         print(*args, **kwargs, file=sys.stderr, flush=True)
+
+
+def _exit_on_interrupt(signum, frame):
+    """Ctrl-C during the graph run. stream_events runs nodes on a non-daemon worker thread that a
+    signal cannot stop, and LangGraph's cleanup waits for it, so KeyboardInterrupt would hang until
+    the model call in flight ends. Finished nodes are already checkpointed (durability="sync") and
+    the OS releases the run lock, so exit at once."""
+    print("\nInterrupted: completed work is kept. Run the same command to resume.", file=sys.stderr, flush=True)
+    sys.stdout.flush()
+    os._exit(130)
 
 
 def main(argv=None, *, checkpointer=None) -> int:
@@ -418,7 +430,12 @@ Rerunning the same command after a failure resumes from the file it stopped at.
         try:
             # sync: each node's checkpoint is saved before the next node starts, so a kill loses
             # at most the file in flight.
-            graph.invoke(graph_input, run_config, context=context, durability="sync")
+            previous = signal.signal(signal.SIGINT, _exit_on_interrupt)
+            try:
+                run_review(graph, graph_input, run_config, context,
+                           on_node=lambda name: _verbose_print(config, f"  node: {name}"))
+            finally:
+                signal.signal(signal.SIGINT, previous)
         except PostFailed:
             print("ERROR: could not post the review to the PR (see warning above).", file=sys.stderr)
             return 1
