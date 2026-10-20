@@ -392,17 +392,17 @@ Rerunning the same command after a failure resumes from the file it stopped at.
         if args.force_rerun:
             checkpointer.delete_thread(thread)
         state = graph.get_state(run_config)
+        if state.values and state.values["files"] != [c.file_path for c in chunks]:
+            # Same head SHA, other diff: e.g. the PR was retargeted or its base branch rewritten.
+            print(f"ERROR: the PR's changed files differ from the saved review (thread {thread}).\n"
+                  "  Run again with --force-rerun to review the current diff from the start.", file=sys.stderr)
+            return 1
         if state.values and not state.next:
             print(f"Already completed (thread {thread}): printing the stored report, posting nothing.\n"
                   "  Use --force-rerun to review this commit again.", file=sys.stderr)
             if not args.no_output:
                 print(state.values["report"])
             return 1 if any(r["incomplete"] for r in state.values["results"].values()) else 0
-        if state.values and state.values["files"] != [c.file_path for c in chunks]:
-            # Same head SHA, other diff: e.g. the PR was retargeted or its base branch rewritten.
-            print(f"ERROR: the PR's changed files differ from the saved review (thread {thread}).\n"
-                  "  Run again with --force-rerun to review the current diff from the start.", file=sys.stderr)
-            return 1
         if state.values:
             done = [f for f in state.values["files"] if f in state.values["results"]]
             todo = [f for f in state.values["files"] if f not in state.values["results"]]

@@ -204,7 +204,8 @@ Resuming: 5 file(s) from checkpoint, 15 to review (thread review-pull-request:or
 - **The file in flight** when a run died has no result and is reviewed again; a half-finished file is
   never reported.
 - **The PR's files changed under the same commit** (e.g. the PR was retargeted to another base): the
-  resume refuses (`the PR's changed files differ from the saved review`) and asks for `--force-rerun`.
+  rerun refuses, whether the review was mid-run or finished (`the PR's changed files differ from the
+  saved review`), and asks for `--force-rerun`.
   Known limitation: only the list of files is compared, so a retarget that keeps the same files but
   changes their diffs is not detected. After retargeting a PR to another base, run with `--force-rerun`.
 - **Finished reviews:** running a completed review again prints the stored report and posts nothing

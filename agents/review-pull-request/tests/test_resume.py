@@ -303,3 +303,17 @@ def test_resume_refuses_when_the_diff_no_longer_matches_the_saved_files(tmp_path
     assert "--force-rerun" in resumed.stderr
     assert len(r.calls()) == before  # nothing reviewed
     assert r.posts() == []
+
+
+def test_a_completed_review_is_not_skipped_when_the_diff_no_longer_matches(tmp_path):
+    r = Review(tmp_path)
+    assert r.run().returncode == 0
+    (tmp_path / "diff.txt").write_text(make_diff(["src/f1.py", "src/f5.py"]))
+    before = len(r.calls())
+
+    again = r.run()
+
+    assert again.returncode == 1
+    assert "the PR's changed files differ from the saved review" in again.stderr
+    assert "Already completed" not in again.stderr
+    assert len(r.calls()) == before and len(r.posts()) == 1

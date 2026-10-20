@@ -167,11 +167,11 @@ The CLI reads `graph.get_state(config)`, as the reference `invoke_thread_with_re
   the incomplete files is a possible later feature (PMAT-271, `--retry-incomplete-files`).
 - `--force-rerun` discards the thread (`checkpointer.delete_thread(thread_id)`) and starts, whatever
   its state: the way to review the same commit again after it finished (e.g. it had incomplete files).
-- **Changed file list (added in PMAT-266 review):** before RESUME, the CLI compares the saved `files`
+- **Changed file list (added in PMAT-266 review):** before RESUME or SKIP, the CLI compares the saved `files`
   with the current diff's files. If they differ (the same head SHA can give another diff when the PR
   is retargeted or its base rewritten), it prints `ERROR: the PR's changed files differ from the saved
   review` with the `--force-rerun` hint and exits 1, reviewing nothing. Without it, a file gone from
-  the diff made every resume fail.
+  the diff made every resume fail, and a finished thread printed a report for the old diff.
 - **Known limitation (owner decision, 2026-10-20):** only the file list is compared, not the diff
   content. A retarget that keeps the same files but changes their diffs is not detected; PRs are
   rarely retargeted, and the README says to use `--force-rerun` after retargeting.
@@ -410,7 +410,7 @@ does not.
 | A14 | Resume console output | Lists files from checkpoint and files reviewed now |
 | A16 | Second process on a thread while the first is running | Exits 1 with "another review is running (pid N)"; first run unaffected |
 | A17 | Run killed by SIGKILL, resumed at once | The OS released the lock; resume proceeds |
-| A23 | The diff's file list changed under the same thread (3.5) | Resume refuses: exit 1, `--force-rerun` hint; nothing reviewed, nothing posted |
+| A23 | The diff's file list changed under the same thread (3.5), mid-run or finished | Rerun refuses: exit 1, `--force-rerun` hint; nothing reviewed, nothing posted, no stored report printed |
 
 ### 5.2 Security (canary, `tests/test_canary.py`)
 
