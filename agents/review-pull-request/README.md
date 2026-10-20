@@ -224,6 +224,32 @@ Resuming: 5 file(s) from checkpoint, 15 to review (thread review-pull-request:or
   missing paths, the report, model names and counts. No diff, no file contents, no prompts
   (`tests/test_canary.py` scans the store for planted secrets).
 
+### Known limitations
+
+- **A hung model call is not timed out.** A provider that keeps the connection open stalls the run
+  indefinitely; kill it (`kill -9` is fine) and rerun to resume. A per-call deadline is PMAT-236.
+- **One machine only.** The run lock (`~/.mesh/locks/`) does not stop a run of the same review on another machine.
+- **A rare duplicate comment** when a run is killed between posting and saving that it posted; delete
+  the extra comment by hand.
+- **Retargeted PRs:** a rerun compares only the list of changed files with the saved review, so a
+  retarget that keeps the same files but changes their diffs is not detected. Use `--force-rerun` after
+  retargeting a PR to another base.
+- **A new commit re-reviews every file.** Results are not reused for files unchanged between two head
+  commits; `--since-last-review` is the way to review only new changes.
+- **Incomplete files are not retried.** A finished review stays finished; `--force-rerun` reviews the
+  commit again from scratch (retrying only incomplete files is PMAT-271).
+- **A lost "not fully reviewed" warning:** if a run is killed after the report is built but before it
+  is posted, the resume posts the report (which still lists incomplete files) but does not print the
+  warning on stderr and exits 0 instead of 1.
+- **AWS credentials must stay valid for the whole run.** If the SSO session expires mid-run, the next
+  checkpoint write fails and the run stops; `aws sso login`, then rerun to resume.
+- **Saved progress expires** after `checkpointTtlDays` (default 2 days); the next run starts fresh.
+- **The checkpoint secret scan runs on SQLite only.** `tests/test_canary.py` scans a `SqliteSaver` store, not
+  the real DynamoDB table and S3 bucket; their compression and S3 offload store the same bytes
+  (accepted residual risk, spec 5.2).
+- **Model naming:** model ids with a real `/` off OpenRouter, and base URLs that must not end in `/v1`,
+  are not supported (PMAT-276, see [Environment Variables](#environment-variables-env)).
+
 ## --since-last-review (Incremental Mode)
 
 When iterating on a PR, re-running a full review after each fix is slow and noisy — it re-flags issues you already addressed. The `--since-last-review` flag solves this:
