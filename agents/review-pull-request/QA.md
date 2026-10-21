@@ -81,7 +81,7 @@ Each entry: date, PR and pass, model, what the review said, why it is wrong or w
 
 ## Summary across both PRs (2026-10-20 to 21)
 
-Of 21 HIGH or MEDIUM findings over 7 passes, 2 were real, both MEDIUM, and both were fixed. All 8 HIGH
+Of 21 HIGH or MEDIUM findings over 8 passes, 2 were real, both MEDIUM, and both were fixed. All 8 HIGH
 findings were false or not issues. Incremental passes converged to 0; full reviews never did. The
 review-loop stop rule therefore counts only *confirmed* HIGH and MEDIUM findings
 (`CLAUDE_ENGINEERING.md`).
