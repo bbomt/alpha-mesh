@@ -8,11 +8,14 @@ the diff, how to render and publish) comes from the run's ReviewContext, which i
 """
 
 import sys
+import warnings
 from dataclasses import asdict, dataclass
 from typing import Any, Callable, TypedDict
 
+from langchain_core._api.beta_decorator import LangChainBetaWarning
 from langgraph.graph import END, START, StateGraph
 from langgraph.runtime import Runtime
+from langgraph.stream.transformers import TasksTransformer
 
 from review_pull_request.safe_diff import SafeDiff
 from review_pull_request.stage1 import run_overview
@@ -109,3 +112,26 @@ def build_review_graph(checkpointer):
     builder.add_edge("report", "post")
     builder.add_edge("post", END)
     return builder.compile(checkpointer=checkpointer)
+
+
+# Node start/result events (run.tasks); v3 registers values, messages, lifecycle and subgraphs itself.
+STREAM_TRANSFORMERS = (TasksTransformer,)
+
+
+def run_review(graph, graph_input, run_config, context: ReviewContext,
+               on_node: Callable[[str], None]) -> dict | None:
+    """Run the graph like graph.invoke(..., durability="sync"), streaming its events (PMAT-278).
+
+    Same start (input) / resume (None) and checkpoints; a node's exception propagates as with
+    invoke. on_node(name) is called as each node starts. Only node names leave this function:
+    event payloads hold state and model output (including what the model was shown via read_file),
+    so they are never printed or logged.
+    """
+    with warnings.catch_warnings():  # v3 is chosen knowingly (PMAT-278); its beta notice is noise
+        warnings.simplefilter("ignore", LangChainBetaWarning)
+        run = graph.stream_events(graph_input, run_config, version="v3", context=context,
+                                  durability="sync", transformers=list(STREAM_TRANSFORMERS))
+    for task in run.tasks:
+        if "result" not in task and "error" not in task:  # a start event
+            on_node(task["name"])
+    return run.output

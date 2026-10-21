@@ -318,3 +318,60 @@ def test_c5_the_state_holds_only_the_listed_fields():
     assert set(ReviewState.__annotations__) == {"files", "overview", "overview_model", "results", "report"}
     assert set(FileResult.__annotations__) == {"file_path", "summary", "issues", "tool_calls_made",
                                                "incomplete", "missing", "model"}
+
+
+# --- PMAT-278: the graph's event stream is a new path out of the run ---------------------------
+
+class _EchoingModel(RecordingModel):
+    """Like RecordingModel, but its file summary repeats every tool result it was shown, so a
+    leak into the model would also reach the state, the report and the stream."""
+
+    def __call__(self, messages, tools):
+        reply = super().__call__(messages, tools)
+        if tools is not None and reply.content:
+            shown = " | ".join(m["content"] for m in messages if m.get("role") == "tool")
+            reply.content = json.dumps({"summary": shown, "issues": []})
+        return reply
+
+
+def _run_recording_stream(capsys, exclusions=None):
+    """A full review with every raw stream event recorded; returns (events as text, CLI output)."""
+    from langgraph.stream._types import StreamTransformer
+
+    from review_pull_request import graph
+
+    events = []
+
+    class Recorder(StreamTransformer):
+        def init(self):
+            return {}
+
+        def process(self, event):
+            events.append(event)
+            return True
+
+    model = _EchoingModel()
+    with patch("review_pull_request.graph.STREAM_TRANSFORMERS", (*graph.STREAM_TRANSFORMERS, Recorder)):
+        _run_with_model(model, _diff_with_secrets(), exclusions=exclusions, extra_argv=["--verbose"])
+    out = capsys.readouterr()
+    return json.dumps(events, default=str), out.out + out.err
+
+
+def _run_with_model(model, diff, extra_argv=(), exclusions=None):
+    with patch("tests.test_canary.RecordingModel", lambda: model):
+        return _run(diff, extra_argv=extra_argv, exclusions=exclusions)
+
+
+def test_canary_never_appears_in_a_stream_event_or_the_cli_output(capsys):
+    events, output = _run_recording_stream(capsys)
+
+    assert '"method": "tasks"' in events and '"method": "messages"' in events, \
+        "the recorder saw no node or model events, so the test proves nothing"
+    assert CANARY not in events
+    assert CANARY not in output
+
+
+def test_the_stream_harness_detects_a_leak_when_protection_is_off(capsys):
+    events, output = _run_recording_stream(capsys, exclusions=[])
+
+    assert CANARY in events
