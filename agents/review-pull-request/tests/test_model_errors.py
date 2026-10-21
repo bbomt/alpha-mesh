@@ -2,17 +2,22 @@
 
 Ported from test_llm.py (PMAT-265): malformed 200 bodies are retried, then become LLMError.
 A 404 on a call with tools is retried with tools, never without them (spec 3.9).
+PMAT-236: transient errors are retried with backoff, credits and permanent errors fail at once,
+and a call that stops sending reply data (or runs past CALL_DEADLINE) is cut off; a slow reply
+still sending data is not.
 """
 
-import functools
 import json
+import threading
+import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import httpx
 import pytest
-from langchain_openai import ChatOpenAI
 
+from review_pull_request import llm as llm_module
 from review_pull_request.config import Config
-from review_pull_request.llm import LLMError
+from review_pull_request.llm import LLMError, _backoff
 from review_pull_request.session import ReviewSession
 from tests.helpers import StubReader
 
@@ -24,8 +29,26 @@ MESSAGES = [{"role": "user", "content": "hi"}]
 
 
 @pytest.fixture(autouse=True)
-def _no_backoff_sleep(monkeypatch):
-    monkeypatch.setattr("review_pull_request.llm.RETRY_BACKOFF", {"multiplier": 0, "max": 0, "jitter": 0})
+def sleeps(monkeypatch):
+    """Backoff sleeps, recorded instead of slept."""
+    slept = []
+    monkeypatch.setattr("review_pull_request.llm._sleep", slept.append)
+    return slept
+
+
+def _sse(body) -> bytes:
+    """A reply as the SSE stream a streaming call receives. A completion becomes one chunk;
+    anything else (an error object, a malformed payload) is sent as a single data event."""
+    choices = body.get("choices") if isinstance(body, dict) else None
+    if not (choices and "message" in choices[0]):
+        return f"data: {json.dumps(body)}\n\ndata: [DONE]\n\n".encode()
+    message = choices[0]["message"]
+    delta = {"role": "assistant", "content": message.get("content")}
+    if message.get("tool_calls"):
+        delta["tool_calls"] = [{"index": i, **tc} for i, tc in enumerate(message["tool_calls"])]
+    chunk = {"id": body["id"], "object": "chat.completion.chunk", "created": 1, "model": body["model"],
+             "choices": [{"index": 0, "delta": delta, "finish_reason": choices[0]["finish_reason"]}]}
+    return f"data: {json.dumps(chunk)}\n\ndata: [DONE]\n\n".encode()
 
 
 def _tool_call_body(arguments: str):
@@ -35,19 +58,23 @@ def _tool_call_body(arguments: str):
 
 
 def _llm(monkeypatch, responses, model="openai/gpt-oss-120b", url="https://openrouter.ai/api"):
-    """The session's review model, its HTTP answered in order by `responses` [(status, body)]."""
+    """The session's review model, its HTTP answered in order by `responses`
+    [(status, body)] or [(status, body, headers)]. A 200 is streamed as SSE."""
     sent = []
     replies = iter(responses)
 
     def handler(request):
         sent.append(json.loads(request.content))
-        status, body = next(replies)
-        content = body if isinstance(body, (str, bytes)) else json.dumps(body)
-        return httpx.Response(status, content=content,
-                              headers={"content-type": "application/json", "retry-after-ms": "1"})
+        status, body, *headers = next(replies)
+        if isinstance(body, bytes):
+            content, kind = body, "text/event-stream"
+        elif status == 200:
+            content, kind = _sse(body), "text/event-stream"
+        else:
+            content, kind = json.dumps(body), "application/json"
+        return httpx.Response(status, content=content, headers={"content-type": kind, **(headers[0] if headers else {})})
 
-    client = httpx.Client(transport=httpx.MockTransport(handler))
-    monkeypatch.setattr("review_pull_request.session.ChatOpenAI", functools.partial(ChatOpenAI, http_client=client))
+    monkeypatch.setattr("review_pull_request.session.http_transport", lambda: httpx.MockTransport(handler))
     config = Config(model=model, api_url=url, api_token="t" * 12)
     return ReviewSession.create(config, inner_reader=StubReader()).review_llm, sent
 
@@ -141,7 +168,7 @@ def test_a_404_off_openrouter_fails_at_once_naming_the_url_and_model_as_sent(mon
     assert len(sent) == 1
 
 
-def test_a_throttled_call_is_retried_by_the_sdk(monkeypatch):
+def test_a_throttled_call_is_retried(monkeypatch):
     llm, sent = _llm(monkeypatch, [(429, {"error": "slow down"}), (200, OK)])
 
     assert llm.chat(MESSAGES, None).content == "ok"
@@ -168,3 +195,196 @@ def test_tool_calls_come_back_as_tool_calls_and_messages_go_out_in_openai_format
     assert [m["role"] for m in body["messages"]] == ["user", "assistant", "tool"]
     assert body["messages"][1]["tool_calls"][0]["id"] == "c0"
     assert body["messages"][2] == {"role": "tool", "tool_call_id": "c0", "content": "file b"}
+
+
+# --- PMAT-236: classification and backoff ----------------------------------------------------
+
+@pytest.mark.parametrize("error", [{"message": "A Timeout Occurred"},
+                                   {"message": "Upstream idle timeout exceeded"},
+                                   {"message": "busy", "code": 408},
+                                   {"message": "Provider is overloaded"}])
+def test_a_transient_error_object_is_retried_and_the_next_attempt_succeeds(monkeypatch, error):
+    llm, sent = _llm(monkeypatch, [(200, {"error": error}), (200, OK)])
+
+    assert llm.chat(MESSAGES, None).content == "ok"
+    assert len(sent) == 2
+
+
+@pytest.mark.parametrize("status", [408, 500, 502, 503, 504])
+def test_transient_http_statuses_are_retried(monkeypatch, status):
+    llm, sent = _llm(monkeypatch, [(status, {"error": {"message": "try later"}}), (200, OK)])
+
+    assert llm.chat(MESSAGES, None).content == "ok"
+    assert len(sent) == 2
+
+
+@pytest.mark.parametrize("header, expected", [({"retry-after": "7"}, 7), ({"retry-after-ms": "1500"}, 1.5),
+                                              ({"retry-after": "500"}, llm_module.BACKOFF_CAP)])
+def test_retry_after_on_a_429_sets_the_delay_capped(monkeypatch, sleeps, header, expected):
+    llm, _ = _llm(monkeypatch, [(429, {"error": {"message": "rate limited"}}, header), (200, OK)])
+
+    llm.chat(MESSAGES, None)
+
+    assert sleeps == [expected]
+
+
+@pytest.mark.parametrize("status, body", [
+    (429, {"error": {"message": "OpenRouter could not verify available credits for this request in time. "
+                                "Retry shortly.", "code": 429,
+                     "metadata": {"limit_source": "openrouter_admission_control"}}}),
+    (402, {"error": {"message": "Insufficient credits. Add more using https://openrouter.ai/credits"}}),
+])
+def test_credits_or_quota_errors_fail_at_once_naming_credits(monkeypatch, status, body):
+    llm, sent = _llm(monkeypatch, [(status, body)] * 6)
+
+    with pytest.raises(LLMError, match="credits"):
+        llm.chat(MESSAGES, None)
+    assert len(sent) == 1
+
+
+def test_an_invalid_key_fails_at_once(monkeypatch):
+    llm, sent = _llm(monkeypatch, [(401, {"error": {"message": "invalid api key"}})] * 6)
+
+    with pytest.raises(LLMError, match="invalid api key"):
+        llm.chat(MESSAGES, None)
+    assert len(sent) == 1
+
+
+def test_a_transient_error_on_every_attempt_gives_up_with_the_provider_text(monkeypatch, sleeps, capsys):
+    llm, sent = _llm(monkeypatch, [(503, {"error": {"message": "no capacity right now"}})] * 10)
+
+    with pytest.raises(LLMError, match="no capacity right now") as exc:
+        llm.chat(MESSAGES, None)
+
+    attempts = llm_module.ATTEMPTS["transient"]
+    assert len(sent) == attempts and len(sleeps) == attempts - 1
+    assert f"after {attempts} attempts" in str(exc.value)
+    err = capsys.readouterr().err
+    assert f"(attempt 2/{attempts})" in err and "retrying in" in err
+
+
+def test_retrying_stops_when_the_retry_budget_is_spent(monkeypatch, sleeps):
+    monkeypatch.setattr("review_pull_request.llm.RETRY_BUDGET", 0.5)
+    llm, sent = _llm(monkeypatch, [(503, {"error": {"message": "busy"}})] * 10)
+
+    with pytest.raises(LLMError, match="retry budget"):
+        llm.chat(MESSAGES, None)
+    assert len(sent) == 1 and sleeps == []
+
+
+def test_backoff_is_exponential_capped_and_jitter_stays_in_bounds():
+    for attempt in range(1, 10):
+        base = min(llm_module.BACKOFF_CAP, llm_module.BACKOFF_BASE * 2 ** (attempt - 1))
+        delays = [_backoff(attempt) for _ in range(200)]
+        assert all(base / 2 <= d <= base for d in delays)
+        assert len(set(delays)) > 1, "no jitter"
+    assert _backoff(1) <= 2 and _backoff(30) <= llm_module.BACKOFF_CAP
+    assert _backoff(1, retry_after=5000) == llm_module.BACKOFF_CAP
+
+
+# --- PMAT-236: idle limit and deadline, over a real local HTTP server --------------------------
+
+class _Trickle(BaseHTTPRequestHandler):
+    """Answers 200 and then trickles `line` every 50 ms until the test ends (or `finish_after` seconds,
+    then completes the reply)."""
+    line = b": OPENROUTER PROCESSING\n\n"
+    stop = threading.Event()
+    finish_after = None
+
+    def do_POST(self):
+        self.rfile.read(int(self.headers["content-length"]))
+        self.send_response(200)
+        self.send_header("content-type", "text/event-stream")
+        self.end_headers()
+        until = time.monotonic() + self.finish_after if self.finish_after else None
+        try:
+            while not self.stop.is_set():
+                if until and time.monotonic() > until:
+                    self.wfile.write(_sse(OK))
+                    return
+                self.wfile.write(self.line)
+                self.wfile.flush()
+                time.sleep(0.05)
+        except OSError:  # the client cut the call off
+            pass
+
+    def log_message(self, *args):
+        pass
+
+
+@pytest.fixture
+def trickle(monkeypatch):
+    """A local server whose replies never finish; yields (handler class, base URL, requests seen)."""
+    seen = []
+
+    class Handler(_Trickle):
+        stop = threading.Event()
+
+        def do_POST(self):
+            seen.append(1)
+            super().do_POST()
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    yield Handler, f"http://127.0.0.1:{server.server_port}", seen
+    Handler.stop.set()
+    server.shutdown()
+
+
+def _local_llm(url):
+    return ReviewSession.create(Config(model="m", api_url=url, api_token="t" * 12),
+                                inner_reader=StubReader()).review_llm
+
+
+def test_keep_alive_padding_without_reply_data_is_cut_off_at_the_idle_limit(monkeypatch, trickle):
+    handler, url, seen = trickle
+    monkeypatch.setattr("review_pull_request.llm.IDLE_TIMEOUT", 0.5)
+
+    started = time.monotonic()
+    with pytest.raises(LLMError, match="no reply data for"):
+        _local_llm(url).chat(MESSAGES, None)
+
+    assert len(seen) == llm_module.ATTEMPTS["timeout"]
+    assert time.monotonic() - started < 5
+
+
+_TOKEN = {"id": "1", "object": "chat.completion.chunk", "created": 1, "model": "m",
+          "choices": [{"index": 0, "delta": {"content": "a"}, "finish_reason": None}]}
+
+
+def test_a_slow_reply_that_keeps_streaming_is_not_cut_off(monkeypatch, trickle):
+    """A slow model still sending tokens gets to finish: only silence (or the overall cap) ends a call."""
+    handler, url, seen = trickle
+    handler.line = f"data: {json.dumps(_TOKEN)}\n\n".encode()
+    handler.finish_after = 2
+    monkeypatch.setattr("review_pull_request.llm.IDLE_TIMEOUT", 0.5)
+
+    reply = _local_llm(url).chat(MESSAGES, None)
+
+    assert reply.content.endswith("ok")
+    assert len(seen) == 1
+
+
+def test_a_reply_still_streaming_at_the_deadline_is_cut_off(monkeypatch, trickle):
+    handler, url, seen = trickle
+    handler.line = f"data: {json.dumps(_TOKEN)}\n\n".encode()  # real tokens, forever
+    monkeypatch.setattr("review_pull_request.llm.IDLE_TIMEOUT", 0.5)
+    monkeypatch.setattr("review_pull_request.llm.CALL_DEADLINE", 1)
+
+    started = time.monotonic()
+    with pytest.raises(LLMError, match="deadline"):
+        _local_llm(url).chat(MESSAGES, None)
+
+    assert len(seen) == llm_module.ATTEMPTS["timeout"]
+    assert time.monotonic() - started < 6
+
+
+
+
+def test_an_error_object_without_a_message_still_names_the_provider_error(monkeypatch):
+    llm, _ = _llm(monkeypatch, [(200, {"error": {"code": 400, "metadata": {"reason": "bad-input-xyz"}}})])
+
+    with pytest.raises(LLMError) as exc:
+        llm.chat(MESSAGES, None)
+
+    assert "None" not in str(exc.value) and "bad-input-xyz" in str(exc.value)

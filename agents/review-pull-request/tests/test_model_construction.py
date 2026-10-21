@@ -32,11 +32,11 @@ def test_v1_is_appended_to_the_base_url_only_if_missing(url, base):
     assert _model(url, "m").openai_api_base == base
 
 
-def test_key_retries_and_timeout_come_from_config_not_provider_env_vars(monkeypatch):
+def test_key_comes_from_config_not_provider_env_vars_and_retries_are_ours(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "wrong-key-from-env")
     model = _model("https://api.minimax.io", "m")
 
     assert model.openai_api_key.get_secret_value() == "secret-token-1"
-    assert model.max_retries == 2
-    assert model.request_timeout == 120
+    assert model.max_retries == 0  # LangChainLLM retries (PMAT-236), the SDK never does
+    assert model.streaming is True  # the idle limit needs reply data as it is generated
     assert model.temperature == 0.2
