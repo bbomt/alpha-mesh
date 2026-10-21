@@ -3,7 +3,8 @@
 Ported from test_llm.py (PMAT-265): malformed 200 bodies are retried, then become LLMError.
 A 404 on a call with tools is retried with tools, never without them (spec 3.9).
 PMAT-236: transient errors are retried with backoff, credits and permanent errors fail at once,
-and a call that stops sending reply data (or runs past its deadline) is cut off.
+and a call that stops sending reply data (or runs past CALL_DEADLINE) is cut off; a slow reply
+still sending data is not.
 """
 
 import json
@@ -284,17 +285,23 @@ def test_backoff_is_exponential_capped_and_jitter_stays_in_bounds():
 # --- PMAT-236: idle limit and deadline, over a real local HTTP server --------------------------
 
 class _Trickle(BaseHTTPRequestHandler):
-    """Answers 200 and then trickles `line` every 50 ms until the test ends."""
+    """Answers 200 and then trickles `line` every 50 ms until the test ends (or `finish_after` seconds,
+    then completes the reply)."""
     line = b": OPENROUTER PROCESSING\n\n"
     stop = threading.Event()
+    finish_after = None
 
     def do_POST(self):
         self.rfile.read(int(self.headers["content-length"]))
         self.send_response(200)
         self.send_header("content-type", "text/event-stream")
         self.end_headers()
+        until = time.monotonic() + self.finish_after if self.finish_after else None
         try:
             while not self.stop.is_set():
+                if until and time.monotonic() > until:
+                    self.wfile.write(_sse(OK))
+                    return
                 self.wfile.write(self.line)
                 self.wfile.flush()
                 time.sleep(0.05)
@@ -341,14 +348,28 @@ def test_keep_alive_padding_without_reply_data_is_cut_off_at_the_idle_limit(monk
     assert time.monotonic() - started < 5
 
 
+_TOKEN = {"id": "1", "object": "chat.completion.chunk", "created": 1, "model": "m",
+          "choices": [{"index": 0, "delta": {"content": "a"}, "finish_reason": None}]}
+
+
+def test_a_slow_reply_that_keeps_streaming_is_not_cut_off(monkeypatch, trickle):
+    """A slow model still sending tokens gets to finish: only silence (or the overall cap) ends a call."""
+    handler, url, seen = trickle
+    handler.line = f"data: {json.dumps(_TOKEN)}\n\n".encode()
+    handler.finish_after = 2
+    monkeypatch.setattr("review_pull_request.llm.IDLE_TIMEOUT", 0.5)
+
+    reply = _local_llm(url).chat(MESSAGES, None)
+
+    assert reply.content.endswith("ok")
+    assert len(seen) == 1
+
+
 def test_a_reply_still_streaming_at_the_deadline_is_cut_off(monkeypatch, trickle):
     handler, url, seen = trickle
-    chunk = {"id": "1", "object": "chat.completion.chunk", "created": 1, "model": "m",
-             "choices": [{"index": 0, "delta": {"content": "a"}, "finish_reason": None}]}
-    handler.line = f"data: {json.dumps(chunk)}\n\n".encode()  # real tokens, forever
+    handler.line = f"data: {json.dumps(_TOKEN)}\n\n".encode()  # real tokens, forever
     monkeypatch.setattr("review_pull_request.llm.IDLE_TIMEOUT", 0.5)
-    monkeypatch.setattr("review_pull_request.llm.DEADLINE_MIN", 1)
-    monkeypatch.setattr("review_pull_request.llm.DEADLINE_MAX", 1)
+    monkeypatch.setattr("review_pull_request.llm.CALL_DEADLINE", 1)
 
     started = time.monotonic()
     with pytest.raises(LLMError, match="deadline"):
@@ -358,14 +379,6 @@ def test_a_reply_still_streaming_at_the_deadline_is_cut_off(monkeypatch, trickle
     assert time.monotonic() - started < 6
 
 
-def test_the_deadline_scales_with_prompt_size_between_its_bounds():
-    small = llm_module._deadline([{"role": "user", "content": "x"}])
-    large = llm_module._deadline([{"role": "user", "content": "x" * 50_000}])
-    huge = llm_module._deadline([{"role": "user", "content": "x" * 10_000_000}])
-
-    assert small == llm_module.DEADLINE_MIN
-    assert llm_module.DEADLINE_MIN < large < llm_module.DEADLINE_MAX
-    assert huge == llm_module.DEADLINE_MAX
 
 
 def test_an_error_object_without_a_message_still_names_the_provider_error(monkeypatch):

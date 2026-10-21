@@ -3,7 +3,7 @@
 session.py builds the chat model (ChatOpenAI for every OpenAI-compatible endpoint, streaming,
 SDK retries off). This module maps today's OpenAI-format message dicts in and a ChatResponse out,
 and owns the retry policy (PMAT-236): every failed attempt is classified in one place, `_classify`.
-  * timeout   : no reply data for IDLE_TIMEOUT, or past the call's deadline: retried once
+  * timeout   : no reply data for IDLE_TIMEOUT, or past CALL_DEADLINE: retried once
   * transient : 408/429/5xx, connection errors, provider error objects saying timeout,
                 rate limit, overloaded or temporarily unavailable: retried with backoff
   * credits   : 402, or a credits/quota error (also a 429): fails at once, waiting cannot fix it
@@ -46,8 +46,7 @@ class ChatResponse:
 
 
 IDLE_TIMEOUT = 60                     # seconds without reply data: the call is hung
-DEADLINE_MIN, DEADLINE_MAX = 120, 300  # seconds per call, scaled with the prompt between these
-PROMPT_CHARS_PER_SECOND = 500
+CALL_DEADLINE = 15 * 60               # seconds per call; a slow reply still sending data gets this long
 ATTEMPTS = {"timeout": 2, "transient": 6, "malformed": 3, "no_tool_endpoint": 3}  # attempts in total
 BACKOFF_BASE, BACKOFF_CAP = 2, 60     # seconds: 2, 4, 8 ... capped, with equal jitter
 RETRY_BUDGET = 15 * 60                # no retry starts once this is spent (one call can still overrun it by one attempt)
@@ -138,12 +137,6 @@ def _backoff(attempt: int, retry_after: float | None = None) -> float:
     return base / 2 + random.uniform(0, base / 2)
 
 
-def _deadline(messages: list[dict]) -> float:
-    """Wall-time limit for one call: a large prompt on a slow provider gets longer, up to DEADLINE_MAX."""
-    chars = len(json.dumps(messages, default=str))
-    return min(DEADLINE_MAX, DEADLINE_MIN + chars // PROMPT_CHARS_PER_SECOND)
-
-
 def _to_response(message: AIMessage) -> ChatResponse:
     if not message.text and not message.tool_calls and not message.response_metadata.get("finish_reason"):
         raise _Malformed("empty reply without a finish_reason (no choices, or the stream was cut short)")
@@ -166,13 +159,12 @@ class LangChainLLM:
 
     def chat(self, messages: list[dict], tools=None) -> ChatResponse:
         model = self._chat_model.bind_tools(tools, tool_choice="auto") if tools else self._chat_model
-        deadline = _deadline(messages)
         started = time.monotonic()
         attempt = 0
         while True:
             attempt += 1
             try:
-                with watching(IDLE_TIMEOUT, deadline):
+                with watching(IDLE_TIMEOUT, CALL_DEADLINE):
                     return _to_response(model.invoke(messages))
             except LLMError:
                 raise

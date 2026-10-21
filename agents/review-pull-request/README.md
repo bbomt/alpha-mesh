@@ -194,16 +194,17 @@ Every failed model call is classified:
 
 | Class | What | Attempts |
 |---|---|---|
-| timeout | no reply data for 60 s (hung), or past the call's deadline | 2 |
+| timeout | no reply data for 60 s (hung), or still running after 15 minutes | 2 |
 | transient | `408`, `429`, `5xx`, connection errors; error objects saying timeout, rate limit, overloaded or temporarily unavailable (e.g. "Upstream idle timeout exceeded") | 6 |
 | credits | `402`, or a credits/quota error (also a `429`, e.g. OpenRouter admission control) | 1: fails at once, "add credits" |
 | permanent | other `4xx` (`400`, `401`, `403`), other error objects (e.g. `context_length_exceeded`) | 1 |
 
 Replies are streamed. Keep-alive padding and `: comment` lines do not count as reply data, so a provider
-that keeps a stalled call open is still cut off. The deadline scales with the prompt: 120 s plus 1 s per
-500 characters, at most 300 s. Waits between attempts are exponential with jitter (about 2, 4, 8 … s,
+that keeps a stalled call open is still cut off. A slow reply that keeps sending data is not cut off
+until the 15-minute per-call deadline (free models can stream for 3 minutes or more). Waits between attempts are exponential with jitter (about 2, 4, 8 … s,
 capped at 60 s). A `Retry-After` header is honoured, also capped at 60 s. No retry starts once one call has
-spent 15 minutes in total (the attempt in flight may run past it, up to its deadline). Each retry is logged to stderr, e.g.
+spent 15 minutes in total (the attempt in flight may run past it, up to its deadline; so a call
+that reaches the deadline is not retried). Each retry is logged to stderr, e.g.
 `retrying in 8s (attempt 3/6): transient: provider error: Upstream idle timeout exceeded`.
 A malformed reply (including an empty stream with no finish reason) is retried up to 3 times. A `404` on a call with tools (on
 OpenRouter: no provider that supports tool calls is reachable for the model right now) is retried
@@ -287,8 +288,6 @@ on a worker thread that a signal cannot stop, so the run does not wait for the m
 
 ### Known limitations
 
-- **A hung model call is not timed out.** A provider that keeps the connection open stalls the run
-  indefinitely; kill it (`kill -9` is fine) and rerun to resume. A per-call deadline is PMAT-236.
 - **One machine only.** The run lock (`~/.mesh/locks/`) does not stop a run of the same review on another machine.
 - **A rare duplicate comment** when a run is killed between posting and saving that it posted; delete
   the extra comment by hand.
