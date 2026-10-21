@@ -1,0 +1,17 @@
+{
+  "enabledPlugins": {"atlassian@claude-plugins-official": true},
+  "hooks": {
+    "SessionStart": [
+      {"hooks": [{"type": "command", "command": "$HOME/environment/pmat/alpha-mesh/agents/orchestrator/smoke/status-hook.sh started"}]}
+    ],
+    "UserPromptSubmit": [
+      {"hooks": [{"type": "command", "command": "$HOME/environment/pmat/alpha-mesh/agents/orchestrator/smoke/status-hook.sh working"}]}
+    ],
+    "Stop": [
+      {"hooks": [{"type": "command", "command": "$HOME/environment/pmat/alpha-mesh/agents/orchestrator/smoke/status-hook.sh idle"}]}
+    ],
+    "Notification": [
+      {"hooks": [{"type": "command", "command": "$HOME/environment/pmat/alpha-mesh/agents/orchestrator/smoke/status-hook.sh waiting"}]}
+    ]
+  }
+}

@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# alpha-mesh/test/test-orchestrator-status-hook
+# Tests for agents/orchestrator/smoke/status-hook.sh (PMAT-281 smoke test)
+
+set -euo pipefail
+
+MESH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+HOOK="$MESH_DIR/agents/orchestrator/smoke/status-hook.sh"
+
+# The hook writes under $HOME, so every run uses a throwaway HOME.
+FAKE_HOME="$(mktemp -d)"
+trap 'rm -rf "$FAKE_HOME"' EXIT
+FILE="$FAKE_HOME/environment/logs/orchestrator/T-1.json"
+
+FAILED=0
+check() {
+  local desc="$1" filter="$2"
+  if jq -e "$filter" "$FILE" > /dev/null; then echo "PASS: $desc"; else echo "FAIL: $desc"; FAILED=1; fi
+}
+hook() { HOME="$FAKE_HOME" ORCH_TICKET=T-1 "$HOOK" "$1"; }
+
+echo '{"session_id":"s-1","cwd":"/wt","transcript_path":"/t.jsonl","hook_event_name":"SessionStart","source":"startup"}' | hook started
+check "SessionStart records the session ID and worktree" '.session_id == "s-1" and .cwd == "/wt" and .state == "started"'
+check "SessionStart keeps the raw hook input" '.session_start_input.source == "startup"'
+
+echo '{"session_id":"s-1","cwd":"/wt","hook_event_name":"UserPromptSubmit"}' | hook working
+echo '{"session_id":"s-1","cwd":"/wt","hook_event_name":"Stop"}' | hook idle
+echo '{"session_id":"s-1","cwd":"/wt","hook_event_name":"Notification","notification_type":"idle_prompt","message":"Claude is waiting for your input"}' | hook waiting
+check "states are kept in order" '[.history[].state] == ["started","working","idle","waiting"]'
+check "notification type is recorded" '.state == "waiting" and .notification_type == "idle_prompt"'
+check "the start input survives later events" '.session_start_input.source == "startup"'
+
+if echo '{}' | HOME="$FAKE_HOME" ORCH_TICKET= "$HOOK" idle 2> /dev/null; then
+  echo "FAIL: a missing ORCH_TICKET is refused"; FAILED=1
+else
+  echo "PASS: a missing ORCH_TICKET is refused"
+fi
+
+exit "$FAILED"
