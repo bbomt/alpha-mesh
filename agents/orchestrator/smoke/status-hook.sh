@@ -11,6 +11,9 @@ file="$dir/$ticket.json"
 mkdir -p "$dir"
 
 input="$(cat)"
+# Hooks can fire at the same moment; the lock keeps each read-modify-write whole.
+exec 9> "$file.lock"
+flock 9
 [ -f "$file" ] || echo '{}' > "$file"
 
 jq --arg state "$state" --arg ticket "$ticket" --arg at "$(date -Is)" --argjson input "$input" '

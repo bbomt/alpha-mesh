@@ -30,6 +30,14 @@ check "states are kept in order" '[.history[].state] == ["started","working","id
 check "notification type is recorded" '.state == "waiting" and .notification_type == "idle_prompt"'
 check "the start input survives later events" '.session_start_input.source == "startup"'
 
+# Hooks of one session can fire at the same moment; no update may be lost.
+rm -f "$FILE"
+for i in $(seq 1 20); do
+  echo "{\"session_id\":\"s-1\",\"cwd\":\"/wt\",\"hook_event_name\":\"Stop\"}" | hook idle &
+done
+wait
+check "20 concurrent hooks keep all 20 history entries" '(.history | length) == 20'
+
 if echo '{}' | HOME="$FAKE_HOME" ORCH_TICKET= "$HOOK" idle 2> /dev/null; then
   echo "FAIL: a missing ORCH_TICKET is refused"; FAILED=1
 else
