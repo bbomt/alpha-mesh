@@ -89,3 +89,6 @@ mesh test-alpha-mesh  # broken into test/test/run-all
 - Everything that reaches the model or reads a file goes through `ReviewSession`
   (see `agents/review-pull-request/DESIGN-PATTERNS.md`). Stages never call the HTTP client or a reader directly.
 - A new input to the model must be added to `agents/review-pull-request/tests/test_canary.py` first.
+- Record false or weak findings from review passes in the "Review-quality log" section of Jira
+  PMAT-269's description (edit the description), not in a repo file, so no branch or PR is needed.
+  `agents/review-pull-request/QA.md` keeps only its first entries.
