@@ -8,8 +8,9 @@ the first prompt) and watches it. The owner may not be watching this tab, so:
 - Start every Jira comment you post with `MESSAGE-FROM-WORKER` as its first line. The team lead takes any
   comment without it as the owner's.
 - When you need the owner's answer, ask on the ticket: post the question as a comment, then add the label
-  `AWAITING-USER-RESPONSE` (keep the existing labels). Then stop and wait. When the owner replies on Jira,
-  the team lead types "The owner replied on Jira …" into this tab; read the reply then.
+  `AWAITING-USER-RESPONSE` (keep the existing labels). Then stop and wait. When the owner comments on Jira,
+  the team lead types "The owner commented on Jira …" into this tab; read their new comments then. The owner
+  may comment at other times too (for example, rejecting a merge); act on those the same way.
 - If the owner answers here in the tab instead, use that answer. Either way, once you have the answer,
   remove only `AWAITING-USER-RESPONSE`.
 - If the owner takes over in this tab (for example, tells you not to post to Jira), do as they say until

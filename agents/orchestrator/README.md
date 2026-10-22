@@ -27,7 +27,7 @@ Each tick, per ticket:
 | Seen | Done |
 | --- | --- |
 | The ticket's tab is missing (reboot, closed tab) | Reopen it and resume the worker (`claude --resume <id>`) in the folder it started in, telling it it was interrupted |
-| `AWAITING-USER-RESPONSE`, and the newest comment is the owner's | Type "The owner replied on Jira …" into the tab, once per reply |
+| A new owner comment (no `MESSAGE-FROM-WORKER` marker), whatever the labels: an answer, a rejected merge, feedback | Type "The owner commented on Jira …" into the tab, once per comment. Comments from before the worker started are not passed on |
 | `AWAITING-MERGE`, and a merged PR has the ticket key in its title | Type "The PR … is merged. Finish the ticket as CLAUDE.md says." once |
 | The ticket is Done after that | Close the tab |
 

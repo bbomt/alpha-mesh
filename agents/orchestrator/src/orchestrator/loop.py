@@ -21,7 +21,7 @@ WORKER_PROMPT = AGENT_DIR / "worker-prompt.md"
 START = "Work on Jira {key}."
 NUDGE = ("You were interrupted (the machine or this tab stopped). Check where you were (git status, the "
          "ticket, your last steps) and carry on, without redoing finished work.")
-REPLY = "The owner replied on Jira {key} (comment {comment}). Read it and carry on."
+REPLY = "The owner commented on Jira {key} (newest comment {comment}). Read their new comments and act on them."
 MERGED = "The PR for Jira {key} is merged. Finish the ticket as CLAUDE.md says."
 
 # Hook states in which the worker sits at its prompt, so typing into the tab is safe.
@@ -63,13 +63,19 @@ def tick(keys: list[str], tickets: dict[str, Ticket], ops: Ops) -> list[str]:
             done.append(f"{key}: tab missing, resumed the worker")
             continue
         t = tickets.get(key)
-        if t is None or s.get("state") not in AT_PROMPT:
+        if t is None:
             continue
-        if ("AWAITING-USER-RESPONSE" in t.labels and t.comment_id and not t.comment_from_worker
-                and t.comment_id != s.get("relayed_comment")):
+        if "relayed_comment" not in s:
+            # First look at this ticket: comments made before the worker started are not news.
+            status.update(key, relayed_comment=t.comment_id)
+            continue
+        if s.get("state") not in AT_PROMPT:
+            continue
+        # Any new owner comment is passed on, whatever the labels: an answer, a rejected merge, feedback.
+        if t.comment_id and not t.comment_from_worker and t.comment_id != s["relayed_comment"]:
             ops.send(key, REPLY.format(key=key, comment=t.comment_id))
             status.update(key, relayed_comment=t.comment_id)
-            done.append(f"{key}: passed on the owner's reply {t.comment_id}")
+            done.append(f"{key}: passed on the owner's comment {t.comment_id}")
         elif "AWAITING-MERGE" in t.labels and not s.get("merge_relayed") and ops.merged(key, s["launch_dir"]):
             ops.send(key, MERGED.format(key=key))
             status.update(key, merge_relayed=True)

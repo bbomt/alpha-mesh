@@ -30,7 +30,7 @@ def running():
     """PMAT-1 started, its worker at its prompt."""
     fake = Fake()
     loop.start("PMAT-1", "/repo", fake.ops())
-    status.update("PMAT-1", state="idle")
+    status.update("PMAT-1", state="idle", relayed_comment=None)  # first look done: no comments yet
     return fake
 
 
@@ -62,6 +62,22 @@ def test_owner_reply_is_passed_on_once(running):
     loop.tick(["PMAT-1"], t, running.ops())
     loop.tick(["PMAT-1"], t, running.ops())
     assert running.sent == [("PMAT-1", loop.REPLY.format(key="PMAT-1", comment="9"))]
+
+
+def test_owner_comment_is_passed_on_whatever_the_labels(running):
+    t = {"PMAT-1": Ticket(labels=["AWAITING-MERGE"], done=False, comment_id="12")}  # e.g. merge rejected
+    loop.tick(["PMAT-1"], t, running.ops())
+    assert running.sent == [("PMAT-1", loop.REPLY.format(key="PMAT-1", comment="12"))]
+
+
+def test_comments_from_before_the_worker_started_are_not_passed_on():
+    fake = Fake()
+    loop.start("PMAT-1", "/repo", fake.ops())
+    t = {"PMAT-1": Ticket(labels=[], done=False, comment_id="5")}
+    loop.tick(["PMAT-1"], t, fake.ops())
+    status.update("PMAT-1", state="idle")
+    loop.tick(["PMAT-1"], t, fake.ops())
+    assert fake.sent == []
 
 
 def test_worker_question_alone_is_not_a_reply(running):
