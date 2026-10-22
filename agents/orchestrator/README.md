@@ -90,7 +90,13 @@ a worker by answering in its tab and telling it not to post to Jira.
 - `src/orchestrator/tmux.py`: the tabs, named by ticket key, in the tmux session the orchestrator runs in.
 - `smoke/`: the hooks (`hooks-settings.json`, `status-hook.sh`) every worker is started with, and the
   smoke test that shaped this design (`smoke/README.md`).
-- Tests: `tests/` (fake tmux, gh and Jira), run by `test/test-orchestrator`.
+- Tests: `tests/`, run by `test/test-orchestrator`.
+  - Unit tests: the decisions, the screen and the CLI, with fake tmux, gh and Jira.
+  - `test_e2e.py`: the real `mesh orchestrate` loop, one check at a time (each check is also a restart), against
+    real tmux on its own server (`-f /dev/null`, so the owner's tabs and config are untouched) and
+    `tests/claude-stub`, a stand-in `claude` that runs the real status hook and logs what is typed into it.
+    Jira and gh are faked. It covers start, passing on a comment, resume after the tab is killed, and
+    warn-then-close.
 
 ## Atlassian login
 

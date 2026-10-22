@@ -31,15 +31,42 @@ def prs(keys: list[str], repo_dir: str) -> dict[str, display.Pr | None]:
                        if f"[{key}]" in p["title"]), None) for key in keys}
 
 
+HELP = f"""examples:
+  mesh orchestrate PMAT-282 PMAT-283   start a worker for each ticket, then keep watching
+  mesh orchestrate                     pick up the running workers (after a restart or reboot)
+  mesh orchestrate --once              one check, then exit
+
+Run it in its own tmux tab, from the repo the workers should start in. Each worker is a Claude session in
+a tab named after its ticket; it works the ticket itself, as CLAUDE.md says. Each check, for each ticket:
+  - its tab is missing (reboot, closed tab)   reopen the tab and resume the same Claude session
+  - you commented on Jira                     type "The owner commented on Jira ..." into the tab
+  - the ticket is Done                        warn in the tab, close it {loop.CLOSE_GRACE.seconds // 60} minutes later unless you type there
+
+Talking to workers: answer a worker's question with a Jira comment, or type in its tab. Worker comments
+start with MESSAGE-FROM-WORKER; any other comment is taken as yours. Tell a worker its PR is merged the
+same way (merges are not watched).
+
+Stopping: Ctrl-C stops only the orchestrator; the workers keep running. Starting it again is safe at any
+time, and only one copy can run.
+
+Files (in ~/environment/logs/orchestrator/):
+  <TICKET>.json   each worker's session, state and what was passed on
+  events.log      every event, as shown under Recent
+
+First run: it prints an Atlassian login link; open it in a fresh browser tab and paste back the URL the
+browser ends on. Full documentation: agents/orchestrator/README.md
+"""
+
 OPS = loop.Ops(windows=tmux.windows, new_window=tmux.new_window, send=tmux.send, kill=tmux.kill)
 
 
 def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(prog="mesh orchestrate", description=__doc__.split("\n\n")[1])
+    p = argparse.ArgumentParser(prog="mesh orchestrate", description=__doc__.split("\n\n")[1], epilog=HELP,
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("tickets", nargs="*", help="Jira keys to start, e.g. PMAT-282")
     p.add_argument("--repo", default=".", help="repo the workers start in (default: current folder)")
-    p.add_argument("--interval", type=int, default=30, help="seconds between ticks (default 30)")
-    p.add_argument("--once", action="store_true", help="run one tick and exit")
+    p.add_argument("--interval", type=int, default=30, help="seconds between checks (default 30)")
+    p.add_argument("--once", action="store_true", help="run one check and exit")
     args = p.parse_args(argv)
     # One team lead at a time: two would both type into the same tabs. The lock goes when the process does.
     status.DIR.mkdir(parents=True, exist_ok=True)

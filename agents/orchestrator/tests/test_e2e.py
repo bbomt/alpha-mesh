@@ -1,0 +1,142 @@
+"""End to end: the real `mesh orchestrate` loop (cli.main, one check per --once, so each check is also a
+restart) against real tmux on its own server, a stand-in `claude` that runs the real status hook, and fake
+Jira and gh. The owner's tmux and Jira are never touched."""
+
+import os
+import shutil
+import subprocess
+import time
+from pathlib import Path
+
+import pytest
+
+from orchestrator import cli, jira, loop, status
+from orchestrator.jira import Ticket
+
+HERE = Path(__file__).parent
+HOOK = HERE.parent / "smoke/status-hook.sh"
+SERVER = f"orch-e2e-{os.getpid()}"
+
+pytestmark = pytest.mark.skipif(shutil.which("tmux") is None, reason="needs tmux")
+
+
+def tmux(*args: str) -> str:
+    return subprocess.run(["tmux", "-L", SERVER, *args], check=True, capture_output=True, text=True).stdout
+
+
+def wait_for(check, what: str, timeout: float = 10):
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        if result := check():
+            return result
+        time.sleep(0.1)
+    raise AssertionError(f"timed out waiting for {what}")
+
+
+@pytest.fixture
+def world(tmp_path, monkeypatch):
+    home, stubs, repo, record = tmp_path / "home", tmp_path / "bin", tmp_path / "repo", tmp_path / "record"
+    for d in (home, stubs, repo, record):
+        d.mkdir()
+    shutil.copy(HERE / "claude-stub", stubs / "claude")
+    (stubs / "claude").chmod(0o755)
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+
+    # A tab's command gets the environment of the process that opens it (the orchestrator), so these go into
+    # this process: the stub first on PATH, a throwaway HOME (where the real hook writes the status files), and
+    # where the stub records what it saw. The server ignores the owner's tmux config (-f /dev/null).
+    for name, value in {"PATH": f"{stubs}:{os.environ['PATH']}", "HOME": str(home),
+                        "E2E_DIR": str(record), "E2E_HOOK": str(HOOK)}.items():
+        monkeypatch.setenv(name, value)
+    env = {k: v for k, v in os.environ.items() if k != "TMUX"}
+    subprocess.run(["tmux", "-L", SERVER, "-f", "/dev/null", "new-session", "-d", "-s", "e2e", "-n", "lead"],
+                   check=True, env=env)
+    socket = tmux("display-message", "-p", "#{socket_path}").strip()
+    pid = tmux("display-message", "-p", "#{pid}").strip()
+    monkeypatch.setenv("TMUX", f"{socket},{pid},0")  # the orchestrator's tmux calls now go to this server
+    monkeypatch.setattr(status, "DIR", home / "environment/logs/orchestrator")
+    monkeypatch.setattr(cli, "prs", lambda keys, repo_dir: {})
+
+    tickets: dict[str, Ticket] = {}
+
+    async def snapshot(keys):
+        return {k: tickets[k] for k in keys if k in tickets}
+
+    monkeypatch.setattr(jira, "snapshot", snapshot)
+    yield {"repo": str(repo), "record": record, "tickets": tickets}
+    subprocess.run(["tmux", "-L", SERVER, "kill-server"], capture_output=True)
+    Path(socket).unlink(missing_ok=True)  # tmux leaves the socket file behind
+
+
+def tabs() -> set[str]:
+    return set(tmux("list-windows", "-F", "#{window_name}").splitlines())
+
+
+def lines(path: Path) -> list[str]:
+    return path.read_text().splitlines() if path.exists() else []
+
+
+def at_prompt(key: str):
+    return lambda: status.read(key).get("state") == "idle"
+
+
+def turns(key: str) -> int:
+    """Finished turns (Stop hooks). Waiting for a new one, not just for `idle`, avoids reading the idle state
+    from before a typed prompt was picked up."""
+    return sum(1 for h in status.read(key).get("history", []) if h["event"] == "Stop")
+
+
+def turn_done(key: str, before: int):
+    return lambda: turns(key) > before and status.read(key).get("state") == "idle"
+
+
+def check(world) -> None:
+    assert cli.main(["--once", "--repo", world["repo"]]) == 0
+
+
+def test_start_comment_resume_and_close_end_to_end(world, monkeypatch):
+    record, tickets = world["record"], world["tickets"]
+    tickets["PMAT-1"] = Ticket(labels=["ALPHA-MESH"], done=False)
+
+    # 1. Start: a tab named after the ticket, running claude with the session ID, name, hooks and worker prompt.
+    assert cli.main(["PMAT-1", "--once", "--repo", world["repo"]]) == 0
+    assert "PMAT-1" in tabs()
+    wait_for(at_prompt("PMAT-1"), "the worker's hooks to report idle")
+    s = status.read("PMAT-1")
+    cwd, argv = wait_for(lambda: lines(record / "PMAT-1.argv"), "the stub to start")[0].split("\t")
+    assert cwd == world["repo"] == s["launch_dir"]
+    assert f"--session-id {s['session_id']}" in argv and "--name PMAT-1" in argv
+    assert f"--settings {loop.HOOKS}" in argv and f"--append-system-prompt-file {loop.WORKER_PROMPT}" in argv
+    assert "Work on Jira PMAT-1." in argv
+    assert s["session_start_input"]["source"] == "startup"  # written by the real hook
+
+    # 2. A new owner comment on Jira is typed into the tab, once.
+    tickets["PMAT-1"] = Ticket(labels=["ALPHA-MESH", "AWAITING-USER-RESPONSE"], done=False, comment_id="9")
+    before = turns("PMAT-1")
+    check(world)
+    check(world)
+    typed = wait_for(lambda: lines(record / "PMAT-1.typed"), "the reply to be typed")
+    assert typed == [loop.REPLY.format(key="PMAT-1", comment="9")]
+    wait_for(turn_done("PMAT-1", before), "the worker to finish its turn")
+
+    # 3. The tab is killed (as by a reboot): the next check resumes the same session from the same folder.
+    tmux("kill-window", "-t", "e2e:PMAT-1")
+    check(world)
+    assert "PMAT-1" in tabs()
+    cwd, argv = wait_for(lambda: lines(record / "PMAT-1.argv")[1:], "the resumed stub to start")[0].split("\t")
+    assert cwd == world["repo"] and f"--resume {s['session_id']}" in argv and "interrupted" in argv
+    wait_for(lambda: status.read("PMAT-1")["session_start_input"]["source"] == "resume", "the resume hook")
+    wait_for(at_prompt("PMAT-1"), "the resumed worker to finish its turn")
+
+    # 4. Done: the tab is warned, then closed (no grace period here), and the ticket is left alone.
+    time.sleep(1.1)  # hook times have one-second precision; keep the resume's turn before the warning
+    monkeypatch.setattr(loop, "CLOSE_GRACE", loop.timedelta(0))
+    tickets["PMAT-1"] = Ticket(labels=["ALPHA-MESH"], done=True)
+    before = turns("PMAT-1")
+    check(world)
+    wait_for(lambda: lines(record / "PMAT-1.typed")[1:] == [loop.CLOSING.format(key="PMAT-1", minutes=0)],
+             "the close warning to be typed")
+    wait_for(turn_done("PMAT-1", before), "the worker to finish its turn")
+    check(world)
+    assert "PMAT-1" not in tabs()
+    assert status.read("PMAT-1")["finished"] is True and status.active() == []

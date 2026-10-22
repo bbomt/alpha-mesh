@@ -72,3 +72,13 @@ def test_in_a_terminal_the_header_counts_down_to_the_next_check(tmp_path, monkey
     out = capsys.readouterr().out
     assert sleeps == [1, 1, 1]
     assert out.index("next check in 3s") < out.index("next check in 2s") < out.index("next check in 1s")
+
+
+def test_help_explains_use_and_does_not_start_anything(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(status, "DIR", tmp_path)
+    with pytest.raises(SystemExit) as done:
+        cli.main(["--help"])
+    out = capsys.readouterr().out
+    assert done.value.code == 0 and list(tmp_path.iterdir()) == []  # no lock, no status files
+    for text in ("examples:", "mesh orchestrate PMAT-282 PMAT-283", "Ctrl-C", "MESSAGE-FROM-WORKER", "events.log"):
+        assert text in out
