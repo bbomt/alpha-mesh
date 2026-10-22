@@ -73,7 +73,7 @@ def render(keys: list[str], statuses: dict[str, dict], tickets: dict[str, Ticket
     head = (f"{len(keys)} worker{'s' if len(keys) != 1 else ''} · checked {now.astimezone():%H:%M:%S} · "
             f"next check in {next_in}s")
     recent = [f"{when.astimezone():%H:%M:%S}  {text[:EVENT_WIDTH]}" for when, text in reversed(events)]
-    sections = [("mesh orchestrate", [(head, paint(head, BOLD))]),
+    sections = [("mesh orchestrate", [(head, paint(head, DIM))]),
                 ("Workers", table if keys else [("(none)", paint("(none)", DIM))]),
                 ("Recent", [(r, paint(r, RED if "failed" in r else DIM)) for r in recent] or [("(nothing yet)", paint("(nothing yet)", DIM))])]
     inner = max(len(plain) for _, lines in sections for plain, _ in lines)

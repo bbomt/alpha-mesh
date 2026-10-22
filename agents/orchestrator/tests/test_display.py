@@ -110,3 +110,8 @@ def test_a_rule_runs_under_the_column_headings():
     assert set(screen[heading + 1].strip("│ ")) == {"─"}
     assert len(screen[heading + 1]) == len(screen[heading])
     assert "PMAT-1" in screen[heading + 2]
+
+
+def test_the_header_line_is_dimmed():
+    screen = render([], {}, {}, {}, set(), [], NOW, next_in=8, grace_minutes=5, color=True)
+    assert f"\033[2m0 workers · checked {NOW.astimezone():%H:%M:%S} · next check in 8s" in screen
