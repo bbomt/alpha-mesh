@@ -34,11 +34,20 @@ Each tick, per ticket:
 It types into a tab only when the worker sits at its prompt (hook state `idle` or `waiting`). Then it
 prints a table: ticket, tab, worker state, Jira status, labels.
 
-**Worker comments start with `MESSAGE-FROM-WORKER`** as the first line. Workers and the owner post from
-the same Jira account, so a comment without the marker is taken as the owner's.
+**Orchestrated workers get a system prompt** (`worker-prompt.md`, passed with `--append-system-prompt-file`
+on every start and resume). It is the only difference from a manual session:
+
+- ask the owner on Jira (a comment, then `AWAITING-USER-RESPONSE`) and wait, taking the answer from Jira or the tab;
+- start every Jira comment with `MESSAGE-FROM-WORKER` (workers and the owner post from the same Jira
+  account, so a comment without the marker is taken as the owner's);
+- work in a sibling worktree `<repo>-<TICKET>`, never in the checkout all workers start from.
+
+Manual sessions ask in the chat only, so manual tickets get no extra Jira comments. The owner can take over
+a worker by answering in its tab and telling it not to post to Jira.
 
 ## Files
 
+- `worker-prompt.md`: the system prompt every orchestrated worker gets.
 - `src/orchestrator/loop.py`: start a worker, one tick, the status table.
 - `src/orchestrator/jira.py`: read-only Jira through the Atlassian MCP server (`https://mcp.atlassian.com/v2/mcp`).
 - `src/orchestrator/status.py`: the per-ticket status files, `~/environment/logs/orchestrator/<KEY>.json`,

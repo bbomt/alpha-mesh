@@ -12,7 +12,11 @@ from typing import Callable
 from orchestrator import status
 from orchestrator.jira import Ticket
 
-HOOKS = Path(__file__).resolve().parents[2] / "smoke/hooks-settings.json"
+AGENT_DIR = Path(__file__).resolve().parents[2]
+HOOKS = AGENT_DIR / "smoke/hooks-settings.json"
+# How an orchestrated worker differs from a manual session (Jira questions, comment marker, worktree);
+# passed on every start and resume, as a system prompt does not survive the process.
+WORKER_PROMPT = AGENT_DIR / "worker-prompt.md"
 
 START = "Work on Jira {key}."
 NUDGE = ("You were interrupted (the machine or this tab stopped). Check where you were (git status, the "
@@ -35,7 +39,8 @@ class Ops:
 
 
 def _claude(key: str, args: str) -> str:
-    return f"ORCH_TICKET={shlex.quote(key)} claude {args} --settings {shlex.quote(str(HOOKS))}"
+    return (f"ORCH_TICKET={shlex.quote(key)} claude {args} --settings {shlex.quote(str(HOOKS))} "
+            f"--append-system-prompt-file {shlex.quote(str(WORKER_PROMPT))}")
 
 
 def start(key: str, repo_dir: str, ops: Ops) -> None:

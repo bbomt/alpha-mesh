@@ -42,6 +42,7 @@ def test_start_saves_the_session_before_opening_the_tab():
     assert (name, cwd, s["launch_dir"]) == ("PMAT-1", "/repo", "/repo")
     assert f"--session-id {s['session_id']}" in cmd and "--name PMAT-1" in cmd
     assert cmd.startswith("ORCH_TICKET=PMAT-1 claude ") and "--settings " in cmd
+    assert f"--append-system-prompt-file {loop.WORKER_PROMPT}" in cmd and loop.WORKER_PROMPT.exists()
     assert "'Work on Jira PMAT-1.'" in cmd
     assert status.active() == ["PMAT-1"]
 
@@ -52,6 +53,7 @@ def test_missing_tab_is_resumed_in_the_launch_folder(running):
     name, cwd, cmd = running.opened[-1]
     assert (name, cwd) == ("PMAT-1", "/repo")
     assert f"--resume {status.read('PMAT-1')['session_id']}" in cmd and "interrupted" in cmd
+    assert f"--append-system-prompt-file {loop.WORKER_PROMPT}" in cmd
     assert out == ["PMAT-1: tab missing, resumed the worker"]
 
 
