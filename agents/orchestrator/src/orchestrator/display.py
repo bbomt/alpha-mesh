@@ -6,7 +6,8 @@ from datetime import datetime
 
 from orchestrator.jira import Ticket
 
-CLEAR = "\033[H\033[2J"
+# Redraw over the old screen (cursor home, clear each line's rest and below) rather than clearing it: no flicker.
+HOME, CLEAR_LINE, CLEAR_BELOW = "\033[H", "\033[K", "\033[J"
 EVENT_WIDTH = 110  # longer events (e.g. an error's repr) are cut, so the boxes stay one screen wide
 RESET, BOLD, DIM, RED, YELLOW, GREEN, BLUE = (
     "\033[0m", "\033[1m", "\033[2m", "\033[31m", "\033[33m", "\033[32m", "\033[34m")
@@ -50,7 +51,7 @@ def worker(s: dict, alive: bool) -> tuple[str, str]:
 
 
 def render(keys: list[str], statuses: dict[str, dict], tickets: dict[str, Ticket], prs: dict[str, Pr | None],
-           alive: set[str], events: list[tuple[datetime, str]], now: datetime, interval: int,
+           alive: set[str], events: list[tuple[datetime, str]], now: datetime, next_in: int,
            grace_minutes: int, color: bool = True) -> str:
     def paint(text: str, code: str) -> str:
         return f"{code}{text}{RESET}" if color and code and text else text
@@ -69,7 +70,7 @@ def render(keys: list[str], statuses: dict[str, dict], tickets: dict[str, Ticket
     table[0] = (table[0][0], paint(table[0][0], DIM))
 
     head = (f"{len(keys)} worker{'s' if len(keys) != 1 else ''} · checked {now.astimezone():%H:%M:%S} · "
-            f"next check in {interval}s")
+            f"next check in {next_in}s")
     recent = [f"{when.astimezone():%H:%M:%S}  {text[:EVENT_WIDTH]}" for when, text in reversed(events)]
     sections = [("mesh orchestrate", [(head, paint(head, BOLD))]),
                 ("Workers", table if keys else [("(none)", paint("(none)", DIM))]),

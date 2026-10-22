@@ -2,6 +2,8 @@
 
 import json
 
+import pytest
+
 from orchestrator import cli, loop, status, tmux
 from orchestrator.display import Pr
 
@@ -14,7 +16,7 @@ def test_a_failing_tick_does_not_stop_the_orchestrator(tmp_path, monkeypatch, ca
 
     monkeypatch.setattr(loop, "tick", broken)
     assert cli.main(["--once"]) == 0
-    assert "Tick failed" in capsys.readouterr().err
+    assert "Tick failed, trying again next tick" in capsys.readouterr().out  # shown under Recent
 
 
 def test_window_names_with_spaces_are_kept_whole(monkeypatch):
@@ -51,3 +53,22 @@ def test_a_second_copy_refuses_to_start(tmp_path, monkeypatch, capsys):
         fcntl.flock(held, fcntl.LOCK_EX)  # the first copy
         assert cli.main(["--once"]) == 1
     assert "already running" in capsys.readouterr().err
+
+
+def test_in_a_terminal_the_header_counts_down_to_the_next_check(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(status, "DIR", tmp_path)
+    monkeypatch.setattr(cli, "OPS", loop.Ops(windows=set, new_window=None, send=None, kill=None))
+    monkeypatch.setattr(cli.sys.stdout, "isatty", lambda: True)
+    sleeps = []
+
+    def sleep(seconds):
+        sleeps.append(seconds)
+        if len(sleeps) == 3:
+            raise KeyboardInterrupt  # stop after one countdown
+
+    monkeypatch.setattr(cli.time, "sleep", sleep)
+    with pytest.raises(KeyboardInterrupt):
+        cli.main(["--interval", "3"])
+    out = capsys.readouterr().out
+    assert sleeps == [1, 1, 1]
+    assert out.index("next check in 3s") < out.index("next check in 2s") < out.index("next check in 1s")

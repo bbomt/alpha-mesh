@@ -41,7 +41,8 @@ is handled on its own: an error on one (a tab closed mid-tick, `gh` offline) is 
 tick, and the others carry on. 
 ### The screen
 
-Redrawn in place each tick, as three boxes (colour when run in a terminal):
+Redrawn in place each tick, as three boxes (colour when run in a terminal; the header counts down to the next
+check each second):
 
 ```
 ┌─ mesh orchestrate ─────────────────────────────────────────────────────────────────────────────┐

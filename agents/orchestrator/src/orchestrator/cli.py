@@ -8,6 +8,7 @@ screen saying what needs the owner.
 import argparse
 import asyncio
 import fcntl
+import functools
 import json
 import subprocess
 import sys
@@ -87,15 +88,27 @@ def main(argv: list[str] | None = None) -> int:
         try:
             for line in loop.tick(keys, tickets, OPS):
                 event(line)
-            screen = display.render(keys, {k: status.read(k) for k in keys}, tickets, found, OPS.windows(),
-                                    list(events), datetime.now(timezone.utc), args.interval,
-                                    loop.CLOSE_GRACE.seconds // 60, color=tty)
-            print((display.CLEAR if tty else "") + screen, flush=True)
         except Exception as e:  # a tab closed mid-tick...: the workers run on, so must the lead
-            print(f"Tick failed, trying again next tick: {e!r}", file=sys.stderr, flush=True)
-        if args.once:
-            return 0
-        time.sleep(args.interval)
+            event(f"Tick failed, trying again next tick: {e!r}")
+        try:
+            draw = functools.partial(display.render, keys, {k: status.read(k) for k in keys}, tickets, found,
+                                     OPS.windows(), list(events), datetime.now(timezone.utc),
+                                     grace_minutes=loop.CLOSE_GRACE.seconds // 60, color=tty)
+        except Exception as e:
+            print(f"Screen failed, trying again next tick: {e!r}", file=sys.stderr, flush=True)
+            draw = None
+        if args.once or not tty:
+            if draw:
+                print(draw(next_in=args.interval), flush=True)
+            if args.once:
+                return 0
+            time.sleep(args.interval)
+            continue
+        for left in range(args.interval, 0, -1):  # in a terminal, the header counts down to the next check
+            if draw:
+                screen = draw(next_in=left).replace("\n", display.CLEAR_LINE + "\n")
+                print(display.HOME + screen + display.CLEAR_LINE + display.CLEAR_BELOW, end="", flush=True)
+            time.sleep(1)
 
 
 if __name__ == "__main__":

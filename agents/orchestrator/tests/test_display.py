@@ -46,7 +46,7 @@ def test_screen_has_a_row_per_worker_and_newest_events_first():
         {"PMAT-282": None, "PMAT-283": Pr(24, "OPEN", "https://github.com/bbomt/alpha-mesh/pull/24")},
         {"PMAT-282", "PMAT-283"},
         [(NOW - timedelta(minutes=5), "older event"), (NOW, "newer event")],
-        NOW, interval=30, grace_minutes=5, color=False).splitlines()
+        NOW, next_in=30, grace_minutes=5, color=False).splitlines()
     cells = [line.strip("│ ").split() for line in screen]
     assert cells.index(["PMAT-282", "working", "1m", "open", "-"]) < \
         cells.index(["PMAT-283", "idle", "1h12m", "open", "https://github.com/bbomt/alpha-mesh/pull/24", "open",
@@ -61,7 +61,7 @@ def test_screen_has_a_row_per_worker_and_newest_events_first():
 
 def test_boxes_line_up_and_long_events_are_cut():
     screen = render(["PMAT-1"], {"PMAT-1": {"state": "idle"}}, {}, {}, {"PMAT-1"}, [(NOW, "x" * 500)],
-                    NOW, interval=30, grace_minutes=5, color=False).splitlines()
+                    NOW, next_in=30, grace_minutes=5, color=False).splitlines()
     boxed = [line for line in screen if line[:1] in "┌│└"]
     assert len({len(line) for line in boxed}) == 1  # every box line is the same width
     assert max(len(line) for line in boxed) < 140
@@ -69,9 +69,9 @@ def test_boxes_line_up_and_long_events_are_cut():
 
 def test_width_ignores_colour_codes():
     plain = render(["PMAT-1"], {"PMAT-1": {"state": "idle"}}, {"PMAT-1": Ticket(labels=[], done=True)}, {},
-                   {"PMAT-1"}, [], NOW, interval=30, grace_minutes=5, color=False).splitlines()
+                   {"PMAT-1"}, [], NOW, next_in=30, grace_minutes=5, color=False).splitlines()
     coloured = render(["PMAT-1"], {"PMAT-1": {"state": "idle"}}, {"PMAT-1": Ticket(labels=[], done=True)}, {},
-                      {"PMAT-1"}, [], NOW, interval=30, grace_minutes=5, color=True).splitlines()
+                      {"PMAT-1"}, [], NOW, next_in=30, grace_minutes=5, color=True).splitlines()
     strip = __import__("re").compile(r"\033\[[0-9;]*m")
     assert [strip.sub("", line) for line in coloured] == plain
 
@@ -79,13 +79,13 @@ def test_width_ignores_colour_codes():
 def test_colour_marks_what_needs_the_owner():
     screen = render(["PMAT-1"], {"PMAT-1": {"state": "idle"}},
                     {"PMAT-1": Ticket(labels=["AWAITING-USER-RESPONSE"], done=False)}, {}, {"PMAT-1"}, [],
-                    NOW, interval=30, grace_minutes=5, color=True)
+                    NOW, next_in=30, grace_minutes=5, color=True)
     assert "\033[1m\033[33m▶ answer on Jira" in screen
 
 
 def test_colour_ticket_yellow_done_green_pr_blue():
     screen = render(["PMAT-1"], {"PMAT-1": {"state": "idle"}}, {"PMAT-1": Ticket(labels=[], done=True)},
                     {"PMAT-1": Pr(7, "MERGED", "https://github.com/o/r/pull/7")}, {"PMAT-1"}, [],
-                    NOW, interval=30, grace_minutes=5, color=True)
+                    NOW, next_in=30, grace_minutes=5, color=True)
     assert "\033[33mPMAT-1" in screen and "\033[32mDone" in screen
     assert "\033[34mhttps://github.com/o/r/pull/7 merged" in screen
