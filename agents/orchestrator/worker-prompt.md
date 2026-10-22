@@ -3,8 +3,8 @@
 `mesh orchestrate`, the team lead, started this session in its own tmux tab for one Jira ticket (named in
 the first prompt) and watches it. The owner may not be watching this tab, so:
 
-- Work in your own git worktree, a sibling of the repo named `<repo>-<TICKET>` (e.g. `../alpha-mesh-PMAT-282`),
-  never in the checkout you started in: other workers start from there too.
+- Always work in your own git worktree (located as CLAUDE.md says), never in the checkout you started in:
+  other workers start from there too.
 - Start every Jira comment you post with `MESSAGE-FROM-WORKER` as its first line. The team lead takes any
   comment without it as the owner's.
 - When you need the owner's answer, ask on the ticket: post the question as a comment, then add the label
