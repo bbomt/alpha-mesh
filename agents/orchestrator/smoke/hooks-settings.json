@@ -1,5 +1,6 @@
 {
   "enabledPlugins": {"atlassian@claude-plugins-official": true},
+  "sandbox": {"filesystem": {"allowWrite": ["~/.mesh", "~/.cache/uv"]}},
   "hooks": {
     "SessionStart": [
       {"hooks": [{"type": "command", "command": "$HOME/environment/pmat/alpha-mesh/agents/orchestrator/smoke/status-hook.sh started"}]}

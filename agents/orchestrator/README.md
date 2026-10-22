@@ -88,6 +88,9 @@ a worker by answering in its tab and telling it not to post to Jira.
 - `src/orchestrator/status.py`: the per-ticket status files, `~/environment/logs/orchestrator/<KEY>.json`,
   shared with the hooks under the same lock.
 - `src/orchestrator/tmux.py`: the tabs, named by ticket key, in the tmux session the orchestrator runs in.
+- `smoke/hooks-settings.json`: the settings every worker is started with (`--settings`): the status hooks, the
+  Atlassian plugin, and sandbox write access to `~/.mesh` and `~/.cache/uv`, so a worker can run
+  `mesh review-pull-request` (its locks and checkpoints live in `~/.mesh`) without leaving the sandbox.
 - `smoke/`: the hooks (`hooks-settings.json`, `status-hook.sh`) every worker is started with, and the
   smoke test that shaped this design (`smoke/README.md`).
 - Tests: `tests/`, run by `test/test-orchestrator`.
