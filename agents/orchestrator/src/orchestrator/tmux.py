@@ -8,7 +8,7 @@ def _tmux(*args: str) -> str:
 
 
 def windows() -> set[str]:
-    return set(_tmux("list-windows", "-F", "#{window_name}").split())
+    return set(_tmux("list-windows", "-F", "#{window_name}").splitlines())  # names may contain spaces
 
 
 def new_window(name: str, cwd: str, command: str) -> None:

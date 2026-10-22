@@ -48,9 +48,12 @@ def main(argv: list[str] | None = None) -> int:
         except Exception as e:  # Jira or network down: keep the workers' tabs alive, try again next tick
             print(f"Jira read failed: {e}", file=sys.stderr)
             tickets = {}
-        for line in loop.tick(keys, tickets, OPS):
-            print(line)
-        print(f"\n{datetime.now():%H:%M:%S}\n{loop.table(keys, tickets, OPS)}\n", flush=True)
+        try:
+            for line in loop.tick(keys, tickets, OPS):
+                print(line)
+            print(f"\n{datetime.now():%H:%M:%S}\n{loop.table(keys, tickets, OPS)}\n", flush=True)
+        except Exception as e:  # a tab closed mid-tick, gh offline...: the workers run on, so must the lead
+            print(f"Tick failed, trying again next tick: {e!r}", file=sys.stderr, flush=True)
         if args.once:
             return 0
         time.sleep(args.interval)
