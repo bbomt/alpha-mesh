@@ -38,7 +38,7 @@ tmux new-window -d -n SMOKE-1 -c ../alpha-mesh-smoke \
 | 9 | Two label adds at once | **Fail (as predicted).** Through the MCP (no plain-script Jira, step 0), the only label write is `editJiraIssue`, which sets the whole list; the connector has no add/remove operation, and `transitionJiraIssue`'s `update` needs a status change. Two near-simultaneous writers, each adding its label to the `[ALPHA-MESH]` it had read, ended with `[ALPHA-MESH, SMOKE-TEST-B]`: A's label was lost. Labels were restored to `[ALPHA-MESH]`. |
 | 10 | Question through Jira | **Pass, after a fix.** First try: the worktree session had **no Atlassian connector**, because the plugin is enabled only in alpha-mesh's gitignored `.claude/settings.json`, which a new worktree does not have. Adding `enabledPlugins` to `hooks-settings.json` fixed it. Then the session posted the question comment, set `[ALPHA-MESH, AWAITING-USER-RESPONSE]`, and waited; the answer (`green`, typed into the window with `tmux send-keys`) made it remove only that label and write `colour.txt`. The session noticed the step 9 race itself. |
 | 11 | PR polling | **Pass.** `gh pr view 19 --json state` → `MERGED`; `21` → `CLOSED`. |
-| 12 | AWS facts (2026-10-22, read-only) | **Partly answered.** The instance (`i-0c071c1c6d577e4bf`, t4g.medium) has two **idle** alarms that *stop* it through the EC2 Stop action: average CPU below 1.5 % for 6 × 5 min (30 min), and average NetworkPacketsOut below 85 for 6 × 15 min (90 min). No alarm watches high load. The shutdown behaviour could not be read: the SSO role `dev-EC2` is explicitly denied `ec2:DescribeInstances` and `ec2:DescribeInstanceAttribute`. The alarms' Stop action is an API stop, never a terminate, whatever that attribute says. |
+| 12 | AWS facts (2026-10-22, read-only) | **Pass.** The instance (`i-0c071c1c6d577e4bf`, t4g.medium, on-demand, EBS root) has two **idle** alarms that *stop* it through the EC2 Stop action: average CPU below 1.5 % for 6 × 5 min (30 min), and average NetworkPacketsOut below 85 for 6 × 15 min (90 min). No alarm watches high load. Its shutdown behaviour is `stop` (read after the owner added the EC2 read permissions), so neither an OS shutdown nor the alarms terminate it. |
 | 13 | Cleanup | **Done.** SMOKE-1 tab closed, worktree and `test/PMAT-281-smoke` removed (never pushed), status and lock files deleted. PMAT-281's labels were already back to `ALPHA-MESH`. |
 
 ## What this changes in the design
@@ -76,7 +76,7 @@ before the task finished.
 ## What step 12 means for the overnight step
 
 - **Stopping when idle already exists.** The idle alarms stop the instance about 30 minutes after work stops,
-  so the orchestrator does not need its own `shutdown`, and the unread shutdown attribute does not matter.
+  so the orchestrator does not need its own `shutdown`; if it ever runs one, the instance stops (shutdown behaviour `stop`), never terminates.
 - **The risk is the opposite of the one expected:** a long wait with little CPU, such as a free-model review
   streaming slowly, could look idle and stop the instance mid-run. Recovery (step 8) covers that.
 
