@@ -132,6 +132,18 @@ def test_owner_typing_after_the_warning_keeps_the_tab(running):
     assert out == ["PMAT-1: Done, the owner kept the tab; it is theirs now"]
 
 
+def test_a_warned_tab_lost_in_a_reboot_is_warned_again_not_taken_as_kept(running):
+    loop.tick(["PMAT-1"], DONE, running.ops())
+    running.prompt_at("PMAT-1", 0)  # our warning
+    running.tabs.clear()  # reboot
+    running.clock += timedelta(minutes=6)
+    loop.tick(["PMAT-1"], DONE, running.ops())  # resumed
+    running.prompt_at("PMAT-1", 6)  # the resume message
+    loop.tick(["PMAT-1"], DONE, running.ops())
+    assert running.killed == [] and status.active() == ["PMAT-1"]
+    assert running.sent[-1] == ("PMAT-1", loop.CLOSING.format(key="PMAT-1", minutes=5))
+
+
 def test_done_with_an_open_question_gets_no_warning(running):
     loop.tick(["PMAT-1"], {"PMAT-1": Ticket(labels=["AWAITING-USER-RESPONSE"], done=True)}, running.ops())
     assert running.sent == [] and running.killed == []

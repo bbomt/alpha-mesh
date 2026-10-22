@@ -80,6 +80,8 @@ def _tick_one(key: str, alive: bool, t: Ticket | None, ops: Ops) -> str | None:
     if not alive:
         # Run from the launch folder: Claude finds a session to resume by the folder it started in.
         ops.new_window(key, s["launch_dir"], _claude(key, f"--resume {s['session_id']} {shlex.quote(NUDGE)}"))
+        # A close warning from before is void: the resume message would count as the owner typing.
+        status.update(key, close_warned_at=None)
         return f"{key}: tab missing, resumed the worker"
     if t is None:
         return None
