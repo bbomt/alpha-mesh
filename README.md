@@ -11,6 +11,7 @@ alpha-mesh/
 │   ├── model                # Switch/check model config
 │   ├── dream                # End-of-session memory consolidation (delegates to agents/dream/)
 │   ├── review-pull-request # PR review agent (delegates to agents/review-pull-request/)
+│   ├── orchestrate          # One Claude worker per Jira ticket in tmux tabs (delegates to agents/orchestrator/)
 │   ├── bootstrap-memory     # One-time: extract from existing Claude Code logs
 │   ├── install              # One-time setup
 │   └── lib/repo             # Shared bash functions: find_repo_root, get_active_model
@@ -22,6 +23,7 @@ alpha-mesh/
 │   │   │   └── bin/dream    # Shell entry point
 │   │   └── tests/
 │   │       └── test_dream_core.py  # Python tests for dream module
+│   ├── orchestrator/        # mesh orchestrate — team lead for per-ticket Claude workers (PMAT-281 spike)
 │   └── review-pull-request/ # PR review agent — LLM-powered, two-stage review (see below)
 ├── config/
 │   └── models.json          # All model profiles
@@ -187,3 +189,9 @@ When iterating on a PR, use `--since-last-review` to review only the new commits
 ### Documentation
 
 Full documentation: `agents/review-pull-request/README.md`
+
+## mesh orchestrate
+
+`mesh orchestrate PMAT-282 PMAT-283` starts one Claude session per Jira ticket, each in its own tmux tab,
+then watches Jira and passes on the owner's replies and merges; after a reboot, `mesh orchestrate` resumes
+the workers. PMAT-281 spike. Full documentation: `agents/orchestrator/README.md`.
