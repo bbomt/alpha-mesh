@@ -110,7 +110,18 @@ def test_done_ticket_tab_is_closed_and_left_alone(running):
     assert status.active() == []
 
 
-def test_done_without_a_merge_from_us_keeps_the_tab(running):
+def test_done_after_the_owner_passed_on_the_merge_closes_the_tab(running):
+    loop.tick(["PMAT-1"], {"PMAT-1": Ticket(labels=[], done=True)}, running.ops())
+    assert running.killed == ["PMAT-1"]
+
+
+def test_done_with_an_open_question_keeps_the_tab(running):
+    loop.tick(["PMAT-1"], {"PMAT-1": Ticket(labels=["AWAITING-USER-RESPONSE"], done=True)}, running.ops())
+    assert running.killed == []
+
+
+def test_done_while_the_worker_is_busy_keeps_the_tab(running):
+    status.update("PMAT-1", state="working")
     loop.tick(["PMAT-1"], {"PMAT-1": Ticket(labels=[], done=True)}, running.ops())
     assert running.killed == []
 

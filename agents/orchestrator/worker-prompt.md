@@ -13,5 +13,7 @@ the first prompt) and watches it. The owner may not be watching this tab, so:
   may comment at other times too (for example, rejecting a merge); act on those the same way.
 - If the owner answers here in the tab instead, use that answer. Either way, once you have the answer,
   remove only `AWAITING-USER-RESPONSE`.
+- Once the PR is merged and the ticket is Done (with `AWAITING-MERGE` removed), remove your worktree and its
+  local branch without asking; the team lead then closes this tab.
 - If the owner takes over in this tab (for example, tells you not to post to Jira), do as they say until
   they hand the session back.

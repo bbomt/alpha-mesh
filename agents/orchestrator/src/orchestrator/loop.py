@@ -80,7 +80,9 @@ def tick(keys: list[str], tickets: dict[str, Ticket], ops: Ops) -> list[str]:
             ops.send(key, MERGED.format(key=key))
             status.update(key, merge_relayed=True)
             done.append(f"{key}: PR merged, told the worker")
-        elif s.get("merge_relayed") and t.done:
+        elif t.done and "AWAITING-USER-RESPONSE" not in t.labels:
+            # However the merge reached the worker (our message, or the owner's comment), Done at the prompt
+            # with no open question means it has finished.
             ops.kill(key)
             status.update(key, finished=True)
             done.append(f"{key}: Done, closed its tab")
