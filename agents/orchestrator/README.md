@@ -43,16 +43,18 @@ Redrawn in place each tick (colour when run in a terminal):
 ```
 mesh orchestrate · 2 workers · checked 15:55:52 · next check in 30s
 
-TICKET    WORKER   FOR    JIRA  PR          NEEDS YOU
-PMAT-282  waiting  3m     Done  #25 merged  closing in 1m (type in the tab to keep it)
-PMAT-283  waiting  1h15m  open  #24 open    ▶ merge PR #24
+TICKET    WORKER   FOR    JIRA  PR                                           NEEDS YOU
+PMAT-282  waiting  3m     Done  https://github.com/bbomt/alpha-mesh/pull/25 merged  closing in 1m (type in the tab to keep it)
+PMAT-283  waiting  1h15m  open  https://github.com/bbomt/alpha-mesh/pull/24 open    ▶ merge PR #24
 
 Recent
 15:51:40  PMAT-282: Done, warned the tab it closes in 5 minutes
 ```
 
 - **WORKER / FOR:** the hook state (`working`, `idle`, `waiting`, or `tab missing`) and how long since it changed.
-- **PR:** the newest PR with the ticket key in its title (`gh`, one call per ticket per tick).
+- **PR:** the URL and state of the newest PR with the ticket key in its title (`gh`, one call per ticket per tick).
+- **Colours:** ticket keys yellow, Done green, PR URLs blue; owner actions bold yellow, problems red, working
+  workers green, idle ones dim.
 - **NEEDS YOU:** `▶ answer on Jira`, `▶ merge PR #N`, `▶ check the tab: <message>` (a permission prompt or any
   notification other than the 60-second idle one), the close countdown, or `resuming the worker`.
 - **Recent:** the last 10 events, newest first. Every event is also appended to

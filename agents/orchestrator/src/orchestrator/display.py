@@ -7,13 +7,15 @@ from datetime import datetime
 from orchestrator.jira import Ticket
 
 CLEAR = "\033[H\033[2J"
-RESET, BOLD, DIM, RED, YELLOW, GREEN = "\033[0m", "\033[1m", "\033[2m", "\033[31m", "\033[33m", "\033[32m"
+RESET, BOLD, DIM, RED, YELLOW, GREEN, BLUE = (
+    "\033[0m", "\033[1m", "\033[2m", "\033[31m", "\033[33m", "\033[32m", "\033[34m")
 
 
 @dataclass(frozen=True)
 class Pr:
     number: int
     state: str  # OPEN, MERGED or CLOSED, as gh reports it
+    url: str = ""
 
 
 def ago(since: str | None, now: datetime) -> str:
@@ -55,9 +57,9 @@ def render(keys: list[str], statuses: dict[str, dict], tickets: dict[str, Ticket
     rows = [(("TICKET", ""), ("WORKER", ""), ("FOR", ""), ("JIRA", ""), ("PR", ""), ("NEEDS YOU", ""))]
     for key in keys:
         s, t, pr = statuses.get(key, {}), tickets.get(key), prs.get(key)
-        rows.append(((key, BOLD), worker(s, key in alive), (ago(s.get("updated"), now), ""),
-                     ("-" if t is None else "Done" if t.done else "open", ""),
-                     ("-" if pr is None else f"#{pr.number} {pr.state.lower()}", ""),
+        rows.append(((key, YELLOW), worker(s, key in alive), (ago(s.get("updated"), now), ""),
+                     ("-", "") if t is None else ("Done", GREEN) if t.done else ("open", ""),
+                     ("-", "") if pr is None else (f"{pr.url or '#' + str(pr.number)} {pr.state.lower()}", BLUE),
                      needs(s, t, pr, key in alive, now, grace_minutes)))
     widths = [max(len(r[i][0]) for r in rows) for i in range(len(rows[0]))]
     table = ["  ".join(paint(text.ljust(w), code) for (text, code), w in zip(r, widths)).rstrip() for r in rows]

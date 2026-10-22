@@ -43,13 +43,14 @@ def test_screen_has_a_row_per_worker_and_newest_events_first():
         ["PMAT-282", "PMAT-283"],
         {"PMAT-282": {"state": "working", "updated": at(1)}, "PMAT-283": {"state": "idle", "updated": at(72)}},
         {"PMAT-282": Ticket(labels=[], done=False), "PMAT-283": Ticket(labels=["AWAITING-MERGE"], done=False)},
-        {"PMAT-282": None, "PMAT-283": Pr(24, "OPEN")},
+        {"PMAT-282": None, "PMAT-283": Pr(24, "OPEN", "https://github.com/bbomt/alpha-mesh/pull/24")},
         {"PMAT-282", "PMAT-283"},
         [(NOW - timedelta(minutes=5), "older event"), (NOW, "newer event")],
         NOW, interval=30, grace_minutes=5, color=False).splitlines()
     assert screen[0].startswith("mesh orchestrate · 2 workers · checked ")
     assert screen[3].split() == ["PMAT-282", "working", "1m", "open", "-"]
-    assert screen[4].split() == ["PMAT-283", "idle", "1h12m", "open", "#24", "open", "▶", "merge", "PR", "#24"]
+    assert screen[4].split() == ["PMAT-283", "idle", "1h12m", "open", "https://github.com/bbomt/alpha-mesh/pull/24",
+                                 "open", "▶", "merge", "PR", "#24"]
     assert screen.index("Recent") < [i for i, l in enumerate(screen) if "newer event" in l][0] \
         < [i for i, l in enumerate(screen) if "older event" in l][0]
     assert "\033[" not in "\n".join(screen)
@@ -60,3 +61,11 @@ def test_colour_marks_what_needs_the_owner():
                     {"PMAT-1": Ticket(labels=["AWAITING-USER-RESPONSE"], done=False)}, {}, {"PMAT-1"}, [],
                     NOW, interval=30, grace_minutes=5, color=True)
     assert "\033[1m\033[33m▶ answer on Jira" in screen
+
+
+def test_colour_ticket_yellow_done_green_pr_blue():
+    screen = render(["PMAT-1"], {"PMAT-1": {"state": "idle"}}, {"PMAT-1": Ticket(labels=[], done=True)},
+                    {"PMAT-1": Pr(7, "MERGED", "https://github.com/o/r/pull/7")}, {"PMAT-1"}, [],
+                    NOW, interval=30, grace_minutes=5, color=True)
+    assert "\033[33mPMAT-1" in screen and "\033[32mDone" in screen
+    assert "\033[34mhttps://github.com/o/r/pull/7 merged" in screen

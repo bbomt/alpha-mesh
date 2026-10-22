@@ -20,10 +20,10 @@ from orchestrator import display, jira, loop, status, tmux
 def pr(key: str, repo_dir: str) -> display.Pr | None:
     """The newest PR with the ticket key in its title."""
     out = subprocess.run(["gh", "pr", "list", "--state", "all", "--search", f"{key} in:title",
-                          "--json", "number,state", "--limit", "1"],
+                          "--json", "number,state,url", "--limit", "1"],
                          cwd=repo_dir, check=True, capture_output=True, text=True).stdout
     found = json.loads(out or "[]")
-    return display.Pr(found[0]["number"], found[0]["state"]) if found else None
+    return display.Pr(found[0]["number"], found[0]["state"], found[0]["url"]) if found else None
 
 
 OPS = loop.Ops(windows=tmux.windows, new_window=tmux.new_window, send=tmux.send, kill=tmux.kill)
