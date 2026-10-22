@@ -7,6 +7,7 @@ from datetime import datetime
 from orchestrator.jira import Ticket
 
 CLEAR = "\033[H\033[2J"
+EVENT_WIDTH = 110  # longer events (e.g. an error's repr) are cut, so the boxes stay one screen wide
 RESET, BOLD, DIM, RED, YELLOW, GREEN, BLUE = (
     "\033[0m", "\033[1m", "\033[2m", "\033[31m", "\033[33m", "\033[32m", "\033[34m")
 
@@ -62,12 +63,24 @@ def render(keys: list[str], statuses: dict[str, dict], tickets: dict[str, Ticket
                      ("-", "") if pr is None else (f"{pr.url or '#' + str(pr.number)} {pr.state.lower()}", BLUE),
                      needs(s, t, pr, key in alive, now, grace_minutes)))
     widths = [max(len(r[i][0]) for r in rows) for i in range(len(rows[0]))]
-    table = ["  ".join(paint(text.ljust(w), code) for (text, code), w in zip(r, widths)).rstrip() for r in rows]
-    table[0] = paint(table[0], DIM)
+    # Each line is kept as (plain, painted): the plain text sets the widths, as colour codes take no space.
+    table = [("  ".join(text.ljust(w) for (text, _), w in zip(r, widths)),
+              "  ".join(paint(text.ljust(w), code) for (text, code), w in zip(r, widths))) for r in rows]
+    table[0] = (table[0][0], paint(table[0][0], DIM))
 
-    head = (f"mesh orchestrate · {len(keys)} worker{'s' if len(keys) != 1 else ''} · "
-            f"checked {now.astimezone():%H:%M:%S} · next check in {interval}s")
-    recent = [f"{when.astimezone():%H:%M:%S}  {text}" for when, text in reversed(events)] or ["(nothing yet)"]
-    return "\n".join([paint(head, BOLD), "", *table, "", paint("Recent", DIM), *recent, "",
-                      paint("Ctrl-C stops the orchestrator; the workers keep running. "
-                            "Run `mesh orchestrate` again to pick them up.", DIM)])
+    head = (f"{len(keys)} worker{'s' if len(keys) != 1 else ''} · checked {now.astimezone():%H:%M:%S} · "
+            f"next check in {interval}s")
+    recent = [f"{when.astimezone():%H:%M:%S}  {text[:EVENT_WIDTH]}" for when, text in reversed(events)]
+    sections = [("mesh orchestrate", [(head, paint(head, BOLD))]),
+                ("Workers", table if keys else [("(none)", paint("(none)", DIM))]),
+                ("Recent", [(r, r) for r in recent] or [("(nothing yet)", paint("(nothing yet)", DIM))])]
+    inner = max(len(plain) for _, lines in sections for plain, _ in lines)
+    inner = max(inner, *(len(title) + 2 for title, _ in sections))
+    out = []
+    for title, lines in sections:
+        out.append(paint(f"┌─ ", DIM) + paint(title, BOLD) + paint(f" {'─' * (inner - 1 - len(title))}┐", DIM))
+        out += [paint("│ ", DIM) + painted + " " * (inner - len(plain)) + paint(" │", DIM) for plain, painted in lines]
+        out.append(paint(f"└{'─' * (inner + 2)}┘", DIM))
+    out.append(paint("Ctrl-C stops the orchestrator; the workers keep running. "
+                     "Run `mesh orchestrate` again to pick them up.", DIM))
+    return "\n".join(out)

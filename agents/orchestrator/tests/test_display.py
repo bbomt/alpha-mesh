@@ -47,13 +47,33 @@ def test_screen_has_a_row_per_worker_and_newest_events_first():
         {"PMAT-282", "PMAT-283"},
         [(NOW - timedelta(minutes=5), "older event"), (NOW, "newer event")],
         NOW, interval=30, grace_minutes=5, color=False).splitlines()
-    assert screen[0].startswith("mesh orchestrate · 2 workers · checked ")
-    assert screen[3].split() == ["PMAT-282", "working", "1m", "open", "-"]
-    assert screen[4].split() == ["PMAT-283", "idle", "1h12m", "open", "https://github.com/bbomt/alpha-mesh/pull/24",
-                                 "open", "▶", "merge", "PR", "#24"]
-    assert screen.index("Recent") < [i for i, l in enumerate(screen) if "newer event" in l][0] \
-        < [i for i, l in enumerate(screen) if "older event" in l][0]
-    assert "\033[" not in "\n".join(screen)
+    cells = [line.strip("│ ").split() for line in screen]
+    assert cells.index(["PMAT-282", "working", "1m", "open", "-"]) < \
+        cells.index(["PMAT-283", "idle", "1h12m", "open", "https://github.com/bbomt/alpha-mesh/pull/24", "open",
+                     "▶", "merge", "PR", "#24"])
+    titles = [line for line in screen if line.startswith("┌─ ")]
+    assert [t.split()[1] for t in titles] == ["mesh", "Workers", "Recent"]
+    assert any("2 workers · checked " in line for line in screen)
+    text = "\n".join(screen)
+    assert text.index("newer event") < text.index("older event")
+    assert "\033[" not in text
+
+
+def test_boxes_line_up_and_long_events_are_cut():
+    screen = render(["PMAT-1"], {"PMAT-1": {"state": "idle"}}, {}, {}, {"PMAT-1"}, [(NOW, "x" * 500)],
+                    NOW, interval=30, grace_minutes=5, color=False).splitlines()
+    boxed = [line for line in screen if line[:1] in "┌│└"]
+    assert len({len(line) for line in boxed}) == 1  # every box line is the same width
+    assert max(len(line) for line in boxed) < 140
+
+
+def test_width_ignores_colour_codes():
+    plain = render(["PMAT-1"], {"PMAT-1": {"state": "idle"}}, {"PMAT-1": Ticket(labels=[], done=True)}, {},
+                   {"PMAT-1"}, [], NOW, interval=30, grace_minutes=5, color=False).splitlines()
+    coloured = render(["PMAT-1"], {"PMAT-1": {"state": "idle"}}, {"PMAT-1": Ticket(labels=[], done=True)}, {},
+                      {"PMAT-1"}, [], NOW, interval=30, grace_minutes=5, color=True).splitlines()
+    strip = __import__("re").compile(r"\033\[[0-9;]*m")
+    assert [strip.sub("", line) for line in coloured] == plain
 
 
 def test_colour_marks_what_needs_the_owner():

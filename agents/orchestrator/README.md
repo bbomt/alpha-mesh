@@ -37,17 +37,20 @@ is handled on its own: an error on one (a tab closed mid-tick, `gh` offline) is 
 tick, and the others carry on. 
 ### The screen
 
-Redrawn in place each tick (colour when run in a terminal):
+Redrawn in place each tick, as three boxes (colour when run in a terminal):
 
 ```
-mesh orchestrate · 2 workers · checked 15:55:52 · next check in 30s
-
-TICKET    WORKER   FOR    JIRA  PR                                           NEEDS YOU
-PMAT-282  waiting  3m     Done  https://github.com/bbomt/alpha-mesh/pull/25 merged  closing in 1m (type in the tab to keep it)
-PMAT-283  waiting  1h15m  open  https://github.com/bbomt/alpha-mesh/pull/24 open    ▶ merge PR #24
-
-Recent
-15:51:40  PMAT-282: Done, warned the tab it closes in 5 minutes
+┌─ mesh orchestrate ─────────────────────────────────────────────────────────────────────────────┐
+│ 2 workers · checked 16:12:28 · next check in 30s                                               │
+└────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─ Workers ──────────────────────────────────────────────────────────────────────────────────────┐
+│ TICKET    WORKER   FOR  JIRA  PR                                                NEEDS YOU      │
+│ PMAT-284  working  3m   open  -                                                                │
+│ PMAT-285  idle     1m   open  https://github.com/bbomt/alpha-mesh/pull/26 open  ▶ merge PR #26 │
+└────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─ Recent ───────────────────────────────────────────────────────────────────────────────────────┐
+│ 16:12:28  PMAT-285: started a worker in tab PMAT-285                                           │
+└────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 - **WORKER / FOR:** the hook state (`working`, `idle`, `waiting`, or `tab missing`) and how long since it changed.
@@ -56,7 +59,7 @@ Recent
   workers green, idle ones dim.
 - **NEEDS YOU:** `▶ answer on Jira`, `▶ merge PR #N`, `▶ check the tab: <message>` (a permission prompt or any
   notification other than the 60-second idle one), the close countdown, or `resuming the worker`.
-- **Recent:** the last 10 events, newest first. Every event is also appended to
+- **Recent:** the last 10 events, newest first, each cut to 110 characters so the boxes stay one screen wide. Every event is also appended to
   `~/environment/logs/orchestrator/events.log`, and the last 10 are shown again after a restart.
 
 **Orchestrated workers get a system prompt** (`worker-prompt.md`, passed with `--append-system-prompt-file`
