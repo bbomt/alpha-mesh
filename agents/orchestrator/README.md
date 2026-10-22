@@ -35,8 +35,28 @@ Each tick, per ticket:
 
 It types into a tab only when the worker sits at its prompt (hook state `idle` or `waiting`). Each ticket
 is handled on its own: an error on one (a tab closed mid-tick, `gh` offline) is printed and retried next
-tick, and the others carry on. Then it
-prints a table: ticket, tab, worker state, Jira status, labels.
+tick, and the others carry on. 
+### The screen
+
+Redrawn in place each tick (colour when run in a terminal):
+
+```
+mesh orchestrate · 2 workers · checked 15:55:52 · next check in 30s
+
+TICKET    WORKER   FOR    JIRA  PR          NEEDS YOU
+PMAT-282  waiting  3m     Done  #25 merged  closing in 1m (type in the tab to keep it)
+PMAT-283  waiting  1h15m  open  #24 open    ▶ merge PR #24
+
+Recent
+15:51:40  PMAT-282: Done, warned the tab it closes in 5 minutes
+```
+
+- **WORKER / FOR:** the hook state (`working`, `idle`, `waiting`, or `tab missing`) and how long since it changed.
+- **PR:** the newest PR with the ticket key in its title (`gh`, one call per ticket per tick).
+- **NEEDS YOU:** `▶ answer on Jira`, `▶ merge PR #N`, `▶ check the tab: <message>` (a permission prompt or any
+  notification other than the 60-second idle one), the close countdown, or `resuming the worker`.
+- **Recent:** the last 10 events, newest first. Every event is also appended to
+  `~/environment/logs/orchestrator/events.log`, and the last 10 are shown again after a restart.
 
 **Orchestrated workers get a system prompt** (`worker-prompt.md`, passed with `--append-system-prompt-file`
 on every start and resume). It is the only difference from a manual session:

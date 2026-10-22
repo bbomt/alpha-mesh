@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Callable
 
 from orchestrator import status
+from orchestrator.display import Pr
 from orchestrator.jira import Ticket
 
 AGENT_DIR = Path(__file__).resolve().parents[2]
@@ -39,7 +40,6 @@ class Ops:
     new_window: Callable[[str, str, str], None]
     send: Callable[[str, str], None]
     kill: Callable[[str], None]
-    merged: Callable[[str, str], bool]  # (ticket, repo dir) -> its PR is merged
     now: Callable[[], datetime] = lambda: datetime.now(timezone.utc)
 
 
@@ -57,13 +57,13 @@ def start(key: str, repo_dir: str, ops: Ops) -> None:
                                                f"{shlex.quote(START.format(key=key))}"))
 
 
-def tick(keys: list[str], tickets: dict[str, Ticket], ops: Ops) -> list[str]:
+def tick(keys: list[str], tickets: dict[str, Ticket], prs: dict[str, Pr | None], ops: Ops) -> list[str]:
     """One pass over the active tickets; returns what was done, for the log. Each ticket is handled on its
     own, so one ticket's failure (a tab gone mid-tick, gh offline) does not starve the others."""
     done, alive = [], ops.windows()
     for key in keys:
         try:
-            if line := _tick_one(key, key in alive, tickets.get(key), ops):
+            if line := _tick_one(key, key in alive, tickets.get(key), prs.get(key), ops):
                 done.append(line)
         except Exception as e:
             done.append(f"{key}: failed this tick, trying again next tick: {e!r}")
@@ -77,7 +77,7 @@ def _prompts_since(s: dict, since: str) -> int:
                if h.get("event") == "UserPromptSubmit" and datetime.fromisoformat(h["at"]) >= t)
 
 
-def _tick_one(key: str, alive: bool, t: Ticket | None, ops: Ops) -> str | None:
+def _tick_one(key: str, alive: bool, t: Ticket | None, pr: Pr | None, ops: Ops) -> str | None:
     s = status.read(key)
     if not alive:
         # Run from the launch folder: Claude finds a session to resume by the folder it started in.
@@ -96,7 +96,7 @@ def _tick_one(key: str, alive: bool, t: Ticket | None, ops: Ops) -> str | None:
         ops.send(key, REPLY.format(key=key, comment=t.comment_id))
         status.update(key, relayed_comment=t.comment_id)
         return f"{key}: passed on the owner's comment {t.comment_id}"
-    if "AWAITING-MERGE" in t.labels and not s.get("merge_relayed") and ops.merged(key, s["launch_dir"]):
+    if "AWAITING-MERGE" in t.labels and not s.get("merge_relayed") and pr and pr.state == "MERGED":
         ops.send(key, MERGED.format(key=key))
         status.update(key, merge_relayed=True)
         return f"{key}: PR merged, told the worker"
@@ -116,15 +116,3 @@ def _tick_one(key: str, alive: bool, t: Ticket | None, ops: Ops) -> str | None:
             status.update(key, finished=True)
             return f"{key}: Done, closed its tab"
     return None
-
-
-def table(keys: list[str], tickets: dict[str, Ticket], ops: Ops) -> str:
-    alive = ops.windows()
-    rows = [("TICKET", "TAB", "WORKER", "JIRA", "LABELS")]
-    for key in keys:
-        s, t = status.read(key), tickets.get(key)
-        rows.append((key, "open" if key in alive else "missing", s.get("state", "-"),
-                     "-" if t is None else ("Done" if t.done else "open"),
-                     "-" if t is None else ",".join(t.labels)))
-    widths = [max(len(r[i]) for r in rows) for i in range(len(rows[0]))]
-    return "\n".join("  ".join(c.ljust(w) for c, w in zip(r, widths)).rstrip() for r in rows)
