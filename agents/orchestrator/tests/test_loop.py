@@ -1,5 +1,7 @@
 """The team lead's decisions, against fake tmux, gh and Jira and a throwaway status folder."""
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
 
 from orchestrator import loop, status
@@ -9,6 +11,7 @@ from orchestrator.jira import Ticket
 class Fake:
     def __init__(self, merged=False):
         self.tabs, self.opened, self.sent, self.killed, self.is_merged = set(), [], [], [], merged
+        self.clock = datetime(2026, 10, 22, 12, 0, tzinfo=timezone.utc)
 
     def ops(self):
         return loop.Ops(
@@ -17,7 +20,14 @@ class Fake:
             send=lambda name, text: self.sent.append((name, text)),
             kill=lambda name: (self.tabs.discard(name), self.killed.append(name)),
             merged=lambda key, repo: self.is_merged,
+            now=lambda: self.clock,
         )
+
+    def prompt_at(self, key, minutes):
+        """The worker received a prompt (UserPromptSubmit hook) this many minutes after the clock's start."""
+        at = (self.clock + timedelta(minutes=minutes)).isoformat(timespec="seconds")
+        s = status.read(key)
+        status.update(key, history=s.get("history", []) + [{"event": "UserPromptSubmit", "at": at}])
 
 
 @pytest.fixture(autouse=True)
@@ -103,27 +113,57 @@ def test_merge_is_passed_on_only_once_the_pr_is_merged(running):
     assert running.sent == [("PMAT-1", loop.MERGED.format(key="PMAT-1"))]
 
 
-def test_done_ticket_tab_is_closed_and_left_alone(running):
-    status.update("PMAT-1", merge_relayed=True)
-    loop.tick(["PMAT-1"], {"PMAT-1": Ticket(labels=[], done=True)}, running.ops())
-    assert running.killed == ["PMAT-1"]
-    assert status.active() == []
+DONE = {"PMAT-1": Ticket(labels=[], done=True)}
 
 
-def test_done_after_the_owner_passed_on_the_merge_closes_the_tab(running):
-    loop.tick(["PMAT-1"], {"PMAT-1": Ticket(labels=[], done=True)}, running.ops())
-    assert running.killed == ["PMAT-1"]
+def test_done_ticket_gets_a_warning_first_not_a_close(running):
+    loop.tick(["PMAT-1"], DONE, running.ops())
+    assert running.killed == []
+    assert running.sent == [("PMAT-1", loop.CLOSING.format(key="PMAT-1", minutes=5))]
 
 
-def test_done_with_an_open_question_keeps_the_tab(running):
+def test_done_tab_closes_after_the_grace_period_if_nobody_typed(running):
+    loop.tick(["PMAT-1"], DONE, running.ops())
+    running.prompt_at("PMAT-1", 0)  # our own warning
+    running.clock += timedelta(minutes=4)
+    loop.tick(["PMAT-1"], DONE, running.ops())
+    assert running.killed == []
+    running.clock += timedelta(minutes=1)
+    loop.tick(["PMAT-1"], DONE, running.ops())
+    assert running.killed == ["PMAT-1"] and status.active() == []
+
+
+def test_owner_typing_after_the_warning_keeps_the_tab(running):
+    loop.tick(["PMAT-1"], DONE, running.ops())
+    running.prompt_at("PMAT-1", 0)  # our own warning
+    running.prompt_at("PMAT-1", 2)  # the owner
+    running.clock += timedelta(minutes=10)
+    out = loop.tick(["PMAT-1"], DONE, running.ops())
+    assert running.killed == [] and status.active() == []  # left alone from now on
+    assert out == ["PMAT-1: Done, the owner kept the tab; it is theirs now"]
+
+
+def test_done_with_an_open_question_gets_no_warning(running):
     loop.tick(["PMAT-1"], {"PMAT-1": Ticket(labels=["AWAITING-USER-RESPONSE"], done=True)}, running.ops())
-    assert running.killed == []
+    assert running.sent == [] and running.killed == []
 
 
-def test_done_while_the_worker_is_busy_keeps_the_tab(running):
+def test_done_while_the_worker_is_busy_gets_no_warning(running):
     status.update("PMAT-1", state="working")
-    loop.tick(["PMAT-1"], {"PMAT-1": Ticket(labels=[], done=True)}, running.ops())
-    assert running.killed == []
+    loop.tick(["PMAT-1"], DONE, running.ops())
+    assert running.sent == []
+
+
+def test_one_tickets_failure_does_not_stop_the_others(running):
+    loop.start("PMAT-2", "/repo", running.ops())
+    status.update("PMAT-2", state="idle", relayed_comment=None)
+    ops = running.ops()
+    ops.merged = lambda key, repo: (_ for _ in ()).throw(RuntimeError("gh offline")) if key == "PMAT-1" else False
+    t = {"PMAT-1": Ticket(labels=["AWAITING-MERGE"], done=False),
+         "PMAT-2": Ticket(labels=[], done=False, comment_id="7")}
+    out = loop.tick(["PMAT-1", "PMAT-2"], t, ops)
+    assert out[0].startswith("PMAT-1: failed this tick") and "gh offline" in out[0]
+    assert running.sent == [("PMAT-2", loop.REPLY.format(key="PMAT-2", comment="7"))]
 
 
 def test_hook_fields_and_orchestrator_fields_survive_each_other():

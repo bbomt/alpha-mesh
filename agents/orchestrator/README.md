@@ -29,9 +29,13 @@ Each tick, per ticket:
 | The ticket's tab is missing (reboot, closed tab) | Reopen it and resume the worker (`claude --resume <id>`) in the folder it started in, telling it it was interrupted |
 | A new owner comment (no `MESSAGE-FROM-WORKER` marker), whatever the labels: an answer, a rejected merge, feedback | Type "The owner commented on Jira …" into the tab, once per comment. Comments from before the worker started are not passed on |
 | `AWAITING-MERGE`, and a merged PR has the ticket key in its title | Type "The PR … is merged. Finish the ticket as CLAUDE.md says." once |
-| The ticket is Done, with no `AWAITING-USER-RESPONSE`, and the worker is at its prompt (it has removed its worktree, per its prompt) | Close the tab |
+| The ticket is Done, with no `AWAITING-USER-RESPONSE`, and the worker is at its prompt | Type a warning into the tab: it closes in 5 minutes unless the owner types something there |
+| 5 minutes after that warning, and nobody typed in the tab | Close the tab |
+| The owner typed in the tab after the warning | Leave the tab open and stop watching the ticket: it is the owner's now |
 
-It types into a tab only when the worker sits at its prompt (hook state `idle` or `waiting`). Then it
+It types into a tab only when the worker sits at its prompt (hook state `idle` or `waiting`). Each ticket
+is handled on its own: an error on one (a tab closed mid-tick, `gh` offline) is printed and retried next
+tick, and the others carry on. Then it
 prints a table: ticket, tab, worker state, Jira status, labels.
 
 **Orchestrated workers get a system prompt** (`worker-prompt.md`, passed with `--append-system-prompt-file`
