@@ -42,3 +42,12 @@ def test_prs_match_the_bracketed_ticket_key_and_take_the_newest(monkeypatch):
     monkeypatch.setattr(cli.subprocess, "run", lambda *a, **k: Done)
     found = cli.prs(["PMAT-282", "PMAT-283", "PMAT-284"], "/repo")
     assert found == {"PMAT-282": Pr(8, "OPEN", "u8"), "PMAT-283": Pr(10, "OPEN", "u10"), "PMAT-284": None}
+
+
+def test_a_second_copy_refuses_to_start(tmp_path, monkeypatch, capsys):
+    import fcntl
+    monkeypatch.setattr(status, "DIR", tmp_path)
+    with open(tmp_path / "orchestrator.lock", "w") as held:
+        fcntl.flock(held, fcntl.LOCK_EX)  # the first copy
+        assert cli.main(["--once"]) == 1
+    assert "already running" in capsys.readouterr().err

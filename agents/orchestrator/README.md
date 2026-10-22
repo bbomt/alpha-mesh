@@ -22,6 +22,10 @@ mesh orchestrate --once              # one tick, then exit
 
 Options: `--repo DIR` (default: the current folder), `--interval SECONDS` (default 30).
 
+Only one copy runs at a time (a lock in `~/environment/logs/orchestrator/`): a second `mesh orchestrate`
+says so and exits, since two would both type into the same tabs. Stopping it (Ctrl-C) and starting it again is
+safe at any time; it picks up from the status files, Jira, GitHub and tmux.
+
 Each tick, per ticket:
 
 | Seen | Done |

@@ -7,6 +7,7 @@ screen saying what needs the owner.
 
 import argparse
 import asyncio
+import fcntl
 import json
 import subprocess
 import sys
@@ -39,6 +40,14 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--interval", type=int, default=30, help="seconds between ticks (default 30)")
     p.add_argument("--once", action="store_true", help="run one tick and exit")
     args = p.parse_args(argv)
+    # One team lead at a time: two would both type into the same tabs. The lock goes when the process does.
+    status.DIR.mkdir(parents=True, exist_ok=True)
+    lock = open(status.DIR / "orchestrator.lock", "w")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        print("mesh orchestrate is already running (in another tab); not starting a second copy.", file=sys.stderr)
+        return 1
     tty = sys.stdout.isatty()
     events: deque[tuple[datetime, str]] = deque(maxlen=10)
     log = status.DIR / "events.log"
