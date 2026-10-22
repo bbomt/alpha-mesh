@@ -17,13 +17,16 @@ from datetime import datetime, timezone
 from orchestrator import display, jira, loop, status, tmux
 
 
-def pr(key: str, repo_dir: str) -> display.Pr | None:
-    """The newest PR with the ticket key in its title."""
-    out = subprocess.run(["gh", "pr", "list", "--state", "all", "--search", f"{key} in:title",
-                          "--json", "number,state,url", "--limit", "1"],
+def prs(keys: list[str], repo_dir: str) -> dict[str, display.Pr | None]:
+    """Each ticket's newest PR, found by its key in brackets in the title (`feature[PMAT-282]: ...`; a title
+    may mention other tickets, e.g. "for PMAT-281"). Lists the repo's recent PRs in one call:
+    gh's --search goes through GitHub search, which returned nothing for about half of identical calls."""
+    out = subprocess.run(["gh", "pr", "list", "--state", "all", "--limit", "100",
+                          "--json", "number,state,url,title"],
                          cwd=repo_dir, check=True, capture_output=True, text=True).stdout
-    found = json.loads(out or "[]")
-    return display.Pr(found[0]["number"], found[0]["state"], found[0]["url"]) if found else None
+    found = json.loads(out or "[]")  # newest first
+    return {key: next((display.Pr(p["number"], p["state"], p["url"]) for p in found
+                       if f"[{key}]" in p["title"]), None) for key in keys}
 
 
 OPS = loop.Ops(windows=tmux.windows, new_window=tmux.new_window, send=tmux.send, kill=tmux.kill)
@@ -67,17 +70,15 @@ def main(argv: list[str] | None = None) -> int:
         except Exception as e:  # Jira or network down: keep the workers' tabs alive, try again next tick
             event(f"Jira read failed, trying again next tick: {e!r}")
             tickets = {}
-        prs = {}
-        for key in keys:
-            try:
-                prs[key] = pr(key, status.read(key)["launch_dir"])
-            except Exception as e:
-                prs[key] = None
-                event(f"{key}: PR lookup failed, trying again next tick: {e!r}")
         try:
-            for line in loop.tick(keys, tickets, prs, OPS):
+            found = prs(keys, repo) if keys else {}
+        except Exception as e:
+            found = {}
+            event(f"PR lookup failed, trying again next tick: {e!r}")
+        try:
+            for line in loop.tick(keys, tickets, found, OPS):
                 event(line)
-            screen = display.render(keys, {k: status.read(k) for k in keys}, tickets, prs, OPS.windows(),
+            screen = display.render(keys, {k: status.read(k) for k in keys}, tickets, found, OPS.windows(),
                                     list(events), datetime.now(timezone.utc), args.interval,
                                     loop.CLOSE_GRACE.seconds // 60, color=tty)
             print((display.CLEAR if tty else "") + screen, flush=True)
