@@ -1,7 +1,7 @@
 """mesh orchestrate [TICKET ...] [--repo DIR] [--interval SECONDS] [--once]
 
 Starts a worker for each new ticket, then loops: resumes any worker whose tab is gone (after a reboot,
-just run it again), passes on the owner's Jira comments and merges, closes finished tabs, and redraws a
+just run it again), passes on the owner's Jira comments, closes finished tabs, and redraws a
 screen saying what needs the owner.
 """
 
@@ -76,7 +76,7 @@ def main(argv: list[str] | None = None) -> int:
             found = {}
             event(f"PR lookup failed, trying again next tick: {e!r}")
         try:
-            for line in loop.tick(keys, tickets, found, OPS):
+            for line in loop.tick(keys, tickets, OPS):
                 event(line)
             screen = display.render(keys, {k: status.read(k) for k in keys}, tickets, found, OPS.windows(),
                                     list(events), datetime.now(timezone.utc), args.interval,

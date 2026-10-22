@@ -28,7 +28,6 @@ Each tick, per ticket:
 | --- | --- |
 | The ticket's tab is missing (reboot, closed tab) | Reopen it and resume the worker (`claude --resume <id>`) in the folder it started in, telling it it was interrupted |
 | A new owner comment (no `MESSAGE-FROM-WORKER` marker), whatever the labels: an answer, a rejected merge, feedback | Type "The owner commented on Jira …" into the tab, once per comment. Comments from before the worker started are not passed on |
-| `AWAITING-MERGE`, and a merged PR has the ticket key in its title | Type "The PR … is merged. Finish the ticket as CLAUDE.md says." once |
 | The ticket is Done, with no `AWAITING-USER-RESPONSE`, and the worker is at its prompt | Type a warning into the tab: it closes in 5 minutes unless the owner types something there |
 | 5 minutes after that warning, and nobody typed in the tab | Close the tab |
 | The owner typed in the tab after the warning | Leave the tab open and stop watching the ticket: it is the owner's now |
@@ -98,5 +97,7 @@ The orchestrator itself only reads.
 
 - Only tabs it started: a session started by hand is not watched.
 - One repo per run (`--repo`); tickets in other repos need another orchestrator.
-- Merges are found by ticket key in the PR title.
+- Merges are not watched: the owner tells the worker its PR is merged, with a Jira comment (passed on like any
+  other) or in its tab. The PR column only shows the PR's state.
+- PRs are found by the ticket key in brackets in the title (`feature[PMAT-282]: …`), from the repo's last 100 PRs.
 - Typing into a tab is one try; if the worker is busy, it waits for the next tick.

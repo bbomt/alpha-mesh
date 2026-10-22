@@ -1,7 +1,7 @@
 """Per-ticket status files, shared with the session's hooks (smoke/status-hook.sh).
 
 The hook writes the session's state; the orchestrator adds its own fields (launch_dir, relayed_comment,
-merge_relayed, finished). Both take the same lock, so neither loses the other's update.
+close_warned_at, finished). Both take the same lock, so neither loses the other's update.
 """
 
 import fcntl

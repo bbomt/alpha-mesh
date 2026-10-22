@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Callable
 
 from orchestrator import status
-from orchestrator.display import Pr
 from orchestrator.jira import Ticket
 
 AGENT_DIR = Path(__file__).resolve().parents[2]
@@ -24,7 +23,6 @@ START = "Work on Jira {key}."
 NUDGE = ("You were interrupted (the machine or this tab stopped). Check where you were (git status, the "
          "ticket, your last steps) and carry on, without redoing finished work.")
 REPLY = "The owner commented on Jira {key} (newest comment {comment}). Read their new comments and act on them."
-MERGED = "The PR for Jira {key} is merged. Finish the ticket as CLAUDE.md says."
 CLOSING = ("Team lead: Jira {key} is Done, so I will close this tab in {minutes} minutes. To keep it, type anything "
            "here before then. No reply needed.")
 CLOSE_GRACE = timedelta(minutes=5)
@@ -57,13 +55,13 @@ def start(key: str, repo_dir: str, ops: Ops) -> None:
                                                f"{shlex.quote(START.format(key=key))}"))
 
 
-def tick(keys: list[str], tickets: dict[str, Ticket], prs: dict[str, Pr | None], ops: Ops) -> list[str]:
+def tick(keys: list[str], tickets: dict[str, Ticket], ops: Ops) -> list[str]:
     """One pass over the active tickets; returns what was done, for the log. Each ticket is handled on its
-    own, so one ticket's failure (a tab gone mid-tick, gh offline) does not starve the others."""
+    own, so one ticket's failure (e.g. a tab gone mid-tick) does not starve the others."""
     done, alive = [], ops.windows()
     for key in keys:
         try:
-            if line := _tick_one(key, key in alive, tickets.get(key), prs.get(key), ops):
+            if line := _tick_one(key, key in alive, tickets.get(key), ops):
                 done.append(line)
         except Exception as e:
             done.append(f"{key}: failed this tick, trying again next tick: {e!r}")
@@ -77,7 +75,7 @@ def _prompts_since(s: dict, since: str) -> int:
                if h.get("event") == "UserPromptSubmit" and datetime.fromisoformat(h["at"]) >= t)
 
 
-def _tick_one(key: str, alive: bool, t: Ticket | None, pr: Pr | None, ops: Ops) -> str | None:
+def _tick_one(key: str, alive: bool, t: Ticket | None, ops: Ops) -> str | None:
     s = status.read(key)
     if not alive:
         # Run from the launch folder: Claude finds a session to resume by the folder it started in.
@@ -96,13 +94,9 @@ def _tick_one(key: str, alive: bool, t: Ticket | None, pr: Pr | None, ops: Ops) 
         ops.send(key, REPLY.format(key=key, comment=t.comment_id))
         status.update(key, relayed_comment=t.comment_id)
         return f"{key}: passed on the owner's comment {t.comment_id}"
-    if "AWAITING-MERGE" in t.labels and not s.get("merge_relayed") and pr and pr.state == "MERGED":
-        ops.send(key, MERGED.format(key=key))
-        status.update(key, merge_relayed=True)
-        return f"{key}: PR merged, told the worker"
     if t.done and "AWAITING-USER-RESPONSE" not in t.labels:
-        # Done at the prompt with no open question: finished, however the merge reached the worker. Warn in
-        # the tab first, so an owner working in it can keep it.
+        # Done at the prompt with no open question: finished. Warn in the tab first, so an owner working in it
+        # can keep it. (Merges are not watched: the owner tells the worker, on Jira or in its tab.)
         if not (warned := s.get("close_warned_at")):
             now = ops.now().isoformat(timespec="seconds")
             status.update(key, close_warned_at=now)
