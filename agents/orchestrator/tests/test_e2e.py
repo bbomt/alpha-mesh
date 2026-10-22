@@ -65,7 +65,10 @@ def world(tmp_path, monkeypatch):
     monkeypatch.setattr(jira, "snapshot", snapshot)
     yield {"repo": str(repo), "record": record, "tickets": tickets}
     subprocess.run(["tmux", "-L", SERVER, "kill-server"], capture_output=True)
-    Path(socket).unlink(missing_ok=True)  # tmux leaves the socket file behind
+    # kill-server returns before the server has gone, and tmux leaves the socket file behind.
+    wait_for(lambda: subprocess.run(["tmux", "-L", SERVER, "ls"], capture_output=True).returncode != 0,
+             "the test tmux server to exit")
+    Path(socket).unlink(missing_ok=True)
 
 
 def tabs() -> set[str]:
