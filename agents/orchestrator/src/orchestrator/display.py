@@ -78,6 +78,8 @@ def render(keys: list[str], statuses: dict[str, dict], tickets: dict[str, Ticket
                 ("Recent", [(r, paint(r, RED if "failed" in r else DIM)) for r in recent] or [("(nothing yet)", paint("(nothing yet)", DIM))])]
     inner = max(len(plain) for _, lines in sections for plain, _ in lines)
     inner = max(inner, *(len(title) + 2 for title, _ in sections))
+    if keys:  # a rule under the column headings, the full width of the box
+        sections[1] = ("Workers", [table[0], ("─" * inner, paint("─" * inner, DIM)), *table[1:]])
     out = []
     for title, lines in sections:
         out.append(paint(f"┌─ ", DIM) + paint(title, BOLD) + paint(f" {'─' * (inner - 1 - len(title))}┐", DIM))

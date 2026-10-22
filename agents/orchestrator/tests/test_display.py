@@ -101,3 +101,12 @@ def test_failed_events_are_red():
     screen = render([], {}, {}, {}, set(), [(NOW, "Jira read failed, trying again next tick: boom")], NOW,
                     next_in=30, grace_minutes=5, color=True)
     assert "\033[31m" + f"{NOW.astimezone():%H:%M:%S}  Jira read failed" in screen
+
+
+def test_a_rule_runs_under_the_column_headings():
+    screen = render(["PMAT-1"], {"PMAT-1": {"state": "idle"}}, {}, {}, {"PMAT-1"}, [], NOW, next_in=30,
+                    grace_minutes=5, color=False).splitlines()
+    heading = next(i for i, line in enumerate(screen) if "TICKET" in line)
+    assert set(screen[heading + 1].strip("│ ")) == {"─"}
+    assert len(screen[heading + 1]) == len(screen[heading])
+    assert "PMAT-1" in screen[heading + 2]
