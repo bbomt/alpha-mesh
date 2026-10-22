@@ -1,6 +1,6 @@
-# PMAT-281 smoke test: steps 0–7, 9–11
+# PMAT-281 smoke test: steps 0–11
 
-The hand-run checks from PMAT-281's smoke test plan, run on 2026-10-21 before any orchestrator is built.
+The hand-run checks from PMAT-281's smoke test plan, run on 2026-10-21 and 22 before any orchestrator is built.
 Claude Code 2.1.306, tmux 3.2a.
 
 ## Files
@@ -34,6 +34,7 @@ tmux new-window -d -n SMOKE-1 -c ../alpha-mesh-smoke \
 | 5 | Status from hooks | **Pass.** `idle` on `Stop`, and `waiting` on `Notification`. The idle notification (`notification_type: idle_prompt`) fires 60 s after a turn ends, so `waiting` alone does not mean "Claude asked something"; the type tells them apart. |
 | 6 | Kill when idle, resume | **Pass.** `claude --resume <id>` kept the **same** session ID (no fork); the hook saw `source: resume`; asked "what file did you create?", it answered `hello.txt`. |
 | 7 | Kill mid-turn, resume with the nudge | **Pass.** Killed after f1–f2 of 5 files. Resumed with the nudge, it checked `git status`, saw the interrupted command (exit 137), reran it, and wrote only f3–f5; f1–f2 kept their original times. |
+| 8 | Real reboot mid-turn (2026-10-22) | **Pass.** The overnight stop and a reboot by the owner mid-task (g1–g4 of 5 written, 30 s sleeps) both kept the worktree, the transcript and the status file; the status file still said `working` (stale, as expected). Resumed in a new window with `--resume <id>` and the nudge, it saw the interrupted sleep (exit 144), reran it, and wrote only g5; g1–g4 kept their times. Asked which file it created first, it answered `hello.txt`, so the context survived the reboot. |
 | 9 | Two label adds at once | **Fail (as predicted).** Through the MCP (no plain-script Jira, step 0), the only label write is `editJiraIssue`, which sets the whole list; the connector has no add/remove operation, and `transitionJiraIssue`'s `update` needs a status change. Two near-simultaneous writers, each adding its label to the `[ALPHA-MESH]` it had read, ended with `[ALPHA-MESH, SMOKE-TEST-B]`: A's label was lost. Labels were restored to `[ALPHA-MESH]`. |
 | 10 | Question through Jira | **Pass, after a fix.** First try: the worktree session had **no Atlassian connector**, because the plugin is enabled only in alpha-mesh's gitignored `.claude/settings.json`, which a new worktree does not have. Adding `enabledPlugins` to `hooks-settings.json` fixed it. Then the session posted the question comment, set `[ALPHA-MESH, AWAITING-USER-RESPONSE]`, and waited; the answer (`green`, typed into the window with `tmux send-keys`) made it remove only that label and write `colour.txt`. The session noticed the step 9 race itself. |
 | 11 | PR polling | **Pass.** `gh pr view 19 --json state` → `MERGED`; `21` → `CLOSED`. |
@@ -65,5 +66,5 @@ tmux new-window -d -n SMOKE-1 -c ../alpha-mesh-smoke \
 
 ## Still to run
 
-Step 8 (real instance stop, owner), 12 (AWS, owner), 13 (cleanup). The worktree `../alpha-mesh-smoke` and the session (`SMOKE-1`, status file
-`~/environment/logs/orchestrator/SMOKE-1.json`) are left in place for step 8.
+Step 12 (AWS, owner) and 13 (cleanup of the worktree `../alpha-mesh-smoke`, branch `test/PMAT-281-smoke`, the
+`SMOKE-1` window and `~/environment/logs/orchestrator/SMOKE-1.json*`).
