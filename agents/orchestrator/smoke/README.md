@@ -64,6 +64,13 @@ tmux new-window -d -n SMOKE-1 -c ../alpha-mesh-smoke \
 10. **`AWAITING-USER-RESPONSE` does not show in the status file.** While waiting for the answer the file said
     `idle`, then `waiting` (idle_prompt) after 60 s; the Jira label is the signal for "asked the owner".
 
+## Re-running step 8
+
+A reboot kills the tmux server, so start the mid-turn task **before** the owner reboots: recreate the window
+with `claude --resume <id>` and a slow task, wait until part of it is done and the status file says
+`working`, then reboot. Use sleeps of minutes, not 30 s: with 30 s there were about 90 seconds to reboot
+before the task finished.
+
 ## Still to run
 
 Step 12 (AWS, owner) and 13 (cleanup of the worktree `../alpha-mesh-smoke`, branch `test/PMAT-281-smoke`, the
