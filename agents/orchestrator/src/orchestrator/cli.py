@@ -28,7 +28,7 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="mesh orchestrate", description=__doc__.split("\n\n")[1])
     p.add_argument("tickets", nargs="*", help="Jira keys to start, e.g. PMAT-282")
     p.add_argument("--repo", default=".", help="repo the workers start in (default: current folder)")
-    p.add_argument("--interval", type=int, default=60, help="seconds between ticks (default 60)")
+    p.add_argument("--interval", type=int, default=30, help="seconds between ticks (default 30)")
     p.add_argument("--once", action="store_true", help="run one tick and exit")
     args = p.parse_args(argv)
 

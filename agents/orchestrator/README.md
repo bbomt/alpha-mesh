@@ -20,7 +20,7 @@ mesh orchestrate                     # after a reboot: reopen and resume the wor
 mesh orchestrate --once              # one tick, then exit
 ```
 
-Options: `--repo DIR` (default: the current folder), `--interval SECONDS` (default 60).
+Options: `--repo DIR` (default: the current folder), `--interval SECONDS` (default 30).
 
 Each tick, per ticket:
 
