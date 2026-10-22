@@ -89,3 +89,9 @@ def test_colour_ticket_yellow_done_green_pr_blue():
                     NOW, next_in=30, grace_minutes=5, color=True)
     assert "\033[33mPMAT-1" in screen and "\033[32mDone" in screen
     assert "\033[34mhttps://github.com/o/r/pull/7 merged" in screen
+
+
+def test_recent_events_are_dimmed():
+    screen = render([], {}, {}, {}, set(), [(NOW, "PMAT-1: started a worker")], NOW, next_in=30, grace_minutes=5,
+                    color=True)
+    assert "\033[2m" + f"{NOW.astimezone():%H:%M:%S}  PMAT-1: started a worker" in screen

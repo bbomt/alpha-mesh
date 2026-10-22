@@ -74,7 +74,7 @@ def render(keys: list[str], statuses: dict[str, dict], tickets: dict[str, Ticket
     recent = [f"{when.astimezone():%H:%M:%S}  {text[:EVENT_WIDTH]}" for when, text in reversed(events)]
     sections = [("mesh orchestrate", [(head, paint(head, BOLD))]),
                 ("Workers", table if keys else [("(none)", paint("(none)", DIM))]),
-                ("Recent", [(r, r) for r in recent] or [("(nothing yet)", paint("(nothing yet)", DIM))])]
+                ("Recent", [(r, paint(r, DIM)) for r in recent] or [("(nothing yet)", paint("(nothing yet)", DIM))])]
     inner = max(len(plain) for _, lines in sections for plain, _ in lines)
     inner = max(inner, *(len(title) + 2 for title, _ in sections))
     out = []
