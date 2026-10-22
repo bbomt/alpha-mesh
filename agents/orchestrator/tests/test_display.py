@@ -95,3 +95,9 @@ def test_recent_events_are_dimmed():
     screen = render([], {}, {}, {}, set(), [(NOW, "PMAT-1: started a worker")], NOW, next_in=30, grace_minutes=5,
                     color=True)
     assert "\033[2m" + f"{NOW.astimezone():%H:%M:%S}  PMAT-1: started a worker" in screen
+
+
+def test_failed_events_are_red():
+    screen = render([], {}, {}, {}, set(), [(NOW, "Jira read failed, trying again next tick: boom")], NOW,
+                    next_in=30, grace_minutes=5, color=True)
+    assert "\033[31m" + f"{NOW.astimezone():%H:%M:%S}  Jira read failed" in screen

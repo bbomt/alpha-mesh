@@ -8,6 +8,7 @@ from orchestrator.jira import Ticket
 
 # Redraw over the old screen (cursor home, clear each line's rest and below) rather than clearing it: no flicker.
 HOME, CLEAR_LINE, CLEAR_BELOW = "\033[H", "\033[K", "\033[J"
+# Every failure event says "failed" (Jira read, PR lookup, a ticket's tick, the whole tick): shown red, the rest dim.
 EVENT_WIDTH = 110  # longer events (e.g. an error's repr) are cut, so the boxes stay one screen wide
 RESET, BOLD, DIM, RED, YELLOW, GREEN, BLUE = (
     "\033[0m", "\033[1m", "\033[2m", "\033[31m", "\033[33m", "\033[32m", "\033[34m")
@@ -74,7 +75,7 @@ def render(keys: list[str], statuses: dict[str, dict], tickets: dict[str, Ticket
     recent = [f"{when.astimezone():%H:%M:%S}  {text[:EVENT_WIDTH]}" for when, text in reversed(events)]
     sections = [("mesh orchestrate", [(head, paint(head, BOLD))]),
                 ("Workers", table if keys else [("(none)", paint("(none)", DIM))]),
-                ("Recent", [(r, paint(r, DIM)) for r in recent] or [("(nothing yet)", paint("(nothing yet)", DIM))])]
+                ("Recent", [(r, paint(r, RED if "failed" in r else DIM)) for r in recent] or [("(nothing yet)", paint("(nothing yet)", DIM))])]
     inner = max(len(plain) for _, lines in sections for plain, _ in lines)
     inner = max(inner, *(len(title) + 2 for title, _ in sections))
     out = []
