@@ -11,7 +11,7 @@ from orchestrator.jira import Ticket
 class Fake:
     def __init__(self):
         self.tabs, self.opened, self.sent, self.killed, self.pruned = set(), [], [], [], []
-        self.clock = datetime(2026, 10, 22, 12, 0, tzinfo=timezone.utc)
+        self.clock = self.start = datetime(2026, 10, 22, 12, 0, tzinfo=timezone.utc)
 
     def ops(self):
         return loop.Ops(
@@ -25,7 +25,7 @@ class Fake:
 
     def prompt_at(self, key, minutes):
         """The worker received a prompt (UserPromptSubmit hook) this many minutes after the clock's start."""
-        at = (self.clock + timedelta(minutes=minutes)).isoformat(timespec="seconds")
+        at = (self.start + timedelta(minutes=minutes)).isoformat(timespec="seconds")
         s = status.read(key)
         status.update(key, history=s.get("history", []) + [{"event": "UserPromptSubmit", "at": at}])
 
