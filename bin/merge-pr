@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# alpha-mesh/bin/merge-pr
+# mesh merge-pr <PR url>: the owner's merge. Squash-merges the PR only if it is open and its branch already
+# has the latest commit of its base branch, so nothing merges onto a base it was not tested against.
+# --match-head-commit makes the merge fail if the branch moves between the check and the merge.
+
+set -euo pipefail
+
+if [ $# -ne 1 ] || [[ ! "$1" =~ ^https://github\.com/([^/]+/[^/]+)/pull/[0-9]+$ ]]; then
+  echo "usage: mesh merge-pr https://github.com/<owner>/<repo>/pull/<number>" >&2
+  exit 2
+fi
+url="$1"
+repo="${BASH_REMATCH[1]}"
+
+read -r state head base < <(gh pr view "$url" --json state,headRefOid,baseRefName \
+  | jq -r '"\(.state) \(.headRefOid) \(.baseRefName)"')
+if [ "$state" != "OPEN" ]; then
+  echo "Not merged: the PR is not open (it is $state)." >&2
+  exit 1
+fi
+
+behind="$(gh api "repos/$repo/compare/$base...$head" | jq -r .behind_by)"
+if [ "$behind" != "0" ]; then
+  echo "Not merged: stale. The branch is $behind commit(s) behind $base." >&2
+  echo "Ask the worker to merge $base in, rerun its tests and push; then run this again." >&2
+  exit 1
+fi
+
+gh pr merge "$url" --squash --match-head-commit "$head"
+echo "Merged $url (squash, at $head, which includes the latest $base)."
