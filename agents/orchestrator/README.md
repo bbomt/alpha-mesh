@@ -100,7 +100,7 @@ a worker by answering in its tab and telling it not to post to Jira.
 - `src/orchestrator/tmux.py`: the tabs, named by ticket key, in the tmux session the orchestrator runs in.
 - `smoke/hooks-settings.json`: the settings every worker is started with (`--settings`): the status hooks, the
   Atlassian plugin, and what a worker needs to run `mesh review-pull-request` inside its sandbox without
-  approvals: write access to `~/.mesh` (locks, checkpoints) and `~/.cache/uv`, and the hosts it reaches
+  approvals: write access to `~/.mesh` (locks, checkpoints), `~/.cache/uv` and pnpm's store, cache and state folders, and the hosts it reaches
   (GitHub, openrouter.ai, PyPI, the npm registry for pnpm, and the AWS SSO, STS, SSM, DynamoDB and S3
   endpoints in eu-west-1). The
   model call also needs PMAT-290 (the review agent's model client ignored the sandbox proxy).

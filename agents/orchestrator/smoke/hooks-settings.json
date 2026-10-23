@@ -1,7 +1,8 @@
 {
   "enabledPlugins": {"atlassian@claude-plugins-official": true},
   "sandbox": {
-    "filesystem": {"allowWrite": ["~/.mesh", "~/.cache/uv"]},
+    "filesystem": {"allowWrite": ["~/.mesh", "~/.cache/uv",
+                                  "~/.local/share/pnpm/store", "~/.cache/pnpm", "~/.local/state/pnpm"]},
     "network": {"allowedDomains": [
       "github.com", "api.github.com", "openrouter.ai", "pypi.org", "files.pythonhosted.org", "registry.npmjs.org",
       "portal.sso.eu-west-1.amazonaws.com", "oidc.eu-west-1.amazonaws.com",
