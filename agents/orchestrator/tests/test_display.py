@@ -18,7 +18,7 @@ def need(s=None, t=None, pr=None, alive=True):
 
 def test_owner_actions_are_spelled_out():
     assert need(t=Ticket(labels=["AWAITING-USER-RESPONSE"], done=False)) == "▶ answer on Jira"
-    assert need(t=Ticket(labels=["AWAITING-MERGE"], done=False), pr=Pr(24, "OPEN")) == "▶ approve PR #24"
+    assert need(t=Ticket(labels=["AWAITING-MERGE"], done=False), pr=Pr(24, "OPEN")) == "▶ merge PR #24"
     # Merged by hand: the worker isn't told by GitHub, so the owner must tell it.
     assert need(t=Ticket(labels=["AWAITING-MERGE"], done=False), pr=Pr(24, "MERGED")) == \
         "▶ tell the worker PR #24 is merged"
@@ -68,7 +68,7 @@ def test_screen_has_a_row_per_worker_and_newest_events_first():
     cells = [line.strip("│ ").split() for line in screen]
     assert cells.index(["PMAT-282", "working", "1m", "open", "-"]) < \
         cells.index(["PMAT-283", "idle", "1h12m", "open", "https://github.com/bbomt/alpha-mesh/pull/24", "open",
-                     "▶", "approve", "PR", "#24"])
+                     "▶", "merge", "PR", "#24"])
     titles = [line for line in screen if line.startswith("┌─ ")]
     assert [t.split()[1] for t in titles] == ["mesh", "Workers", "Recent"]
     assert any("2 workers · checked " in line for line in screen)

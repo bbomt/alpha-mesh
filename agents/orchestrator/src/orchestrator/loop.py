@@ -99,7 +99,7 @@ def _tick_one(key: str, alive: bool, t: Ticket | None, ops: Ops) -> str | None:
         return f"{key}: passed on the owner's comment {t.comment_id}"
     if t.done and "AWAITING-USER-RESPONSE" not in t.labels:
         # Done at the prompt with no open question: finished. Warn in the tab first, so an owner working in it
-        # can keep it. (The worker merges its own PR once the owner approves it.)
+        # can keep it. (The owner merges and tells the worker, on Jira or in its tab.)
         if not (warned := s.get("close_warned_at")):
             now = ops.now().isoformat(timespec="seconds")
             status.update(key, close_warned_at=now)
