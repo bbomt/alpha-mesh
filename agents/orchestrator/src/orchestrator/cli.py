@@ -43,8 +43,8 @@ a tab named after its ticket; it works the ticket itself, as CLAUDE.md says. Eac
   - the ticket is Done                        warn in the tab, close it {loop.CLOSE_GRACE.seconds // 60} minutes later unless you type there
 
 Talking to workers: answer a worker's question with a Jira comment, or type in its tab. Worker comments
-start with MESSAGE-FROM-WORKER; any other comment is taken as yours. Tell a worker its PR is merged the
-same way (merges are not watched).
+start with MESSAGE-FROM-WORKER; any other comment is taken as yours. Approve a worker's PR the same way
+("approved to merge"); the worker merges master in, reruns its tests and merges the PR itself.
 
 Stopping: Ctrl-C stops only the orchestrator; the workers keep running. Starting it again is safe at any
 time, and only one copy can run.

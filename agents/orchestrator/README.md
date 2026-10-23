@@ -45,18 +45,18 @@ Redrawn in place each tick, as three boxes (colour when run in a terminal; the h
 check each second):
 
 ```
-┌─ mesh orchestrate ─────────────────────────────────────────────────────────────────────────────┐
-│ 2 workers · checked 16:12:28 · next check in 30s                                               │
-└────────────────────────────────────────────────────────────────────────────────────────────────┘
-┌─ Workers ──────────────────────────────────────────────────────────────────────────────────────┐
-│ TICKET    WORKER   FOR  JIRA  PR                                                NEEDS YOU      │
-│ ────────────────────────────────────────────────────────────────────────────────────────────── │
-│ PMAT-284  working  3m   open  -                                                                │
-│ PMAT-285  idle     1m   open  https://github.com/bbomt/alpha-mesh/pull/26 open  ▶ merge PR #26 │
-└────────────────────────────────────────────────────────────────────────────────────────────────┘
-┌─ Recent ───────────────────────────────────────────────────────────────────────────────────────┐
-│ 16:12:28  PMAT-285: started a worker in tab PMAT-285                                           │
-└────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─ mesh orchestrate ───────────────────────────────────────────────────────────────────────────────┐
+│ 2 workers · checked 16:12:28 · next check in 30s                                                 │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─ Workers ────────────────────────────────────────────────────────────────────────────────────────┐
+│ TICKET    WORKER   FOR  JIRA  PR                                                NEEDS YOU        │
+│ ──────────────────────────────────────────────────────────────────────────────────────────────── │
+│ PMAT-284  working  3m   open  -                                                                  │
+│ PMAT-285  idle     1m   open  https://github.com/bbomt/alpha-mesh/pull/26 open  ▶ approve PR #26 │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─ Recent ─────────────────────────────────────────────────────────────────────────────────────────┐
+│ 16:12:28  PMAT-285: started a worker in tab PMAT-285                                             │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 - **WORKER / FOR:** the hook state (`working`, `idle`, `waiting`, or `tab missing`) and how long since it changed.
@@ -68,7 +68,7 @@ check each second):
 - **PR:** the URL and state of the newest PR with the ticket key in its title (`gh`, one call per ticket per tick).
 - **Colours:** ticket keys yellow, Done green, PR URLs blue; owner actions bold yellow, problems red, working
   workers green, idle ones dim.
-- **NEEDS YOU:** `▶ answer on Jira`, `▶ merge PR #N`, `▶ check the tab: <message>` (a permission prompt or any
+- **NEEDS YOU:** `▶ answer on Jira`, `▶ approve PR #N` (or `▶ tell the worker PR #N is merged` if you merged it yourself), `▶ check the tab: <message>` (a permission prompt or any
   notification other than the 60-second idle one), the close countdown, or `resuming the worker`.
 - **Recent:** the last 10 events, newest first, each cut to 110 characters so the boxes stay one screen wide. Every event is also appended to
   `~/environment/logs/orchestrator/events.log`, and the last 10 are shown again after a restart.
@@ -124,7 +124,8 @@ The orchestrator itself only reads.
 
 - Only tabs it started: a session started by hand is not watched.
 - One repo per run (`--repo`); tickets in other repos need another orchestrator.
-- Merges are not watched: the owner tells the worker its PR is merged, with a Jira comment (passed on like any
-  other) or in its tab. The PR column only shows the PR's state.
+- Merges are not watched: the owner approves the PR with a Jira comment (passed on like any other) or in its
+  tab, and the worker merges master in, reruns its tests and merges the PR itself (`CLAUDE_GLOBAL.md`). The
+  PR column only shows the PR's state.
 - PRs are found by the ticket key in brackets in the title (`feature[PMAT-282]: …`), from the repo's last 100 PRs.
 - Typing into a tab is one try; if the worker is busy, it waits for the next tick.

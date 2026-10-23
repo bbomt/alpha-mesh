@@ -40,7 +40,9 @@ def needs(s: dict, t: Ticket | None, pr: Pr | None, alive: bool, now: datetime, 
         left = grace_minutes - int((now - datetime.fromisoformat(warned)).total_seconds() // 60)
         return f"closing in {max(left, 0)}m (type in the tab to keep it)", DIM
     if t and "AWAITING-MERGE" in t.labels:
-        return (f"▶ merge PR #{pr.number}" if pr and pr.state == "OPEN" else "▶ merge the PR"), BOLD + YELLOW
+        if pr and pr.state == "MERGED":  # merged by hand: nothing tells the worker but the owner
+            return f"▶ tell the worker PR #{pr.number} is merged", BOLD + YELLOW
+        return (f"▶ approve PR #{pr.number}" if pr and pr.state == "OPEN" else "▶ approve the PR"), BOLD + YELLOW
     return "", ""
 
 
