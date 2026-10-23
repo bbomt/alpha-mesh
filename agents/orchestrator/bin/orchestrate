@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# agents/orchestrator/bin/orchestrate
+# Runs the orchestrator from the caller's folder (the repo the workers start in).
+
+set -euo pipefail
+
+SCRIPT_REALPATH="$(readlink -f "${BASH_SOURCE[0]}")"
+AGENT_DIR="$(cd "$(dirname "$SCRIPT_REALPATH")/.." && pwd)"
+
+exec uv run --quiet --project "$AGENT_DIR" python -m orchestrator.cli "$@"

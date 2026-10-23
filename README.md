@@ -12,6 +12,7 @@ alpha-mesh/
 │   ├── dream                # End-of-session memory consolidation (delegates to agents/dream/)
 │   ├── review-pull-request # PR review agent (delegates to agents/review-pull-request/)
 │   ├── merge-pr             # The owner's merge: refuses a PR branch that lacks the latest base branch
+│   ├── orchestrate          # One Claude worker per Jira ticket in tmux tabs (delegates to agents/orchestrator/)
 │   ├── bootstrap-memory     # One-time: extract from existing Claude Code logs
 │   ├── install              # One-time setup
 │   └── lib/repo             # Shared bash functions: find_repo_root, get_active_model
@@ -23,6 +24,7 @@ alpha-mesh/
 │   │   │   └── bin/dream    # Shell entry point
 │   │   └── tests/
 │   │       └── test_dream_core.py  # Python tests for dream module
+│   ├── orchestrator/        # mesh orchestrate — the mesh orchestrator for per-ticket Claude workers (PMAT-281)
 │   └── review-pull-request/ # PR review agent — LLM-powered, two-stage review (see below)
 ├── config/
 │   └── models.json          # All model profiles
@@ -204,3 +206,9 @@ mesh merge-pr https://github.com/org/repo/pull/123
 - **The branch moves between the check and the merge:** the merge fails (`--match-head-commit`), so untested
   commits are never merged.
 - Workers end their "ready to merge" Jira comment with this command, ready to copy.
+
+## mesh orchestrate
+
+`mesh orchestrate --repo-dir <repo folder> PMAT-282 PMAT-283` starts one Claude session per Jira ticket, each in its own tmux tab,
+then watches Jira and passes on the owner's comments; after a reboot, `mesh orchestrate` resumes
+the workers. Full documentation: `agents/orchestrator/README.md`.
