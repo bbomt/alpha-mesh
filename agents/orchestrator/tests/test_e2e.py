@@ -139,7 +139,14 @@ def test_start_comment_resume_and_close_end_to_end(world, monkeypatch):
     wait_for(lambda: status.read("PMAT-1")["session_start_input"]["source"] == "resume", "the resume hook")
     wait_for(at_prompt("PMAT-1"), "the resumed worker to finish its turn")
 
-    # 4. Done: the tab is warned, then closed (no grace period here), and the ticket is left alone.
+    # 4. Done: the tab is warned, then closed (no grace period here), and the ticket is left alone. The worker
+    # has removed its worktree, but (as in its sandbox) not git's record of it: closing prunes that record only.
+    repo = Path(world["repo"])
+    git = lambda *a: subprocess.run(["git", "-C", str(repo), *a], check=True, capture_output=True, text=True).stdout
+    git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init")
+    git("worktree", "add", "-q", "--detach", str(repo / "wt-done"))
+    git("worktree", "add", "-q", "--detach", str(repo / "wt-live"))
+    shutil.rmtree(repo / "wt-done")
     time.sleep(1.1)  # hook times have one-second precision; keep the resume's turn before the warning
     monkeypatch.setattr(loop, "CLOSE_GRACE", loop.timedelta(0))
     tickets["PMAT-1"] = Ticket(labels=["ALPHA-MESH"], done=True)
@@ -151,3 +158,4 @@ def test_start_comment_resume_and_close_end_to_end(world, monkeypatch):
     check(world)
     assert "PMAT-1" not in tabs()
     assert status.read("PMAT-1")["finished"] is True and status.active() == []
+    assert sorted(p.name for p in (repo / ".git/worktrees").iterdir()) == ["wt-live"]

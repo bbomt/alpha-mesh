@@ -40,6 +40,7 @@ class Ops:
     kill: Callable[[str], None]
     now: Callable[[], datetime] = lambda: datetime.now(timezone.utc)
     background: Callable[[], set[str]] = set  # tabs with a background command still running (screen only)
+    prune: Callable[[str], None] = lambda folder: None  # clear git's records of removed worktrees in a repo
 
 
 def _claude(key: str, args: str) -> str:
@@ -111,5 +112,9 @@ def _tick_one(key: str, alive: bool, t: Ticket | None, ops: Ops) -> str | None:
         if ops.now() - datetime.fromisoformat(warned) >= CLOSE_GRACE:
             ops.kill(key)
             status.update(key, finished=True)
+            # The worker removed its worktree inside its sandbox, which mounts git's record of each worktree
+            # (.git/worktrees/<name>) read-only, so the record is left behind. Prune only drops records whose
+            # worktree folder is gone, so live worktrees are untouched.
+            ops.prune(s["launch_dir"])
             return f"{key}: Done, closed its tab"
     return None

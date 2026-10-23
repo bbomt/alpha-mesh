@@ -61,8 +61,12 @@ First run: it prints an Atlassian login link; open it in a fresh browser tab and
 browser ends on. Full documentation: agents/orchestrator/README.md
 """
 
+def prune(folder: str) -> None:
+    subprocess.run(["git", "-C", folder, "worktree", "prune"], check=True, capture_output=True)
+
+
 OPS = loop.Ops(windows=tmux.windows, new_window=tmux.new_window, send=tmux.send, kill=tmux.kill,
-               background=tmux.background)
+               background=tmux.background, prune=prune)
 
 
 def main(argv: list[str] | None = None) -> int:

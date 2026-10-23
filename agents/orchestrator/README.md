@@ -40,7 +40,7 @@ Each tick, per ticket:
 | The ticket's tab is missing (reboot, closed tab) | Reopen it and resume the worker (`claude --resume <id>`) in the folder it started in, telling it it was interrupted |
 | A new owner comment (no `MESSAGE-FROM-WORKER` marker), whatever the labels: an answer, a rejected merge, feedback | Type "The owner commented on Jira …" into the tab, once per comment. Comments from before the worker started are not passed on |
 | The ticket is Done, with no `AWAITING-USER-RESPONSE`, and the worker is at its prompt | Type a warning into the tab: it closes in 5 minutes unless the owner types something there |
-| 5 minutes after that warning, and nobody typed in the tab | Close the tab |
+| 5 minutes after that warning, and nobody typed in the tab | Close the tab, then `git worktree prune` in the ticket's repo folder: the worker removed its worktree inside its sandbox, which can't delete git's record of it (`.git/worktrees/<name>`) |
 | The owner typed in the tab after the warning | Leave the tab open and stop watching the ticket: it is the owner's now |
 
 It types into a tab only when the worker sits at its prompt (hook state `idle` or `waiting`). Each ticket

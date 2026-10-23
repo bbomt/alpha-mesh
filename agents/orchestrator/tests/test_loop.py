@@ -10,7 +10,7 @@ from orchestrator.jira import Ticket
 
 class Fake:
     def __init__(self):
-        self.tabs, self.opened, self.sent, self.killed = set(), [], [], []
+        self.tabs, self.opened, self.sent, self.killed, self.pruned = set(), [], [], [], []
         self.clock = datetime(2026, 10, 22, 12, 0, tzinfo=timezone.utc)
 
     def ops(self):
@@ -20,6 +20,7 @@ class Fake:
             send=lambda name, text: self.sent.append((name, text)),
             kill=lambda name: (self.tabs.discard(name), self.killed.append(name)),
             now=lambda: self.clock,
+            prune=lambda folder: self.pruned.append(folder),
         )
 
     def prompt_at(self, key, minutes):
@@ -116,10 +117,12 @@ def test_done_tab_closes_after_the_grace_period_if_nobody_typed(running):
     running.prompt_at("PMAT-1", 0)  # our own warning
     running.clock += timedelta(minutes=4)
     loop.tick(["PMAT-1"], DONE, running.ops())
-    assert running.killed == []
+    assert running.killed == [] and running.pruned == []
     running.clock += timedelta(minutes=1)
     loop.tick(["PMAT-1"], DONE, running.ops())
     assert running.killed == ["PMAT-1"] and status.active() == []
+    # The worker removed its worktree inside its sandbox, which can't delete git's record of it; prune it.
+    assert running.pruned == [status.read("PMAT-1")["launch_dir"]]
 
 
 def test_owner_typing_after_the_warning_keeps_the_tab(running):
