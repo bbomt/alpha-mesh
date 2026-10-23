@@ -11,6 +11,7 @@ alpha-mesh/
 │   ├── model                # Switch/check model config
 │   ├── dream                # End-of-session memory consolidation (delegates to agents/dream/)
 │   ├── review-pull-request # PR review agent (delegates to agents/review-pull-request/)
+│   ├── merge-pr             # The owner's merge: refuses a PR branch that lacks the latest base branch
 │   ├── orchestrate          # One Claude worker per Jira ticket in tmux tabs (delegates to agents/orchestrator/)
 │   ├── bootstrap-memory     # One-time: extract from existing Claude Code logs
 │   ├── install              # One-time setup
@@ -189,6 +190,22 @@ When iterating on a PR, use `--since-last-review` to review only the new commits
 ### Documentation
 
 Full documentation: `agents/review-pull-request/README.md`
+
+## Merge Pull Request
+
+`mesh merge-pr <PR url>` is how the owner merges a ticket's PR. It squash-merges only when the PR is open and
+its branch already contains the latest commit of its base branch, so nothing lands on a base it was never
+tested against (parallel tickets make this likely). It doesn't rely on GitHub branch protection.
+
+```bash
+mesh merge-pr https://github.com/org/repo/pull/123
+```
+
+- **Stale:** it refuses and says how many commits the branch is behind. Ask the worker to merge the base in,
+  rerun its tests and push, then run it again.
+- **The branch moves between the check and the merge:** the merge fails (`--match-head-commit`), so untested
+  commits are never merged.
+- Workers end their "ready to merge" Jira comment with this command, ready to copy.
 
 ## mesh orchestrate
 

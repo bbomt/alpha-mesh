@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# alpha-mesh/test/test-merge-pr
+# Runs `mesh merge-pr` against a stand-in `gh` and checks it merges only a PR that is open and has the latest
+# base commit, and then with --match-head-commit.
+
+set -euo pipefail
+
+MESH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+WORK="$(mktemp -d)"
+trap 'rm -rf "$WORK"' EXIT
+URL="https://github.com/o/r/pull/15"
+HEAD_SHA="abc123"
+
+# The stand-in gh: answers from STUB_STATE and STUB_BEHIND, and logs every call.
+mkdir "$WORK/bin"
+cat > "$WORK/bin/gh" <<'EOF'
+#!/usr/bin/env bash
+echo "gh $*" >> "$STUB_LOG"
+case "$1 $2" in
+  "pr view") printf '{"state":"%s","headRefOid":"abc123","baseRefName":"master"}\n' "$STUB_STATE" ;;
+  "api repos/o/r/compare/master...abc123") printf '{"behind_by":%s,"ahead_by":1}\n' "$STUB_BEHIND" ;;
+  "pr merge") echo "merged" ;;
+  *) echo "unexpected gh call: $*" >&2; exit 9 ;;
+esac
+EOF
+chmod +x "$WORK/bin/gh"
+
+fails=0
+run() {  # run <name> <state> <behind> <want exit 0|1> <want merge call yes|no> <want text>
+  local name="$1" out code
+  : > "$WORK/log"
+  set +e
+  out="$(PATH="$WORK/bin:$PATH" STUB_LOG="$WORK/log" STUB_STATE="$2" STUB_BEHIND="$3" \
+         "$MESH_DIR/bin/mesh" merge-pr "$URL" 2>&1)"
+  code=$?
+  set -e
+  local ok=0 merged=no
+  [ "$code" -eq 0 ] || ok=1
+  grep -q "^gh pr merge" "$WORK/log" && merged=yes
+  if [ "$ok" != "$4" ]; then
+    echo "  FAIL: $name: exit $code"; echo "$out" | sed 's/^/    /'; fails=$((fails + 1)); return
+  fi
+  if [ "$merged" != "$5" ] || { [ "$5" = yes ] && [ "$(grep -c "^gh pr merge" "$WORK/log")" -ne 1 ]; } \
+     || { [ "$5" = yes ] && ! grep -qx "gh pr merge $URL --squash --match-head-commit $HEAD_SHA" "$WORK/log"; }; then
+    echo "  FAIL: $name: merge calls:"; sed 's/^/    /' "$WORK/log"; fails=$((fails + 1)); return
+  fi
+  if ! grep -qi -- "$6" <<<"$out"; then
+    echo "  FAIL: $name: output lacks '$6':"; echo "$out" | sed 's/^/    /'; fails=$((fails + 1)); return
+  fi
+  echo "  PASS: $name"
+}
+
+echo "=== merge-pr tests ==="
+run "a branch behind its base is refused, not merged" OPEN 2 1 no "stale"
+run "a PR that is not open is refused" MERGED 0 1 no "not open"
+run "a current branch is squash-merged at the checked head" OPEN 0 0 yes "merged"
+
+[ "$fails" -eq 0 ] || exit 1
