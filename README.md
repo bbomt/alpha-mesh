@@ -192,6 +192,6 @@ Full documentation: `agents/review-pull-request/README.md`
 
 ## mesh orchestrate
 
-`mesh orchestrate PMAT-282 PMAT-283` starts one Claude session per Jira ticket, each in its own tmux tab,
+`mesh orchestrate --repo-dir <repo folder> PMAT-282 PMAT-283` starts one Claude session per Jira ticket, each in its own tmux tab,
 then watches Jira and passes on the owner's comments; after a reboot, `mesh orchestrate` resumes
 the workers. PMAT-281 spike. Full documentation: `agents/orchestrator/README.md`.

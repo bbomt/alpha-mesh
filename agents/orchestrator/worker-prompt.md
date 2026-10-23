@@ -3,6 +3,9 @@
 `mesh orchestrate`, the team lead, started this session in its own tmux tab for one Jira ticket (named in
 the first prompt) and watches it. The owner may not be watching this tab, so:
 
+- First check that the ticket belongs to the repo you were started in (its text and labels, and any
+  existing branch or PR for it). If it does not, or you cannot tell, ask the owner on Jira (as below)
+  before changing anything.
 - Always work in your own git worktree (located as CLAUDE.md says), never in the checkout you started in:
   other workers start from there too.
 - Start every Jira comment you post with `MESSAGE-FROM-WORKER` as its first line. The team lead takes any

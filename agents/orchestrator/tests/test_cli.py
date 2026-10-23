@@ -46,6 +46,48 @@ def test_prs_match_the_bracketed_ticket_key_and_take_the_newest(monkeypatch):
     assert found == {"PMAT-282": Pr(8, "OPEN", "u8"), "PMAT-283": Pr(10, "OPEN", "u10"), "PMAT-284": None}
 
 
+def test_each_ticket_s_pr_is_looked_up_in_the_repo_its_worker_started_in(tmp_path, monkeypatch, capsys):
+    # One orchestrator, tickets from two repos: each ticket's PR comes from its own repo folder, and a failing
+    # lookup in one repo leaves the other's PRs on screen.
+    monkeypatch.setattr(status, "DIR", tmp_path)
+    for key, folder in (("PMAT-1", "/repos/a"), ("PMAT-2", "/repos/b"), ("PMAT-3", "/repos/a")):
+        status.update(key, ticket=key, session_id="s", launch_dir=folder)
+
+    async def snapshot(keys):
+        return {}
+
+    monkeypatch.setattr(cli.jira, "snapshot", snapshot)
+    monkeypatch.setattr(cli, "OPS", loop.Ops(windows=lambda: {"PMAT-1", "PMAT-2", "PMAT-3"}, new_window=None,
+                                             send=None, kill=None))
+    calls = []
+
+    def prs(keys, repo_dir):
+        calls.append((sorted(keys), repo_dir))
+        if repo_dir == "/repos/b":
+            raise RuntimeError("gh: not a git repository")
+        return {k: Pr(int(k[-1]), "OPEN", f"https://github.com/o/a/pull/{k[-1]}") for k in keys}
+
+    monkeypatch.setattr(cli, "prs", prs)
+    assert cli.main(["--once"]) == 0
+    assert sorted(calls) == [(["PMAT-1", "PMAT-3"], "/repos/a"), (["PMAT-2"], "/repos/b")]
+    out = capsys.readouterr().out
+    assert "https://github.com/o/a/pull/1" in out and "https://github.com/o/a/pull/3" in out
+    assert "PR lookup failed in /repos/b" in out
+
+
+def test_starting_tickets_needs_their_repo_folder(tmp_path, monkeypatch, capsys):
+    # No default folder: a ticket must never start in whatever folder the owner happens to be in.
+    monkeypatch.setattr(status, "DIR", tmp_path)
+    opened = []  # fakes, so a failing run never opens a real tab
+    monkeypatch.setattr(cli, "OPS", loop.Ops(windows=set, new_window=lambda *a: opened.append(a), send=None,
+                                             kill=None))
+    with pytest.raises(SystemExit) as done:
+        cli.main(["PMAT-1", "--once"])
+    assert opened == []
+    assert done.value.code == 2 and "--repo-dir is required" in capsys.readouterr().err
+    assert status.active() == []
+
+
 def test_a_second_copy_refuses_to_start(tmp_path, monkeypatch, capsys):
     import fcntl
     monkeypatch.setattr(status, "DIR", tmp_path)
@@ -80,5 +122,6 @@ def test_help_explains_use_and_does_not_start_anything(tmp_path, monkeypatch, ca
         cli.main(["--help"])
     out = capsys.readouterr().out
     assert done.value.code == 0 and list(tmp_path.iterdir()) == []  # no lock, no status files
-    for text in ("examples:", "mesh orchestrate PMAT-282 PMAT-283", "Ctrl-C", "MESSAGE-FROM-WORKER", "events.log"):
+    for text in ("examples:", "mesh orchestrate --repo-dir ~/environment/pmat/alpha-mesh PMAT-282 PMAT-283", "Ctrl-C", "MESSAGE-FROM-WORKER", "events.log",
+                 "--repo-dir DIR"):
         assert text in out

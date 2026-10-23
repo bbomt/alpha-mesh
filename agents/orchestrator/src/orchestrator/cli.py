@@ -1,4 +1,4 @@
-"""mesh orchestrate [TICKET ...] [--repo DIR] [--interval SECONDS] [--once]
+"""mesh orchestrate [TICKET ...] [--repo-dir DIR] [--interval SECONDS] [--once]
 
 Starts a worker for each new ticket, then loops: resumes any worker whose tab is gone (after a reboot,
 just run it again), passes on the owner's Jira comments, closes finished tabs, and redraws a
@@ -32,11 +32,15 @@ def prs(keys: list[str], repo_dir: str) -> dict[str, display.Pr | None]:
 
 
 HELP = f"""examples:
-  mesh orchestrate PMAT-282 PMAT-283   start a worker for each ticket, then keep watching
+  mesh orchestrate --repo-dir ~/environment/pmat/alpha-mesh PMAT-282 PMAT-283
+                                       start a worker for each ticket in that repo, then keep watching
   mesh orchestrate                     pick up the running workers (after a restart or reboot)
   mesh orchestrate --once              one check, then exit
 
-Run it in its own tmux tab, from the repo the workers should start in. Each worker is a Claude session in
+Run it in its own tmux tab. Tickets named on the command line start in --repo-dir, the local folder of
+their repo (required with tickets). Running tickets keep their own folder, so one orchestrator can run
+tickets from several repos: Ctrl-C, then mesh orchestrate --repo-dir ~/environment/pmat/<other-repo> KEY ...
+Each worker first checks that its ticket belongs to the repo it was started in. Each worker is a Claude session in
 a tab named after its ticket; it works the ticket itself, as CLAUDE.md says. Each check, for each ticket:
   - its tab is missing (reboot, closed tab)   reopen the tab and resume the same Claude session
   - you commented on Jira                     type "The owner commented on Jira ..." into the tab
@@ -65,10 +69,13 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="mesh orchestrate", description=__doc__.split("\n\n")[1], epilog=HELP,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("tickets", nargs="*", help="Jira keys to start, e.g. PMAT-282")
-    p.add_argument("--repo", default=".", help="repo the workers start in (default: current folder)")
+    p.add_argument("--repo-dir", metavar="DIR",
+                   help="local folder of the repo (its root) where the tickets named here start; required with tickets")
     p.add_argument("--interval", type=int, default=30, help="seconds between checks (default 30)")
     p.add_argument("--once", action="store_true", help="run one check and exit")
     args = p.parse_args(argv)
+    if args.tickets and not args.repo_dir:  # never start a ticket in whatever folder the owner happens to be in
+        p.error("--repo-dir is required when starting tickets: the local folder of their repo")
     # One team lead at a time: two would both type into the same tabs. The lock goes when the process does.
     status.DIR.mkdir(parents=True, exist_ok=True)
     lock = open(status.DIR / "orchestrator.lock", "w")
@@ -92,8 +99,9 @@ def main(argv: list[str] | None = None) -> int:
         with open(log, "a") as f:
             f.write(f"{now.isoformat(timespec='seconds')}  {text}\n")
 
-    repo = subprocess.run(["git", "-C", args.repo, "rev-parse", "--show-toplevel"],
-                          check=True, capture_output=True, text=True).stdout.strip()
+    if args.tickets:
+        repo = subprocess.run(["git", "-C", args.repo_dir, "rev-parse", "--show-toplevel"],
+                              check=True, capture_output=True, text=True).stdout.strip()
     for key in args.tickets:
         if key in status.active():
             event(f"{key}: already running")
@@ -108,11 +116,16 @@ def main(argv: list[str] | None = None) -> int:
         except Exception as e:  # Jira or network down: keep the workers' tabs alive, try again next tick
             event(f"Jira read failed, trying again next tick: {e!r}")
             tickets = {}
-        try:
-            found = prs(keys, repo) if keys else {}
-        except Exception as e:
-            found = {}
-            event(f"PR lookup failed, trying again next tick: {e!r}")
+        found = {}
+        by_dir: dict[str, list[str]] = {}  # each ticket's PR is in the repo its worker started in
+        for key in keys:
+            if folder := status.read(key).get("launch_dir"):
+                by_dir.setdefault(folder, []).append(key)
+        for folder, in_folder in by_dir.items():
+            try:
+                found |= prs(in_folder, folder)
+            except Exception as e:
+                event(f"PR lookup failed in {folder}, trying again next tick: {e!r}")
         try:
             for line in loop.tick(keys, tickets, OPS):
                 event(line)

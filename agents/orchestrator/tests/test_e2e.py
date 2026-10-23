@@ -95,7 +95,7 @@ def turn_done(key: str, before: int):
 
 
 def check(world) -> None:
-    assert cli.main(["--once", "--repo", world["repo"]]) == 0
+    assert cli.main(["--once", "--repo-dir", world["repo"]]) == 0
 
 
 def test_a_tab_whose_process_has_a_shell_child_is_running_a_background_task(world):
@@ -110,7 +110,7 @@ def test_start_comment_resume_and_close_end_to_end(world, monkeypatch):
     tickets["PMAT-1"] = Ticket(labels=["ALPHA-MESH"], done=False)
 
     # 1. Start: a tab named after the ticket, running claude with the session ID, name, hooks and worker prompt.
-    assert cli.main(["PMAT-1", "--once", "--repo", world["repo"]]) == 0
+    assert cli.main(["PMAT-1", "--once", "--repo-dir", world["repo"]]) == 0
     assert "PMAT-1" in tabs()
     wait_for(at_prompt("PMAT-1"), "the worker's hooks to report idle")
     s = status.read("PMAT-1")

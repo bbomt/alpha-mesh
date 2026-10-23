@@ -12,15 +12,20 @@ do by hand in those tabs.
 
 ## Usage
 
-Run it in its own tmux tab, from the repo the workers should start in:
+Run it in its own tmux tab. Tickets named on the command line start in `--repo-dir`, the local folder of their
+repo (its root). It is required with tickets, so a ticket never starts in whatever folder you happen to be in:
 
 ```bash
-mesh orchestrate PMAT-282 PMAT-283   # start a worker per ticket, then keep watching
+mesh orchestrate --repo-dir ~/environment/pmat/alpha-mesh PMAT-282 PMAT-283   # start a worker per ticket
 mesh orchestrate                     # after a reboot: reopen and resume the workers, then keep watching
 mesh orchestrate --once              # one tick, then exit
 ```
 
-Options: `--repo DIR` (default: the current folder), `--interval SECONDS` (default 30).
+Options: `--repo-dir DIR` (required with tickets), `--interval SECONDS` (default 30).
+
+Tickets from several repos: a running ticket keeps the folder it started in (its PRs are looked up there), so
+to add tickets from another repo, Ctrl-C and run `mesh orchestrate --repo-dir ~/environment/pmat/<other-repo> KEY ...`.
+Each worker first checks that its ticket belongs to the repo it was started in, and asks on Jira if not.
 
 Only one copy runs at a time (a lock in `~/environment/logs/orchestrator/`): a second `mesh orchestrate`
 says so and exits, since two would both type into the same tabs. Stopping it (Ctrl-C) and starting it again is
@@ -123,7 +128,6 @@ The orchestrator itself only reads.
 ## Limits (spike)
 
 - Only tabs it started: a session started by hand is not watched.
-- One repo per run (`--repo`); tickets in other repos need another orchestrator.
 - Merges are not watched: the owner approves the PR with a Jira comment (passed on like any other) or in its
   tab, and the worker merges master in, reruns its tests and merges the PR itself (`CLAUDE_GLOBAL.md`). The
   PR column only shows the PR's state.
