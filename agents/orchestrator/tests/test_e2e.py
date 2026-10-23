@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from orchestrator import cli, jira, loop, status
+from orchestrator import tmux as tmux_mod
 from orchestrator.jira import Ticket
 
 HERE = Path(__file__).parent
@@ -95,6 +96,13 @@ def turn_done(key: str, before: int):
 
 def check(world) -> None:
     assert cli.main(["--once", "--repo", world["repo"]]) == 0
+
+
+def test_a_tab_whose_process_has_a_shell_child_is_running_a_background_task(world):
+    # Claude runs a background command as a child shell (bash, or bwrap when sandboxed) that outlives the turn.
+    tmux("new-window", "-d", "-n", "PMAT-2", "bash -c 'bash -c \"sleep 30; true\" & wait'")
+    tmux("new-window", "-d", "-n", "PMAT-3", "sleep 30")
+    assert wait_for(lambda: tmux_mod.background() & {"PMAT-2", "PMAT-3"}, "the child shell to start") == {"PMAT-2"}
 
 
 def test_start_comment_resume_and_close_end_to_end(world, monkeypatch):

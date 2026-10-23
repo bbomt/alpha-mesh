@@ -39,6 +39,7 @@ class Ops:
     send: Callable[[str, str], None]
     kill: Callable[[str], None]
     now: Callable[[], datetime] = lambda: datetime.now(timezone.utc)
+    background: Callable[[], set[str]] = set  # tabs with a background command still running (screen only)
 
 
 def _claude(key: str, args: str) -> str:

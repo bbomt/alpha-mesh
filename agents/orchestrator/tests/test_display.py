@@ -36,6 +36,14 @@ def test_the_60_second_idle_notice_shows_as_idle_not_waiting():
     assert worker({"state": "waiting", "notification_type": "permission_prompt"}, alive=True)[0] == "waiting"
 
 
+def test_a_worker_at_its_prompt_with_a_background_task_running_is_working():
+    assert worker({"state": "idle"}, alive=True, background=True)[0] == "working"
+    assert worker({"state": "waiting", "notification_type": "idle_prompt"}, alive=True, background=True)[0] == "working"
+    # A real prompt still needs the owner, background task or not.
+    assert worker({"state": "waiting", "notification_type": "permission_prompt"}, alive=True,
+                  background=True)[0] == "waiting"
+
+
 def test_closing_counts_down_and_a_missing_tab_is_being_resumed():
     assert need(s={"state": "idle", "close_warned_at": at(2)}) == "closing in 3m (type in the tab to keep it)"
     assert need(alive=False) == "resuming the worker"

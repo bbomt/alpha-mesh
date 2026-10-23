@@ -61,7 +61,10 @@ check each second):
 
 - **WORKER / FOR:** the hook state (`working`, `idle`, `waiting`, or `tab missing`) and how long since it changed.
   `waiting` means a prompt in the tab (e.g. a permission); Claude's notice after a minute at the prompt shows as
-  `idle`. A worker waiting on its own background shell is also `idle`: Claude has no hook for that.
+  `idle`. A worker whose turn has ended while a background command it started still runs shows as `working`:
+  Claude has no hook for that, so the orchestrator looks for a child shell (`bash`, or `bwrap` when sandboxed)
+  under the tab's `claude` process. So `working` = busy, `waiting` and NEEDS YOU = you are needed, `idle` = at
+  its prompt with nothing running.
 - **PR:** the URL and state of the newest PR with the ticket key in its title (`gh`, one call per ticket per tick).
 - **Colours:** ticket keys yellow, Done green, PR URLs blue; owner actions bold yellow, problems red, working
   workers green, idle ones dim.

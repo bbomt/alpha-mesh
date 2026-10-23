@@ -44,25 +44,27 @@ def needs(s: dict, t: Ticket | None, pr: Pr | None, alive: bool, now: datetime, 
     return "", ""
 
 
-def worker(s: dict, alive: bool) -> tuple[str, str]:
+def worker(s: dict, alive: bool, background: bool = False) -> tuple[str, str]:
     if not alive:
         return "tab missing", RED
     state = s.get("state", "starting")
     if state == "waiting" and s.get("notification_type") == "idle_prompt":  # a minute at the prompt, not a question
         state = "idle"
+    if state == "idle" and background:  # its turn ended, but a background command it started is still running
+        state = "working"
     return state, GREEN if state == "working" else DIM
 
 
 def render(keys: list[str], statuses: dict[str, dict], tickets: dict[str, Ticket], prs: dict[str, Pr | None],
            alive: set[str], events: list[tuple[datetime, str]], now: datetime, next_in: int,
-           grace_minutes: int, color: bool = True) -> str:
+           grace_minutes: int, color: bool = True, background: set[str] = frozenset()) -> str:
     def paint(text: str, code: str) -> str:
         return f"{code}{text}{RESET}" if color and code and text else text
 
     rows = [(("TICKET", ""), ("WORKER", ""), ("FOR", ""), ("JIRA", ""), ("PR", ""), ("NEEDS YOU", ""))]
     for key in keys:
         s, t, pr = statuses.get(key, {}), tickets.get(key), prs.get(key)
-        rows.append(((key, YELLOW), worker(s, key in alive), (ago(s.get("updated"), now), ""),
+        rows.append(((key, YELLOW), worker(s, key in alive, key in background), (ago(s.get("updated"), now), ""),
                      ("-", "") if t is None else ("Done", GREEN) if t.done else ("open", ""),
                      ("-", "") if pr is None else (f"{pr.url or '#' + str(pr.number)} {pr.state.lower()}", BLUE),
                      needs(s, t, pr, key in alive, now, grace_minutes)))

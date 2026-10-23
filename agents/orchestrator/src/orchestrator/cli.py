@@ -57,7 +57,8 @@ First run: it prints an Atlassian login link; open it in a fresh browser tab and
 browser ends on. Full documentation: agents/orchestrator/README.md
 """
 
-OPS = loop.Ops(windows=tmux.windows, new_window=tmux.new_window, send=tmux.send, kill=tmux.kill)
+OPS = loop.Ops(windows=tmux.windows, new_window=tmux.new_window, send=tmux.send, kill=tmux.kill,
+               background=tmux.background)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -120,7 +121,8 @@ def main(argv: list[str] | None = None) -> int:
         try:
             draw = functools.partial(display.render, keys, {k: status.read(k) for k in keys}, tickets, found,
                                      OPS.windows(), list(events), datetime.now(timezone.utc),
-                                     grace_minutes=loop.CLOSE_GRACE.seconds // 60, color=tty)
+                                     grace_minutes=loop.CLOSE_GRACE.seconds // 60, color=tty,
+                                     background=OPS.background())
         except Exception as e:
             print(f"Screen failed, trying again next tick: {e!r}", file=sys.stderr, flush=True)
             draw = None
