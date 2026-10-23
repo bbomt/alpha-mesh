@@ -1,4 +1,4 @@
-"""End to end: the real `mesh orchestrate` loop (cli.main, one check per --once, so each check is also a
+"""End to end: the real `mesh orchestrate` loop (cli.main, one check per call, so each check is also a
 restart) against real tmux on its own server, a stand-in `claude` that runs the real status hook, and fake
 Jira and gh. The owner's tmux and Jira are never touched."""
 
@@ -15,7 +15,7 @@ from orchestrator import tmux as tmux_mod
 from orchestrator.jira import Ticket
 
 HERE = Path(__file__).parent
-HOOK = HERE.parent / "smoke/status-hook.sh"
+HOOK = HERE.parent / "status-hook.sh"
 SERVER = f"orch-e2e-{os.getpid()}"
 
 pytestmark = pytest.mark.skipif(shutil.which("tmux") is None, reason="needs tmux")
@@ -95,7 +95,7 @@ def turn_done(key: str, before: int):
 
 
 def check(world) -> None:
-    assert cli.main(["--once", "--repo-dir", world["repo"]]) == 0
+    assert cli.main(["--repo-dir", world["repo"]], once=True) == 0
 
 
 def test_a_tab_whose_process_has_a_shell_child_is_running_a_background_task(world):
@@ -110,7 +110,7 @@ def test_start_comment_resume_and_close_end_to_end(world, monkeypatch):
     tickets["PMAT-1"] = Ticket(labels=["ALPHA-MESH"], done=False)
 
     # 1. Start: a tab named after the ticket, running claude with the session ID, name, hooks and worker prompt.
-    assert cli.main(["PMAT-1", "--once", "--repo-dir", world["repo"]]) == 0
+    assert cli.main(["PMAT-1", "--repo-dir", world["repo"]], once=True) == 0
     assert "PMAT-1" in tabs()
     wait_for(at_prompt("PMAT-1"), "the worker's hooks to report idle")
     s = status.read("PMAT-1")

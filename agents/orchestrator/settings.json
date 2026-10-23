@@ -13,16 +13,16 @@
   },
   "hooks": {
     "SessionStart": [
-      {"hooks": [{"type": "command", "command": "$HOME/environment/pmat/alpha-mesh/agents/orchestrator/smoke/status-hook.sh started"}]}
+      {"hooks": [{"type": "command", "command": "$HOME/environment/pmat/alpha-mesh/agents/orchestrator/status-hook.sh started"}]}
     ],
     "UserPromptSubmit": [
-      {"hooks": [{"type": "command", "command": "$HOME/environment/pmat/alpha-mesh/agents/orchestrator/smoke/status-hook.sh working"}]}
+      {"hooks": [{"type": "command", "command": "$HOME/environment/pmat/alpha-mesh/agents/orchestrator/status-hook.sh working"}]}
     ],
     "Stop": [
-      {"hooks": [{"type": "command", "command": "$HOME/environment/pmat/alpha-mesh/agents/orchestrator/smoke/status-hook.sh idle"}]}
+      {"hooks": [{"type": "command", "command": "$HOME/environment/pmat/alpha-mesh/agents/orchestrator/status-hook.sh idle"}]}
     ],
     "Notification": [
-      {"hooks": [{"type": "command", "command": "$HOME/environment/pmat/alpha-mesh/agents/orchestrator/smoke/status-hook.sh waiting"}]}
+      {"hooks": [{"type": "command", "command": "$HOME/environment/pmat/alpha-mesh/agents/orchestrator/status-hook.sh waiting"}]}
     ]
   }
 }

@@ -12,6 +12,25 @@ do by hand in those tabs.
 - **The owner is the team lead.** They answer workers' questions, merge PRs (by hand or with `mesh merge-pr`)
   and tell the workers, on Jira or in the tabs.
 
+## Workflow
+
+```mermaid
+flowchart TD
+    A["Owner: mesh orchestrate --repo-dir DIR KEY ..."] --> B["Orchestrator opens a tab per ticket<br/>and starts a Claude worker"]
+    B --> C["Worker works the ticket per CLAUDE.md:<br/>worktree, branch, tests, PR, reviews"]
+    C -->|needs the owner| D["Worker: Jira comment + AWAITING-USER-RESPONSE"]
+    D --> E["Owner comments on Jira"]
+    E --> F["Orchestrator types 'The owner commented...'<br/>into the tab (worker at its prompt)"]
+    F --> C
+    C -->|reviewed| G["Worker: 'ready to merge' comment + AWAITING-MERGE<br/>(ends with mesh merge-pr URL)"]
+    G --> H["Owner merges (mesh merge-pr or by hand)<br/>and tells the worker on Jira"]
+    H --> F
+    C -->|told it's merged| I["Worker: after-merge tests on latest master,<br/>then Done, worktree removed"]
+    I --> J["Orchestrator warns the tab, closes it 5 minutes later,<br/>prunes git's worktree records"]
+    K["Tab missing (reboot, closed tab)"] --> L["Orchestrator resumes the same Claude session<br/>with an 'interrupted' nudge"]
+    L --> C
+```
+
 ## Usage
 
 Run it in its own tmux tab. Tickets named on the command line start in `--repo-dir`, the local folder of their
@@ -20,7 +39,6 @@ repo (its root). It is required with tickets, so a ticket never starts in whatev
 ```bash
 mesh orchestrate --repo-dir ~/environment/pmat/alpha-mesh PMAT-282 PMAT-283   # start a worker per ticket
 mesh orchestrate                     # after a reboot: reopen and resume the workers, then keep watching
-mesh orchestrate --once              # one tick, then exit
 ```
 
 Options: `--repo-dir DIR` (required with tickets), `--interval SECONDS` (default 30).
@@ -101,15 +119,19 @@ a worker by answering in its tab and telling it not to post to Jira.
 - `src/orchestrator/status.py`: the per-ticket status files, `~/environment/logs/orchestrator/<KEY>.json`,
   shared with the hooks under the same lock.
 - `src/orchestrator/tmux.py`: the tabs, named by ticket key, in the tmux session the orchestrator runs in.
-- `smoke/hooks-settings.json`: the settings every worker is started with (`--settings`): the status hooks, the
-  Atlassian plugin, and what a worker needs to run `mesh review-pull-request` inside its sandbox without
-  approvals: write access to `~/.mesh` (locks, checkpoints), `~/.cache/uv` and pnpm's store, cache and state folders, and the hosts it reaches
-  (GitHub, openrouter.ai, PyPI, the npm registry for pnpm, and the AWS SSO, STS, SSM, DynamoDB and S3
-  endpoints in eu-west-1). The
-  model call also needs PMAT-290 (the review agent's model client ignored the sandbox proxy).
+- `settings.json`: the settings every worker is started with (`--settings`):
+  - the status hooks (`SessionStart` → started, `UserPromptSubmit` → working, `Stop` → idle,
+    `Notification` → waiting), each running `status-hook.sh`;
+  - the Atlassian plugin;
+  - what a worker needs to work inside its sandbox without approvals: write access to `~/.mesh` (review
+    locks and checkpoints), `~/.cache/uv` and pnpm's store, cache and state folders, and the hosts it reaches
+    (GitHub, openrouter.ai, PyPI, the npm registry, and the AWS SSO, STS, SSM, DynamoDB and S3 endpoints in
+    eu-west-1).
   Settings load when a worker starts or resumes, so a running worker gets a change only after a restart.
-- `smoke/`: the hooks (`hooks-settings.json`, `status-hook.sh`) every worker is started with, and the
-  smoke test that shaped this design (`smoke/README.md`).
+- `status-hook.sh <state>`: the hook. It reads the hook input on stdin and writes the session's state to
+  `~/environment/logs/orchestrator/$ORCH_TICKET.json` (state, session ID, worktree, transcript, notification
+  type, history; the full `SessionStart` input as `session_start_input`), under the same lock as the
+  orchestrator. Tested by `test/test-orchestrator-status-hook`.
 - Tests: `tests/`, run by `test/test-orchestrator`.
   - Unit tests: the decisions, the screen and the CLI, with fake tmux, gh and Jira.
   - `test_e2e.py`: the real `mesh orchestrate` loop, one check at a time (each check is also a restart), against
@@ -128,6 +150,18 @@ The first run prints a link. Open it in a **fresh** browser tab (a reused tab fa
 The consent page lists every permission the server offers (about 30, all apps). It cannot be narrowed to
 Jira: unticking narrows only by read/write/search across all apps, and a Jira-only request is rejected.
 The orchestrator itself only reads.
+
+## Security: external commands
+
+The orchestrator drives programs, not libraries: `tmux` (the tabs), `claude` (started by tmux), `gh` (PRs),
+`git` and `ps`, so it runs them with `subprocess`. The rules that keep that safe:
+
+- Every call passes a list of arguments; none uses `shell=True`.
+- Ticket keys must look like `PMAT-282` (letters, a dash, digits), or nothing starts. A key becomes a tab name, a
+  status file name (`~/environment/logs/orchestrator/<KEY>.json`) and part of the `claude ...` command tmux
+  runs, so `../x` or `PMAT-1;rm -rf ~` must never get through.
+- The one string a shell runs (the `claude ...` command in the new tab) quotes every value with `shlex.quote`.
+- Text typed into a tab is a fixed template plus Jira comment IDs, sent with `send-keys -l` (literally).
 
 ## Limits (v1)
 

@@ -14,7 +14,7 @@ from orchestrator import status
 from orchestrator.jira import Ticket
 
 AGENT_DIR = Path(__file__).resolve().parents[2]
-HOOKS = AGENT_DIR / "smoke/hooks-settings.json"
+HOOKS = AGENT_DIR / "settings.json"
 # How an orchestrated worker differs from a manual session (Jira questions, comment marker, worktree);
 # passed on every start and resume, as a system prompt does not survive the process.
 WORKER_PROMPT = AGENT_DIR / "worker-prompt.md"

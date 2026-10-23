@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# PMAT-281 smoke test: a Claude Code hook that records a session's state in
+# A Claude Code hook (every worker's settings.json) that records the session's state in
 # ~/environment/logs/orchestrator/$ORCH_TICKET.json, so an orchestrator never reads the screen.
-# Usage (from the hook settings): status-hook.sh <state>; the hook input JSON arrives on stdin.
+# Usage (from settings.json): status-hook.sh <state>; the hook input JSON arrives on stdin.
 set -euo pipefail
 
 state="$1"

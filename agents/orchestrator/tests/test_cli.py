@@ -15,7 +15,7 @@ def test_a_failing_tick_does_not_stop_the_orchestrator(tmp_path, monkeypatch, ca
         raise RuntimeError("can't find window: PMAT-1")
 
     monkeypatch.setattr(loop, "tick", broken)
-    assert cli.main(["--once"]) == 0
+    assert cli.main([], once=True) == 0
     assert "Tick failed, trying again next tick" in capsys.readouterr().out  # shown under Recent
 
 
@@ -28,7 +28,7 @@ def test_recent_events_survive_a_restart(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(status, "DIR", tmp_path)
     (tmp_path / "events.log").write_text("2026-10-22T15:15:20+00:00  PMAT-282: passed on the owner's comment 13103\n")
     monkeypatch.setattr(cli, "OPS", loop.Ops(windows=set, new_window=None, send=None, kill=None))
-    assert cli.main(["--once"]) == 0
+    assert cli.main([], once=True) == 0
     assert "PMAT-282: passed on the owner's comment 13103" in capsys.readouterr().out
 
 
@@ -68,7 +68,7 @@ def test_each_ticket_s_pr_is_looked_up_in_the_repo_its_worker_started_in(tmp_pat
         return {k: Pr(int(k[-1]), "OPEN", f"https://github.com/o/a/pull/{k[-1]}") for k in keys}
 
     monkeypatch.setattr(cli, "prs", prs)
-    assert cli.main(["--once"]) == 0
+    assert cli.main([], once=True) == 0
     assert sorted(calls) == [(["PMAT-1", "PMAT-3"], "/repos/a"), (["PMAT-2"], "/repos/b")]
     out = capsys.readouterr().out
     assert "https://github.com/o/a/pull/1" in out and "https://github.com/o/a/pull/3" in out
@@ -82,7 +82,7 @@ def test_starting_tickets_needs_their_repo_folder(tmp_path, monkeypatch, capsys)
     monkeypatch.setattr(cli, "OPS", loop.Ops(windows=set, new_window=lambda *a: opened.append(a), send=None,
                                              kill=None))
     with pytest.raises(SystemExit) as done:
-        cli.main(["PMAT-1", "--once"])
+        cli.main(["PMAT-1"], once=True)
     assert opened == []
     assert done.value.code == 2 and "--repo-dir is required" in capsys.readouterr().err
     assert status.active() == []
@@ -103,9 +103,29 @@ def test_a_ticket_closed_in_this_check_is_not_drawn_as_resuming(tmp_path, monkey
     monkeypatch.setattr(cli, "prs", lambda keys, repo_dir: {})
     monkeypatch.setattr(cli.loop, "tick", closes)
     monkeypatch.setattr(cli, "OPS", loop.Ops(windows=set, new_window=None, send=None, kill=None))
-    assert cli.main(["--once"]) == 0
+    assert cli.main([], once=True) == 0
     out = capsys.readouterr().out
     assert "PMAT-1: Done, closed its tab" in out and "resuming the worker" not in out
+
+
+def test_only_jira_style_keys_are_started(tmp_path, monkeypatch, capsys):
+    # A key becomes a tab name, part of the shell command tmux runs, and a status file name: "../x" would write
+    # outside the status folder. Nothing starts unless every key looks like PROJECT-123.
+    monkeypatch.setattr(status, "DIR", tmp_path)
+    opened = []
+    monkeypatch.setattr(cli, "OPS", loop.Ops(windows=set, new_window=lambda *a: opened.append(a), send=None,
+                                             kill=None))
+    for bad in ("../x", "PMAT-1;rm -rf ~", "pmat-1", "PMAT"):
+        with pytest.raises(SystemExit) as done:
+            cli.main([bad, "--repo-dir", str(tmp_path)], once=True)
+        assert done.value.code == 2 and "not a Jira key" in capsys.readouterr().err
+    assert opened == [] and status.active() == []
+
+
+def test_once_is_not_a_command_line_option(capsys):
+    with pytest.raises(SystemExit) as done:
+        cli.main(["--once"])
+    assert done.value.code == 2
 
 
 def test_a_second_copy_refuses_to_start(tmp_path, monkeypatch, capsys):
@@ -113,7 +133,7 @@ def test_a_second_copy_refuses_to_start(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(status, "DIR", tmp_path)
     with open(tmp_path / "orchestrator.lock", "w") as held:
         fcntl.flock(held, fcntl.LOCK_EX)  # the first copy
-        assert cli.main(["--once"]) == 1
+        assert cli.main([], once=True) == 1
     assert "already running" in capsys.readouterr().err
 
 

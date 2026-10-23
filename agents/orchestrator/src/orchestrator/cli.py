@@ -1,4 +1,4 @@
-"""mesh orchestrate [TICKET ...] [--repo-dir DIR] [--interval SECONDS] [--once]
+"""mesh orchestrate [TICKET ...] [--repo-dir DIR] [--interval SECONDS]
 
 Starts a worker for each new ticket, then loops: resumes any worker whose tab is gone (after a reboot,
 just run it again), passes on the owner's Jira comments, closes finished tabs, and redraws a
@@ -10,6 +10,7 @@ import asyncio
 import fcntl
 import functools
 import json
+import re
 import subprocess
 import sys
 import time
@@ -35,7 +36,6 @@ HELP = f"""examples:
   mesh orchestrate --repo-dir ~/environment/pmat/alpha-mesh PMAT-282 PMAT-283
                                        start a worker for each ticket in that repo, then keep watching
   mesh orchestrate                     pick up the running workers (after a restart or reboot)
-  mesh orchestrate --once              one check, then exit
 
 Run it in its own tmux tab. Tickets named on the command line start in --repo-dir, the local folder of
 their repo (required with tickets). Running tickets keep their own folder, so one orchestrator can run
@@ -69,17 +69,23 @@ OPS = loop.Ops(windows=tmux.windows, new_window=tmux.new_window, send=tmux.send,
                background=tmux.background, prune=prune)
 
 
-def main(argv: list[str] | None = None) -> int:
+# A key is a tab name, part of the shell command tmux runs, and a status file name, so it must be a plain Jira key.
+KEY = re.compile(r"[A-Z][A-Z0-9]*-[0-9]+")
+
+
+def main(argv: list[str] | None = None, once: bool = False) -> int:
+    """`once` runs a single check and returns; tests use it, it isn't a command-line option."""
     p = argparse.ArgumentParser(prog="mesh orchestrate", description=__doc__.split("\n\n")[1], epilog=HELP,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("tickets", nargs="*", help="Jira keys to start, e.g. PMAT-282")
     p.add_argument("--repo-dir", metavar="DIR",
                    help="local folder of the repo (its root) where the tickets named here start; required with tickets")
     p.add_argument("--interval", type=int, default=30, help="seconds between checks (default 30)")
-    p.add_argument("--once", action="store_true", help="run one check and exit")
     args = p.parse_args(argv)
     if args.tickets and not args.repo_dir:  # never start a ticket in whatever folder the owner happens to be in
         p.error("--repo-dir is required when starting tickets: the local folder of their repo")
+    if bad := [k for k in args.tickets if not KEY.fullmatch(k)]:
+        p.error(f"not a Jira key (expected e.g. PMAT-282): {', '.join(bad)}")
     # One mesh orchestrator at a time: two would both type into the same tabs. The lock goes when the process does.
     status.DIR.mkdir(parents=True, exist_ok=True)
     lock = open(status.DIR / "orchestrator.lock", "w")
@@ -144,10 +150,10 @@ def main(argv: list[str] | None = None) -> int:
         except Exception as e:
             print(f"Screen failed, trying again next tick: {e!r}", file=sys.stderr, flush=True)
             draw = None
-        if args.once or not tty:
+        if once or not tty:
             if draw:
                 print(draw(next_in=args.interval), flush=True)
-            if args.once:
+            if once:
                 return 0
             time.sleep(args.interval)
             continue

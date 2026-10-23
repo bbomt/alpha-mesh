@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # alpha-mesh/test/test-orchestrator-status-hook
-# Tests for agents/orchestrator/smoke/status-hook.sh (PMAT-281 smoke test)
+# Tests for agents/orchestrator/status-hook.sh
 
 set -euo pipefail
 
 MESH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-HOOK="$MESH_DIR/agents/orchestrator/smoke/status-hook.sh"
+HOOK="$MESH_DIR/agents/orchestrator/status-hook.sh"
 
 # The hook writes under $HOME, so every run uses a throwaway HOME.
 FAKE_HOME="$(mktemp -d)"
