@@ -2,7 +2,7 @@
 
 from datetime import datetime, timedelta, timezone
 
-from orchestrator.display import Pr, ago, needs, render
+from orchestrator.display import Pr, ago, needs, render, worker
 from orchestrator.jira import Ticket
 
 NOW = datetime(2026, 10, 22, 15, 0, tzinfo=timezone.utc)
@@ -27,6 +27,13 @@ def test_owner_actions_are_spelled_out():
 def test_idle_and_working_workers_need_nothing():
     assert need(s={"state": "waiting", "notification_type": "idle_prompt"}) == ""
     assert need(s={"state": "working"}, t=Ticket(labels=["ALPHA-MESH"], done=False)) == ""
+
+
+def test_the_60_second_idle_notice_shows_as_idle_not_waiting():
+    # Claude's "waiting for your input" notice after a minute at the prompt (e.g. while a background shell
+    # runs) is not the worker waiting for the owner; a permission prompt still is.
+    assert worker({"state": "waiting", "notification_type": "idle_prompt"}, alive=True)[0] == "idle"
+    assert worker({"state": "waiting", "notification_type": "permission_prompt"}, alive=True)[0] == "waiting"
 
 
 def test_closing_counts_down_and_a_missing_tab_is_being_resumed():

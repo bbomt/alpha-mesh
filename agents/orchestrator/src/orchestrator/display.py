@@ -48,6 +48,8 @@ def worker(s: dict, alive: bool) -> tuple[str, str]:
     if not alive:
         return "tab missing", RED
     state = s.get("state", "starting")
+    if state == "waiting" and s.get("notification_type") == "idle_prompt":  # a minute at the prompt, not a question
+        state = "idle"
     return state, GREEN if state == "working" else DIM
 
 
