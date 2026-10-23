@@ -1,1 +1,1 @@
-"""mesh orchestrate (PMAT-281 spike)."""
+"""mesh orchestrate (v1, PMAT-281)."""

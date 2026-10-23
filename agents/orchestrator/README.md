@@ -1,4 +1,4 @@
-# mesh orchestrate (PMAT-281 spike)
+# mesh orchestrate (v1, PMAT-281)
 
 Runs one Claude session per Jira ticket, each in its own tmux tab, and does what the owner would otherwise
 do by hand in those tabs.
@@ -129,7 +129,7 @@ The consent page lists every permission the server offers (about 30, all apps). 
 Jira: unticking narrows only by read/write/search across all apps, and a Jira-only request is rejected.
 The orchestrator itself only reads.
 
-## Limits (spike)
+## Limits (v1)
 
 - Only tabs it started: a session started by hand is not watched.
 - Merges are not watched: the owner merges (by hand, or with the `mesh merge-pr <url>` command the worker's
