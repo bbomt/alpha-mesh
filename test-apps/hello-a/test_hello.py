@@ -1,15 +1,13 @@
 import contextlib
 import io
-import runpy
-from pathlib import Path
 
-SCRIPT = Path(__file__).with_name("hello.py")
+from hello import main
 
 
 def test_prints_greeting():
     out = io.StringIO()
     with contextlib.redirect_stdout(out):
-        runpy.run_path(str(SCRIPT), run_name="__main__")
+        main()
     assert out.getvalue() == "Looking goood feelin good :)\n"
 
 
