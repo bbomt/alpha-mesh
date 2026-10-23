@@ -136,6 +136,7 @@ def main(argv: list[str] | None = None) -> int:
         except Exception as e:  # a tab closed mid-tick...: the workers run on, so must the orchestrator
             event(f"Tick failed, trying again next tick: {e!r}")
         try:
+            keys = status.active()  # again: this check may have closed a finished ticket's tab
             draw = functools.partial(display.render, keys, {k: status.read(k) for k in keys}, tickets, found,
                                      OPS.windows(), list(events), datetime.now(timezone.utc),
                                      grace_minutes=loop.CLOSE_GRACE.seconds // 60, color=tty,

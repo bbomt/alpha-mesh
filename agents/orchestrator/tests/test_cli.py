@@ -88,6 +88,26 @@ def test_starting_tickets_needs_their_repo_folder(tmp_path, monkeypatch, capsys)
     assert status.active() == []
 
 
+def test_a_ticket_closed_in_this_check_is_not_drawn_as_resuming(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(status, "DIR", tmp_path)
+    status.update("PMAT-1", ticket="PMAT-1", session_id="s", launch_dir="/repos/a")
+
+    async def snapshot(keys):
+        return {}
+
+    def closes(keys, tickets, ops):  # this check closes the finished ticket's tab
+        status.update("PMAT-1", finished=True)
+        return ["PMAT-1: Done, closed its tab"]
+
+    monkeypatch.setattr(cli.jira, "snapshot", snapshot)
+    monkeypatch.setattr(cli, "prs", lambda keys, repo_dir: {})
+    monkeypatch.setattr(cli.loop, "tick", closes)
+    monkeypatch.setattr(cli, "OPS", loop.Ops(windows=set, new_window=None, send=None, kill=None))
+    assert cli.main(["--once"]) == 0
+    out = capsys.readouterr().out
+    assert "PMAT-1: Done, closed its tab" in out and "resuming the worker" not in out
+
+
 def test_a_second_copy_refuses_to_start(tmp_path, monkeypatch, capsys):
     import fcntl
     monkeypatch.setattr(status, "DIR", tmp_path)
