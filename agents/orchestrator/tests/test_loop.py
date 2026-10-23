@@ -91,7 +91,8 @@ def test_comments_from_before_the_worker_started_are_not_passed_on():
 
 
 def test_worker_question_alone_is_not_a_reply(running):
-    t = {"PMAT-1": Ticket(labels=["AWAITING-USER-RESPONSE"], done=False, comment_id="8", comment_from_worker=True)}
+    # Only the worker's question since: the owner's newest comment is still the one already seen at start.
+    t = {"PMAT-1": Ticket(labels=["AWAITING-USER-RESPONSE"], done=False, comment_id=None)}
     loop.tick(["PMAT-1"], t, running.ops())
     assert running.sent == []
 

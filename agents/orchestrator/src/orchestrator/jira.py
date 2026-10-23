@@ -26,8 +26,7 @@ WORKER_MARK = "MESSAGE-FROM-WORKER"
 class Ticket:
     labels: list[str]
     done: bool
-    comment_id: str | None = None  # newest comment
-    comment_from_worker: bool = False
+    comment_id: str | None = None  # the owner's newest comment (workers' comments skipped)
 
 
 class FileStorage(TokenStorage):
@@ -71,8 +70,15 @@ def _data(result) -> dict:
     return json.loads(result.content[0].text)["data"]
 
 
+def newest_owner_comment(newest_first: list[dict]) -> str | None:
+    """The owner's newest comment, skipping workers' (marked on their first line). Only the newest overall
+    would let a worker comment posted right after the owner's hide it (PMAT-221, 2026-10-23)."""
+    return next((c["id"] for c in newest_first
+                 if WORKER_MARK not in c["body"].strip().split("\n", 1)[0]), None)
+
+
 async def snapshot(keys: list[str]) -> dict[str, Ticket]:
-    """Labels, Done or not, and the newest comment of each ticket."""
+    """Labels, Done or not, and the owner's newest comment of each ticket."""
     auth = OAuthClientProvider(
         URL,
         OAuthClientMetadata(
@@ -99,12 +105,10 @@ async def snapshot(keys: list[str]) -> dict[str, Ticket]:
                 "cloudId": CLOUD_ID, "issueIdOrKey": key, "fields": ["labels", "status"], "view": "full"}))
             comments = _data(await session.call_tool("executeRead", {
                 "name": "listJiraIssueComments", "cloudId": CLOUD_ID,
-                "inputs": {"issueIdOrKey": key, "orderBy": "-created", "maxResults": 1}}))["comments"]
-            newest = comments[0] if comments else None
+                "inputs": {"issueIdOrKey": key, "orderBy": "-created", "maxResults": 20}}))["comments"]
             tickets[key] = Ticket(
                 labels=issue["fields"].get("labels", []),
                 done=issue["fields"]["status"]["statusCategory"]["key"] == "done",
-                comment_id=newest["id"] if newest else None,
-                comment_from_worker=bool(newest) and WORKER_MARK in newest["body"].strip().split("\n", 1)[0],
+                comment_id=newest_owner_comment(comments),
             )
     return tickets

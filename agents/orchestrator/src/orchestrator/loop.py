@@ -94,7 +94,7 @@ def _tick_one(key: str, alive: bool, t: Ticket | None, ops: Ops) -> str | None:
     if s.get("state") not in AT_PROMPT:
         return None
     # Any new owner comment is passed on, whatever the labels: an answer, a rejected merge, feedback.
-    if t.comment_id and not t.comment_from_worker and t.comment_id != s["relayed_comment"]:
+    if t.comment_id and t.comment_id != s["relayed_comment"]:
         ops.send(key, REPLY.format(key=key, comment=t.comment_id))
         status.update(key, relayed_comment=t.comment_id)
         return f"{key}: passed on the owner's comment {t.comment_id}"
