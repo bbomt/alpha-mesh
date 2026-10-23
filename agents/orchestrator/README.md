@@ -101,7 +101,8 @@ a worker by answering in its tab and telling it not to post to Jira.
 - `smoke/hooks-settings.json`: the settings every worker is started with (`--settings`): the status hooks, the
   Atlassian plugin, and what a worker needs to run `mesh review-pull-request` inside its sandbox without
   approvals: write access to `~/.mesh` (locks, checkpoints) and `~/.cache/uv`, and the hosts it reaches
-  (GitHub, openrouter.ai, PyPI, and the AWS SSO, STS, SSM, DynamoDB and S3 endpoints in eu-west-1). The
+  (GitHub, openrouter.ai, PyPI, the npm registry for pnpm, and the AWS SSO, STS, SSM, DynamoDB and S3
+  endpoints in eu-west-1). The
   model call also needs PMAT-290 (the review agent's model client ignored the sandbox proxy).
   Settings load when a worker starts or resumes, so a running worker gets a change only after a restart.
 - `smoke/`: the hooks (`hooks-settings.json`, `status-hook.sh`) every worker is started with, and the

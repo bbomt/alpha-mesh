@@ -3,7 +3,7 @@
   "sandbox": {
     "filesystem": {"allowWrite": ["~/.mesh", "~/.cache/uv"]},
     "network": {"allowedDomains": [
-      "github.com", "api.github.com", "openrouter.ai", "pypi.org", "files.pythonhosted.org",
+      "github.com", "api.github.com", "openrouter.ai", "pypi.org", "files.pythonhosted.org", "registry.npmjs.org",
       "portal.sso.eu-west-1.amazonaws.com", "oidc.eu-west-1.amazonaws.com",
       "sts.amazonaws.com", "sts.eu-west-1.amazonaws.com", "ssm.eu-west-1.amazonaws.com",
       "dynamodb.eu-west-1.amazonaws.com", "*.ddb.eu-west-1.amazonaws.com",
