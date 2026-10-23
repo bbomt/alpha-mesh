@@ -127,7 +127,7 @@ def test_start_comment_resume_and_close_end_to_end(world, monkeypatch):
     check(world)
     check(world)
     typed = wait_for(lambda: lines(record / "PMAT-1.typed"), "the reply to be typed")
-    assert typed == [loop.REPLY.format(key="PMAT-1", comment="9")]
+    assert typed == [loop.REPLY.format(key="PMAT-1", after="the ones from before you started", comment="9")]
     wait_for(turn_done("PMAT-1", before), "the worker to finish its turn")
 
     # 3. The tab is killed (as by a reboot): the next check resumes the same session from the same folder.

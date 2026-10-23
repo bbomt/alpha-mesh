@@ -22,7 +22,9 @@ WORKER_PROMPT = AGENT_DIR / "worker-prompt.md"
 START = "Work on Jira {key}."
 NUDGE = ("You were interrupted (the machine or this tab stopped). Check where you were (git status, the "
          "ticket, your last steps) and carry on, without redoing finished work.")
-REPLY = "The owner commented on Jira {key} (newest comment {comment}). Read their new comments and act on them."
+# Names the range, as the worker may have posted since the last one it was told about (so "since my last
+# post" could miss one).
+REPLY = "The owner commented on Jira {key}: comments after {after}, newest {comment}. Read them all and act on them."
 CLOSING = ("Mesh orchestrator: Jira {key} is Done, so I will close this tab in {minutes} minutes. To keep it, type anything "
            "here before then. No reply needed.")
 CLOSE_GRACE = timedelta(minutes=5)
@@ -95,7 +97,8 @@ def _tick_one(key: str, alive: bool, t: Ticket | None, ops: Ops) -> str | None:
         return None
     # Any new owner comment is passed on, whatever the labels: an answer, a rejected merge, feedback.
     if t.comment_id and t.comment_id != s["relayed_comment"]:
-        ops.send(key, REPLY.format(key=key, comment=t.comment_id))
+        after = s["relayed_comment"] or "the ones from before you started"
+        ops.send(key, REPLY.format(key=key, after=after, comment=t.comment_id))
         status.update(key, relayed_comment=t.comment_id)
         return f"{key}: passed on the owner's comment {t.comment_id}"
     if t.done and "AWAITING-USER-RESPONSE" not in t.labels:

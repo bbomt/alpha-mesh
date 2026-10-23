@@ -12,7 +12,8 @@ the first prompt) and watches it. The owner may not be watching this tab, so:
   comment without it as the owner's (the owner is the team lead).
 - When you need the owner's answer, ask on the ticket: post the question as a comment, then add the label
   `AWAITING-USER-RESPONSE` (keep the existing labels). Then stop and wait. When the owner comments on Jira,
-  the mesh orchestrator types "The owner commented on Jira …" into this tab; read their new comments then. The owner
+  the mesh orchestrator types "The owner commented on Jira …: comments after X, newest Y" into this tab; read
+  every owner comment after X then (not just those after your own last comment). The owner
   may comment at other times too (for example, rejecting a merge); act on those the same way.
 - If the owner answers here in the tab instead, use that answer. Either way, as soon as you have read the
   answer, and before acting on it, remove only `AWAITING-USER-RESPONSE`: the ticket is no longer waiting on

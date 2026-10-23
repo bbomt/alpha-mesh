@@ -71,13 +71,22 @@ def test_owner_reply_is_passed_on_once(running):
     t = {"PMAT-1": Ticket(labels=["AWAITING-USER-RESPONSE"], done=False, comment_id="9")}
     loop.tick(["PMAT-1"], t, running.ops())
     loop.tick(["PMAT-1"], t, running.ops())
-    assert running.sent == [("PMAT-1", loop.REPLY.format(key="PMAT-1", comment="9"))]
+    assert running.sent == [("PMAT-1", loop.REPLY.format(key="PMAT-1", after="the ones from before you started", comment="9"))]
+
+
+def test_the_worker_is_told_which_comments_are_new(running):
+    # PMAT-221: 13226 was passed on; while the worker worked on it the owner posted 13227 and the worker then
+    # posted 13228. "Since my last post" (13228) would miss 13227, so the message names the range.
+    status.update("PMAT-1", relayed_comment="13226")
+    loop.tick(["PMAT-1"], {"PMAT-1": Ticket(labels=[], done=False, comment_id="13227")}, running.ops())
+    assert running.sent == [("PMAT-1", "The owner commented on Jira PMAT-1: comments after 13226, newest 13227. "
+                                       "Read them all and act on them.")]
 
 
 def test_owner_comment_is_passed_on_whatever_the_labels(running):
     t = {"PMAT-1": Ticket(labels=["AWAITING-MERGE"], done=False, comment_id="12")}  # e.g. merge rejected
     loop.tick(["PMAT-1"], t, running.ops())
-    assert running.sent == [("PMAT-1", loop.REPLY.format(key="PMAT-1", comment="12"))]
+    assert running.sent == [("PMAT-1", loop.REPLY.format(key="PMAT-1", after="the ones from before you started", comment="12"))]
 
 
 def test_comments_from_before_the_worker_started_are_not_passed_on():
@@ -174,7 +183,7 @@ def test_one_tickets_failure_does_not_stop_the_others(running):
          "PMAT-2": Ticket(labels=[], done=False, comment_id="7")}
     out = loop.tick(["PMAT-1", "PMAT-2"], t, ops)
     assert out[0].startswith("PMAT-1: failed this tick") and "can't find window" in out[0]
-    assert running.sent == [("PMAT-2", loop.REPLY.format(key="PMAT-2", comment="7"))]
+    assert running.sent == [("PMAT-2", loop.REPLY.format(key="PMAT-2", after="the ones from before you started", comment="7"))]
 
 
 def test_hook_fields_and_orchestrator_fields_survive_each_other():
