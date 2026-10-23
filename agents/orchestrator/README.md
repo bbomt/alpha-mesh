@@ -83,7 +83,8 @@ check each second):
 **Orchestrated workers get a system prompt** (`worker-prompt.md`, passed with `--append-system-prompt-file`
 on every start and resume). It is the only difference from a manual session:
 
-- ask the owner on Jira (a comment, then `AWAITING-USER-RESPONSE`) and wait, taking the answer from Jira or the tab;
+- ask the owner on Jira (a comment, then `AWAITING-USER-RESPONSE`) and wait, taking the answer from Jira or the tab,
+  and remove the label as soon as it has read the answer (before acting on it), so `▶ answer on Jira` goes at once;
 - start every Jira comment with `MESSAGE-FROM-WORKER` (workers and the owner post from the same Jira
   account, so a comment without the marker is taken as the owner's);
 - always work in a git worktree (at `.claude/worktrees/<TICKET>`, per `CLAUDE_GLOBAL.md`), never in the checkout all

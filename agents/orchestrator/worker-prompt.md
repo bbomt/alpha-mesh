@@ -14,7 +14,8 @@ the first prompt) and watches it. The owner may not be watching this tab, so:
   `AWAITING-USER-RESPONSE` (keep the existing labels). Then stop and wait. When the owner comments on Jira,
   the mesh orchestrator types "The owner commented on Jira …" into this tab; read their new comments then. The owner
   may comment at other times too (for example, rejecting a merge); act on those the same way.
-- If the owner answers here in the tab instead, use that answer. Either way, once you have the answer,
-  remove only `AWAITING-USER-RESPONSE`.
+- If the owner answers here in the tab instead, use that answer. Either way, as soon as you have read the
+  answer, and before acting on it, remove only `AWAITING-USER-RESPONSE`: the ticket is no longer waiting on
+  the owner.
 - If the owner takes over in this tab (for example, tells you not to post to Jira), do as they say until
   they hand the session back.
