@@ -32,6 +32,19 @@ def test_idle_and_working_workers_need_nothing():
     assert need(s={"state": "working"}, t=Ticket(labels=["ALPHA-MESH"], done=False)) == ""
 
 
+def test_owner_actions_show_only_while_the_worker_is_at_its_prompt():
+    # A working worker isn't waiting on the owner (it may be about to push), so a merge or answer waits.
+    t, pr = Ticket(labels=["AWAITING-MERGE"], done=False), Pr(16, "OPEN", "u16")
+
+    def row(state, background=set()):
+        return render(["PMAT-1"], {"PMAT-1": {"state": state}}, {"PMAT-1": t}, {"PMAT-1": pr}, {"PMAT-1"}, [],
+                      NOW, next_in=30, grace_minutes=5, color=False, background=background)
+
+    assert "▶ merge PR #16" in row("idle")
+    assert "▶ merge PR #16" not in row("working")
+    assert "▶ merge PR #16" not in row("idle", background={"PMAT-1"})  # its background command still runs
+
+
 def test_the_60_second_idle_notice_shows_as_idle_not_waiting():
     # Claude's "waiting for your input" notice after a minute at the prompt (e.g. while a background shell
     # runs) is not the worker waiting for the owner; a permission prompt still is.

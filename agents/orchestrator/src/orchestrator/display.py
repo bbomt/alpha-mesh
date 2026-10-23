@@ -28,10 +28,13 @@ def ago(since: str | None, now: datetime) -> str:
     return f"{minutes}m" if minutes < 60 else f"{minutes // 60}h{minutes % 60:02d}m"
 
 
-def needs(s: dict, t: Ticket | None, pr: Pr | None, alive: bool, now: datetime, grace_minutes: int) -> tuple[str, str]:
+def needs(s: dict, t: Ticket | None, pr: Pr | None, alive: bool, now: datetime, grace_minutes: int,
+          busy: bool = False) -> tuple[str, str]:
     """What the owner must do for this worker, and the colour to show it in."""
     if not alive:
         return "resuming the worker", YELLOW
+    if busy:  # working, or its background command runs: not waiting on the owner (it may be about to push)
+        return "", ""
     if t and "AWAITING-USER-RESPONSE" in t.labels:
         return "▶ answer on Jira", BOLD + YELLOW
     if s.get("state") == "waiting" and s.get("notification_type") not in (None, "idle_prompt"):
@@ -66,10 +69,11 @@ def render(keys: list[str], statuses: dict[str, dict], tickets: dict[str, Ticket
     rows = [(("TICKET", ""), ("WORKER", ""), ("FOR", ""), ("JIRA", ""), ("PR", ""), ("NEEDS YOU", ""))]
     for key in keys:
         s, t, pr = statuses.get(key, {}), tickets.get(key), prs.get(key)
-        rows.append(((key, YELLOW), worker(s, key in alive, key in background), (ago(s.get("updated"), now), ""),
+        shown = worker(s, key in alive, key in background)
+        rows.append(((key, YELLOW), shown, (ago(s.get("updated"), now), ""),
                      ("-", "") if t is None else ("Done", GREEN) if t.done else ("open", ""),
                      ("-", "") if pr is None else (f"{pr.url or '#' + str(pr.number)} {pr.state.lower()}", BLUE),
-                     needs(s, t, pr, key in alive, now, grace_minutes)))
+                     needs(s, t, pr, key in alive, now, grace_minutes, busy=shown[0] == "working")))
     widths = [max(len(r[i][0]) for r in rows) for i in range(len(rows[0]))]
     # Each line is kept as (plain, painted): the plain text sets the widths, as colour codes take no space.
     table = [("  ".join(text.ljust(w) for (text, _), w in zip(r, widths)),

@@ -75,7 +75,7 @@ check each second):
 - **PR:** the URL and state of the newest PR with the ticket key in its title (`gh`, one call per ticket per tick).
 - **Colours:** ticket keys yellow, Done green, PR URLs blue; owner actions bold yellow, problems red, working
   workers green, idle ones dim.
-- **NEEDS YOU:** `▶ answer on Jira`, `▶ merge PR #N` (then `▶ tell the worker PR #N is merged`), `▶ check the tab: <message>` (a permission prompt or any
+- **NEEDS YOU** (shown only while the worker is at its prompt; a working worker isn't waiting on you): `▶ answer on Jira`, `▶ merge PR #N` (then `▶ tell the worker PR #N is merged`), `▶ check the tab: <message>` (a permission prompt or any
   notification other than the 60-second idle one), the close countdown, or `resuming the worker`.
 - **Recent:** the last 10 events, newest first, each cut to 110 characters so the boxes stay one screen wide. Every event is also appended to
   `~/environment/logs/orchestrator/events.log`, and the last 10 are shown again after a restart.
