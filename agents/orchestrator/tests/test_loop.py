@@ -1,4 +1,4 @@
-"""The team lead's decisions, against fake tmux, gh and Jira and a throwaway status folder."""
+"""The mesh orchestrator's decisions, against fake tmux, gh and Jira and a throwaway status folder."""
 
 from datetime import datetime, timedelta, timezone
 

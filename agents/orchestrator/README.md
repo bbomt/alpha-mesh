@@ -6,9 +6,11 @@ do by hand in those tabs.
 - **Each Claude session is a worker.** It runs its ticket itself through the Claude harness (`CLAUDE.md`
   and the files it links): worktree, branch, labels, PR, review, "ready to merge", and Done after the
   merge. A session started by hand works the same way.
-- **The orchestrator is the team lead.** It opens and reopens the workers' tabs, reads Jira, and types
+- **The mesh orchestrator** opens and reopens the workers' tabs, reads Jira, and types
   into a worker's tab what the owner would type. It never writes to Jira, so each ticket's labels have one
   writer: its worker.
+- **The owner is the team lead.** They answer workers' questions, merge PRs (by hand or with `mesh merge-pr`)
+  and tell the workers, on Jira or in the tabs.
 
 ## Usage
 

@@ -1,4 +1,4 @@
-"""The team lead: starts a worker (a Claude session in its own tmux tab) per ticket and, each tick, does
+"""The mesh orchestrator: starts a worker (a Claude session in its own tmux tab) per ticket and, each tick, does
 what the owner would do by hand in that tab. The worker runs the ticket itself through the Claude harness
 (worktree, branch, labels, PR, Done); the orchestrator only reads Jira and never writes it.
 """
@@ -23,7 +23,7 @@ START = "Work on Jira {key}."
 NUDGE = ("You were interrupted (the machine or this tab stopped). Check where you were (git status, the "
          "ticket, your last steps) and carry on, without redoing finished work.")
 REPLY = "The owner commented on Jira {key} (newest comment {comment}). Read their new comments and act on them."
-CLOSING = ("Team lead: Jira {key} is Done, so I will close this tab in {minutes} minutes. To keep it, type anything "
+CLOSING = ("Mesh orchestrator: Jira {key} is Done, so I will close this tab in {minutes} minutes. To keep it, type anything "
            "here before then. No reply needed.")
 CLOSE_GRACE = timedelta(minutes=5)
 

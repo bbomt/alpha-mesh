@@ -24,7 +24,7 @@ alpha-mesh/
 │   │   │   └── bin/dream    # Shell entry point
 │   │   └── tests/
 │   │       └── test_dream_core.py  # Python tests for dream module
-│   ├── orchestrator/        # mesh orchestrate — team lead for per-ticket Claude workers (PMAT-281 spike)
+│   ├── orchestrator/        # mesh orchestrate — the mesh orchestrator for per-ticket Claude workers (PMAT-281 spike)
 │   └── review-pull-request/ # PR review agent — LLM-powered, two-stage review (see below)
 ├── config/
 │   └── models.json          # All model profiles

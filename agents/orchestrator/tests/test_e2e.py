@@ -50,7 +50,7 @@ def world(tmp_path, monkeypatch):
                         "E2E_DIR": str(record), "E2E_HOOK": str(HOOK)}.items():
         monkeypatch.setenv(name, value)
     env = {k: v for k, v in os.environ.items() if k != "TMUX"}
-    subprocess.run(["tmux", "-L", SERVER, "-f", "/dev/null", "new-session", "-d", "-s", "e2e", "-n", "lead"],
+    subprocess.run(["tmux", "-L", SERVER, "-f", "/dev/null", "new-session", "-d", "-s", "e2e", "-n", "orchestrator"],
                    check=True, env=env)
     socket = tmux("display-message", "-p", "#{socket_path}").strip()
     pid = tmux("display-message", "-p", "#{pid}").strip()

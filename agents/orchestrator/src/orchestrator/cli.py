@@ -76,7 +76,7 @@ def main(argv: list[str] | None = None) -> int:
     args = p.parse_args(argv)
     if args.tickets and not args.repo_dir:  # never start a ticket in whatever folder the owner happens to be in
         p.error("--repo-dir is required when starting tickets: the local folder of their repo")
-    # One team lead at a time: two would both type into the same tabs. The lock goes when the process does.
+    # One mesh orchestrator at a time: two would both type into the same tabs. The lock goes when the process does.
     status.DIR.mkdir(parents=True, exist_ok=True)
     lock = open(status.DIR / "orchestrator.lock", "w")
     try:
@@ -129,7 +129,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             for line in loop.tick(keys, tickets, OPS):
                 event(line)
-        except Exception as e:  # a tab closed mid-tick...: the workers run on, so must the lead
+        except Exception as e:  # a tab closed mid-tick...: the workers run on, so must the orchestrator
             event(f"Tick failed, trying again next tick: {e!r}")
         try:
             draw = functools.partial(display.render, keys, {k: status.read(k) for k in keys}, tickets, found,
