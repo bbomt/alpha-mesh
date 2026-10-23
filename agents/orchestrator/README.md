@@ -31,6 +31,68 @@ flowchart TD
     L --> C
 ```
 
+## Working rules
+
+The process has three roles: the team lead, the workers and the orchestrator. Most of the rules below live in
+`CLAUDE_GLOBAL.md` and `CLAUDE_ENGINEERING.md` (`pmat/architecture/`) and in `worker-prompt.md`; this section
+sums them up as they stood on 2026-10-23.
+
+### Team lead (the owner)
+
+- **Starts tickets:** `mesh orchestrate --repo-dir <the repo's local folder> KEY ...`. Plain `mesh orchestrate`
+  picks up the running workers after a restart or reboot. Restarting the orchestrator is always safe.
+- **Answers on Jira** (or in the worker's tab). Any comment without the `MESSAGE-FROM-WORKER` marker counts as
+  the team lead's, and the orchestrator passes it on.
+- **Merges.** Only the team lead merges, with `mesh merge-pr <PR url>` (the command each "ready to merge" comment
+  ends with) or by hand. `mesh merge-pr` refuses a branch that lacks the latest default branch; the team lead
+  then asks the worker to refresh. After merging, the team lead tells the worker "merged" on Jira.
+- Doesn't rely on GitHub settings (branch protection) for safety.
+
+### Worker (one Claude session per ticket)
+
+- **Checks first** that the ticket belongs to the repo it was started in; if not, asks on Jira.
+- **Branches from the latest remote default branch** (`git fetch`, then `origin/<default>`), in its own worktree at
+  `<repo>/.claude/worktrees/<KEY>`. The main checkout always stays on the default branch.
+- **Merges `origin/<default>` in before every push** (merge, never rebase a pushed branch), reruns the tests,
+  then pushes. Conflicts in another ticket's work go to the team lead.
+- **Shares one test environment** (the AWS dev environment and this machine's ports): every deploy, and every test
+  run that deploys or starts a server, runs under `flock /tmp/claude-1000/pmat-test-env.lock`, one at a time.
+- **Reviews its own PR** with `mesh review-pull-request`, inside its sandbox, with the free models in the order
+  `CLAUDE_ENGINEERING.md` lists, until no confirmed HIGH or MEDIUM findings remain; false findings go to PMAT-269.
+- **Talks on Jira:** every comment starts with `MESSAGE-FROM-WORKER`. To ask, it posts a comment and adds
+  `AWAITING-USER-RESPONSE`, then waits. It removes that label **as soon as it reads the answer**, before acting.
+- **Ready to merge:** a "ready to merge" comment ending with `mesh merge-pr <PR url>`, and `AWAITING-MERGE`.
+- **When told "merged":** removes `AWAITING-MERGE` at once, runs the tests on the latest default branch in its
+  worktree (`git checkout --detach origin/<default>`), reports any failure, then sets Done and removes its
+  worktree and local branch (the remote branch stays).
+- Installs Playwright browsers with `playwright install chromium` only.
+
+### Orchestrator (`mesh orchestrate`)
+
+- **Opens a tab per ticket** and starts a Claude worker with `settings.json` and `worker-prompt.md`; **resumes**
+  the same session when a tab is missing (reboot, closed tab). Works across repos: each ticket keeps the folder
+  it started in.
+- **Passes on the team lead's comments:** the newest one not from a worker, when it is newer than the last one
+  passed on, typed as "comments after X, newest Y", only while the worker is at its prompt.
+- **Shows what needs the team lead:** WORKER is `working` (a turn, or a background command), `idle` or `waiting`
+  (a prompt in the tab); NEEDS YOU appears only while the worker is at its prompt. The header shows disk use,
+  in red from 90%.
+- **Closes Done tabs** after a 5-minute warning (typing in the tab keeps it), then runs `git worktree prune`.
+- **Never writes Jira and never merges.** Ticket keys must look like `PMAT-282`. One copy runs at a time.
+
+### Not part of the process
+
+Any other Claude session, such as one building or fixing the orchestrator, doesn't comment on, review for, or
+nudge workers. It tells the team lead, who decides.
+
+### This machine
+
+- Worker sandboxes may write `~/.mesh`, `~/.cache/uv` and pnpm's folders, and reach GitHub, openrouter.ai, PyPI,
+  npm and AWS eu-west-1, so reviews and installs need no approvals. `~/.aws` stays closed: an SSO token renewal
+  is the one command a worker retries outside its sandbox.
+- A weekly cron job (Sundays 03:00) runs `uv cache prune --force` and `pnpm store prune`, logging to
+  `~/environment/logs/prune-caches.log`.
+
 ## Usage
 
 Run it in its own tmux tab. Tickets named on the command line start in `--repo-dir`, the local folder of their

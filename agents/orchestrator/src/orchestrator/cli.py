@@ -11,11 +11,13 @@ import fcntl
 import functools
 import json
 import re
+import shutil
 import subprocess
 import sys
 import time
 from collections import deque
 from datetime import datetime, timezone
+from pathlib import Path
 
 from orchestrator import display, jira, loop, status, tmux
 
@@ -60,6 +62,12 @@ Files (in ~/environment/logs/orchestrator/):
 First run: it prints an Atlassian login link; open it in a fresh browser tab and paste back the URL the
 browser ends on. Full documentation: agents/orchestrator/README.md
 """
+
+def disk_used() -> float:
+    """The fraction of the disk holding the home folder (worktrees, caches, logs) that is in use."""
+    u = shutil.disk_usage(Path.home())
+    return u.used / u.total
+
 
 def prune(folder: str) -> None:
     subprocess.run(["git", "-C", folder, "worktree", "prune"], check=True, capture_output=True)
@@ -146,7 +154,7 @@ def main(argv: list[str] | None = None, once: bool = False) -> int:
             draw = functools.partial(display.render, keys, {k: status.read(k) for k in keys}, tickets, found,
                                      OPS.windows(), list(events), datetime.now(timezone.utc),
                                      grace_minutes=loop.CLOSE_GRACE.seconds // 60, color=tty,
-                                     background=OPS.background())
+                                     background=OPS.background(), disk=disk_used())
         except Exception as e:
             print(f"Screen failed, trying again next tick: {e!r}", file=sys.stderr, flush=True)
             draw = None

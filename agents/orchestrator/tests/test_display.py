@@ -143,6 +143,14 @@ def test_a_rule_runs_under_the_column_headings():
     assert "PMAT-1" in screen[heading + 2]
 
 
+def test_the_header_shows_disk_use_and_turns_red_when_nearly_full():
+    def head(used):
+        return render([], {}, {}, {}, set(), [], NOW, next_in=8, grace_minutes=5, color=True, disk=used)
+    assert "\033[2m" in head(0.72) and "· disk 72%" in head(0.72) and "nearly full" not in head(0.72)
+    assert "\033[31m" + f"0 workers · checked {NOW.astimezone():%H:%M:%S} · next check in 8s · disk 93% nearly full" \
+        in head(0.93)
+
+
 def test_the_header_line_is_dimmed():
     screen = render([], {}, {}, {}, set(), [], NOW, next_in=8, grace_minutes=5, color=True)
     assert f"\033[2m0 workers · checked {NOW.astimezone():%H:%M:%S} · next check in 8s" in screen

@@ -60,9 +60,13 @@ def worker(s: dict, alive: bool, background: bool = False) -> tuple[str, str]:
     return state, GREEN if state == "working" else DIM
 
 
+DISK_FULL = 0.90
+
+
 def render(keys: list[str], statuses: dict[str, dict], tickets: dict[str, Ticket], prs: dict[str, Pr | None],
            alive: set[str], events: list[tuple[datetime, str]], now: datetime, next_in: int,
-           grace_minutes: int, color: bool = True, background: set[str] = frozenset()) -> str:
+           grace_minutes: int, color: bool = True, background: set[str] = frozenset(),
+           disk: float | None = None) -> str:
     def paint(text: str, code: str) -> str:
         return f"{code}{text}{RESET}" if color and code and text else text
 
@@ -82,8 +86,11 @@ def render(keys: list[str], statuses: dict[str, dict], tickets: dict[str, Ticket
 
     head = (f"{len(keys)} worker{'s' if len(keys) != 1 else ''} · checked {now.astimezone():%H:%M:%S} · "
             f"next check in {next_in}s")
+    full = disk is not None and disk >= DISK_FULL
+    if disk is not None:  # the fraction of the home disk in use; red when nearly full, before installs and tests fail
+        head += f" · disk {round(disk * 100)}%" + (" nearly full" if full else "")
     recent = [f"{when.astimezone():%H:%M:%S}  {text[:EVENT_WIDTH]}" for when, text in reversed(events)]
-    sections = [("mesh orchestrate", [(head, paint(head, DIM))]),
+    sections = [("mesh orchestrate", [(head, paint(head, RED if full else DIM))]),
                 ("Workers", table if keys else [("(none)", paint("(none)", DIM))]),
                 ("Recent", [(r, paint(r, RED if "failed" in r else DIM)) for r in recent] or [("(nothing yet)", paint("(nothing yet)", DIM))])]
     inner = max(len(plain) for _, lines in sections for plain, _ in lines)
