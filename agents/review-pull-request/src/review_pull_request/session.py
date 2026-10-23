@@ -13,6 +13,7 @@ Stages receive the session, not the raw pieces, so they have no way around the p
 
 import posixpath
 import sys
+import urllib.request
 from urllib.parse import urlparse
 
 import httpx
@@ -85,15 +86,23 @@ def make_chat_model(config, model: str):
     if model == DRY_RUN_MODEL:
         return DryRunChatModel()
     model, base_url = _sent(config, model)
-    client = httpx.Client(transport=WatchdogTransport(http_transport()),
+    client = httpx.Client(transport=WatchdogTransport(http_transport(base_url)),
                           timeout=httpx.Timeout(llm.IDLE_TIMEOUT, connect=30))
     return ChatOpenAI(model=model, api_key=config.api_token, base_url=base_url, temperature=0.2,
                       streaming=True, max_retries=0, http_client=client)
 
 
-def http_transport() -> httpx.BaseTransport:
-    """The network transport under the watchdog; tests replace it with a scripted one."""
-    return httpx.HTTPTransport()
+def http_transport(url: str) -> httpx.BaseTransport:
+    """The network transport under the watchdog; tests replace it with a scripted one.
+
+    A client given its own transport ignores the proxy env vars, so the proxy for `url` is
+    taken from the environment here, honouring NO_PROXY like a default httpx client (PMAT-290).
+    """
+    parsed = urlparse(url)
+    proxies = urllib.request.getproxies_environment()
+    proxy = None if urllib.request.proxy_bypass_environment(parsed.hostname, proxies) \
+        else proxies.get(parsed.scheme) or proxies.get("all")
+    return httpx.HTTPTransport(proxy=proxy)
 
 
 class ReviewSession:

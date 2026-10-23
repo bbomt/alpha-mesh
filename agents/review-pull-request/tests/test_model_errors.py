@@ -74,7 +74,7 @@ def _llm(monkeypatch, responses, model="openai/gpt-oss-120b", url="https://openr
             content, kind = json.dumps(body), "application/json"
         return httpx.Response(status, content=content, headers={"content-type": kind, **(headers[0] if headers else {})})
 
-    monkeypatch.setattr("review_pull_request.session.http_transport", lambda: httpx.MockTransport(handler))
+    monkeypatch.setattr("review_pull_request.session.http_transport", lambda url: httpx.MockTransport(handler))
     config = Config(model=model, api_url=url, api_token="t" * 12)
     return ReviewSession.create(config, inner_reader=StubReader()).review_llm, sent
 
