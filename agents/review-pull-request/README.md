@@ -418,6 +418,12 @@ and the report names both models. Output goes to `~/environment/logs/ai/claude/s
 scripts/smoke-resume.sh https://github.com/org/repo/pull/123 z-ai/glm-5.3-flash nvidia/nemotron-3.5-lightning:free
 ```
 
+## Eval cases
+
+`eval/` mines false-positive eval cases from merged PRs by running `mesh review-pull-request` with
+`--no-post-comment` (PMAT-300). It does not change the review code; see [eval/README.md](eval/README.md).
+Its tests (`eval/tests/`) run with the suite above.
+
 ## Checkpoint infrastructure (AWS CDK)
 
 Storage for resumable reviews (PMAT-237): every non-dry run saves its progress here (see
