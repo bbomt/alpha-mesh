@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from orchestrator import cli, loop, status, tmux
+from orchestrator import cli, jira, loop, status, tmux
 from orchestrator.display import Pr
 
 
@@ -165,3 +165,50 @@ def test_help_explains_use_and_does_not_start_anything(tmp_path, monkeypatch, ca
     for text in ("examples:", "mesh orchestrate --repo-dir ~/environment/pmat/alpha-mesh PMAT-282 PMAT-283", "Ctrl-C", "MESSAGE-FROM-WORKER", "events.log",
                  "--repo-dir DIR"):
         assert text in out
+
+
+def test_a_jira_check_that_never_returns_is_cut_off_and_retried_next_check(tmp_path, monkeypatch, capsys):
+    # PMAT-306: an MCP call that never answers froze the whole loop. The check now has a deadline: tmux-only work
+    # (resuming a missing tab) still happens, nothing Jira-driven does, and the next check tries Jira again.
+    import asyncio
+    import threading
+    monkeypatch.setattr(status, "DIR", tmp_path)
+    monkeypatch.setattr(cli, "JIRA_DEADLINE", 0.2)
+    monkeypatch.setattr(cli.jira, "logged_in", lambda: True)
+    status.update("PMAT-1", ticket="PMAT-1", session_id="s1", launch_dir="/repos/a", relayed_comment="c1",
+                  state="idle")
+    status.update("PMAT-2", ticket="PMAT-2", session_id="s2", launch_dir="/repos/a")
+    answers = [None, {"PMAT-1": jira.Ticket(labels=[], done=False, comment_id="c2")}]
+
+    async def snapshot(keys):
+        if (answer := answers.pop(0)) is None:
+            await asyncio.Event().wait()  # Atlassian never replies
+        return answer
+
+    tabs, sent, after_check = {"PMAT-1"}, [], []
+    monkeypatch.setattr(cli.jira, "snapshot", snapshot)
+    monkeypatch.setattr(cli, "prs", lambda keys, repo_dir: {})
+    monkeypatch.setattr(cli, "OPS", loop.Ops(windows=lambda: set(tabs), new_window=lambda key, *a: tabs.add(key),
+                                             send=lambda key, text: sent.append((key, text)), kill=None))
+
+    def sleep(seconds):  # between checks; stop after the second
+        after_check.append((set(tabs), list(sent), capsys.readouterr().out))
+        if len(after_check) == 2:
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(cli.time, "sleep", sleep)
+
+    def run():
+        try:
+            cli.main([])
+        except KeyboardInterrupt:
+            pass
+
+    t = threading.Thread(target=run, daemon=True)  # guarded: before the fix the first check hangs for ever
+    t.start()
+    t.join(5)
+    assert not t.is_alive(), "the Jira check hung past its deadline"
+    (tabs1, sent1, out1), (_, sent2, _) = after_check
+    assert "Jira check timed out, retrying next check" in out1
+    assert tabs1 == {"PMAT-1", "PMAT-2"} and sent1 == []  # missing tab resumed, no Jira-driven action
+    assert sent2 == [("PMAT-1", loop.REPLY.format(key="PMAT-1", after="c1", comment="c2"))]  # Jira answered
