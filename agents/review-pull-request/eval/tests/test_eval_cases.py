@@ -9,6 +9,8 @@ import json
 from datetime import date
 from types import SimpleNamespace
 
+import pytest
+
 import eval_cases
 from review_pull_request.formatter import render_report
 from review_pull_request.stage2 import Issue
@@ -16,9 +18,9 @@ from review_pull_request.stage2 import Issue
 REPO = "org/repo"
 MODEL = "nvidia/nemotron-3-ultra-550b-a55b:free"
 OTHER_MODEL = "nvidia/nemotron-3.5-super-vl:free"
-BASE1, HEAD1, OLD1 = "a" * 40, "b" * 40, "e" * 40
+BASE1, HEAD1, OLD1, GONE1 = "a" * 40, "b" * 40, "e" * 40, "f" * 40
 BASE2, HEAD2 = "c" * 40, "d" * 40
-TODAY = date(2026, 10, 26)
+TODAY = date(2026, 10, 27)
 
 
 def url(n):
@@ -37,15 +39,20 @@ def report(head_sha, issues, model=MODEL):
 
 
 class FakeGh:
-    def __init__(self, prs, comments=None):
-        self.prs, self.comments, self.calls = prs, comments or {}, []
+    """comparisons: (base, head) -> (status, changed file names), as GitHub's compare API reports them."""
+
+    def __init__(self, prs, comments=None, comparisons=None):
+        self.prs, self.comments, self.comparisons, self.calls = prs, comments or {}, comparisons or {}, []
 
     def __call__(self, args):
         self.calls.append(list(args))
         if args[:2] == ["pr", "list"]:
             return json.dumps(self.prs)
-        if args[0] == "api":  # repos/<owner>/<repo>/issues/<n>/comments
+        if args[0] == "api" and args[1].endswith("/comments"):  # repos/<owner>/<repo>/issues/<n>/comments
             return "".join(json.dumps(body) + "\n" for body in self.comments.get(int(args[1].split("/")[4]), []))
+        if args[0] == "api" and "/compare/" in args[1]:  # repos/<owner>/<repo>/compare/<base>...<head>
+            status, files = self.comparisons[tuple(args[1].split("/compare/")[1].split("..."))]
+            return json.dumps({"status": status, "files": files, "truncated": False})
         raise AssertionError(f"unexpected gh call: {args}")
 
 
@@ -60,64 +67,117 @@ class FakeMesh:
         return f"Model: x\nFetching diff...\n{self.reports[args[0]]}\nPR review complete! Reviewed 2 file(s) in 0m 3s.\n"
 
 
-def mine(tmp_path, gh, mesh, **kw):
-    return eval_cases.mine(REPO, limit=10, model=MODEL, gh=gh, mesh=mesh, cases_dir=tmp_path / "cases",
-                           reports_dir=tmp_path / "reports", today=TODAY, **kw)
+def no_model(args):
+    raise AssertionError(f"mining must not run a review: {args}")
+
+
+def mine(tmp_path, gh, **kw):
+    return eval_cases.mine(REPO, limit=10, gh=gh, cases_dir=tmp_path / "cases", today=TODAY, **kw)
 
 
 def cases(tmp_path):
     return sorted((json.loads(p.read_text()) for p in (tmp_path / "cases").glob("*.json")),
-                  key=lambda c: (c["pr_number"], c["source"]))
+                  key=lambda c: (c["pr_number"], c["finding"]["file"]))
 
 
 MEDIUM = Issue("src/a.py", 12, "medium", "Index can go out of range.", "Check the length first.")
 LOW = Issue("src/b.py", 3, "low", "The name is unclear.", None)
 
 
-def test_run_scores_prs_and_writes_one_unlabelled_case(tmp_path):
+def test_a_finding_on_a_file_unchanged_until_the_merge_is_a_false_positive_case(tmp_path):
+    kept = Issue("src/a.py", 7, "high", "Line one.\nLine two.", "Guard it.")
+    fixed = Issue("src/b.py", 20, "high", "Changed afterwards.", None)
+    final = Issue("src/c.py", 5, "medium", "Raised on the final commit.", None)
+    legacy = ("# AI Code Review\n\n> **Models:** per-file=`x` · overview=`x`\n\n## Issues\n\n"
+              "### 🔴 High\n\n#### `src/a.py` · line 7\n\n**Problem:** Old format.\n\n---\n")
+    gh = FakeGh([pr(1, BASE1, HEAD1)],
+                comments={1: [report(OLD1, [kept, fixed, LOW], model=OTHER_MODEL), report(HEAD1, [final]),
+                              legacy, "LGTM, merging."]},
+                comparisons={(OLD1, HEAD1): ("ahead", ["src/b.py"])})
+
+    summary = mine(tmp_path, gh)
+
+    old_case, final_case = cases(tmp_path)
+    assert {k: old_case[k] for k in ("repo", "pr_number", "base_sha", "head_sha", "raised_sha", "source", "model")} == {
+        "repo": REPO, "pr_number": 1, "base_sha": BASE1, "head_sha": HEAD1, "raised_sha": OLD1,
+        "source": "pr_comment", "model": OTHER_MODEL}
+    assert old_case["finding"] == {"file": "src/a.py", "line": 7, "severity": "high",
+                                   "summary": "Line one.\nLine two.", "fix": "Guard it.", "failure_scenario": None}
+    assert (old_case["label"], old_case["label_by"], old_case["label_date"]) == ("false_positive", "rule", "2026-10-27")
+    assert (final_case["finding"]["file"], final_case["raised_sha"]) == ("src/c.py", HEAD1)
+    assert summary["cases_written"] == 2
+    assert summary["skipped"] == {"file_changed": 1, "no_commit": 1, "not_ancestor": 0}
+
+
+def test_a_commit_rewritten_out_of_the_pr_history_gives_no_cases(tmp_path):
+    gh = FakeGh([pr(1, BASE1, HEAD1)], comments={1: [report(GONE1, [MEDIUM])]},
+                comparisons={(GONE1, HEAD1): ("diverged", [])})
+
+    summary = mine(tmp_path, gh)
+
+    assert cases(tmp_path) == []
+    assert summary["skipped"]["not_ancestor"] == 1
+
+
+def test_the_same_finding_raised_in_several_reviews_is_one_case(tmp_path):
+    again = Issue("src/a.py", 12, "high", "Index may be out of range.", None)  # same line, reworded
+    gh = FakeGh([pr(1, BASE1, HEAD1)], comments={1: [report(OLD1, [MEDIUM]), report(HEAD1, [again])]},
+                comparisons={(OLD1, HEAD1): ("ahead", [])})
+
+    mine(tmp_path, gh)
+
+    [case] = cases(tmp_path)
+    assert case["raised_sha"] == OLD1, "the first review that raised it"
+    assert case["times_raised"] == 2
+
+
+def test_mining_runs_no_model_and_mining_again_keeps_a_judges_override(tmp_path, monkeypatch):
+    monkeypatch.setattr(eval_cases, "run_mesh", no_model)
+    gh = FakeGh([pr(1, BASE1, HEAD1)], comments={1: [report(HEAD1, [MEDIUM])]})
+    mine(tmp_path, gh)
+    [case] = cases(tmp_path)
+    eval_cases.label(case["case_id"], "real_issue", "The caller never checks the length.",
+                     cases_dir=tmp_path / "cases", by="claude-code", today=TODAY)
+
+    mine(tmp_path, gh)
+
+    [case] = cases(tmp_path)
+    assert (case["label"], case["label_by"]) == ("real_issue", "claude-code")
+    with pytest.raises(ValueError):
+        eval_cases.label(case["case_id"], "unlabelled", "x", cases_dir=tmp_path / "cases")
+
+
+def test_score_runs_a_full_review_of_each_pr_and_reports_the_false_positive_rate(tmp_path):
     gh = FakeGh([pr(1, BASE1, HEAD1), pr(2, BASE2, HEAD2)])
     mesh = FakeMesh({url(1): report(HEAD1, [MEDIUM, LOW]), url(2): report(HEAD2, [LOW])})
 
-    mine(tmp_path, gh, mesh)
+    eval_cases.score(REPO, limit=2, model=MODEL, gh=gh, mesh=mesh, reports_dir=tmp_path / "reports", today=TODAY)
 
-    rep = json.loads((tmp_path / "reports" / "eval_report_20261026.json").read_text())
-    assert rep["model"] == MODEL and rep["run_date"] == "2026-10-26" and rep["repo"] == REPO
+    rep = json.loads((tmp_path / "reports" / "eval_report_20261027.json").read_text())
+    assert (rep["repo"], rep["model"], rep["run_date"]) == (REPO, MODEL, "2026-10-27")
     assert [(p["pr_number"], p["passed"], p["false_positives"]) for p in rep["prs"]] == [(1, False, 1), (2, True, 0)]
-    assert rep["totals"]["prs_tested"] == 2
-    assert rep["totals"]["false_positive_rate"] == 0.5
-    [case] = cases(tmp_path)
-    assert {k: case[k] for k in ("repo", "pr_number", "base_sha", "head_sha", "source", "model", "label")} == {
-        "repo": REPO, "pr_number": 1, "base_sha": BASE1, "head_sha": HEAD1, "source": "fresh_run",
-        "model": MODEL, "label": "unlabelled"}
-    assert case["finding"] == {"file": "src/a.py", "line": 12, "severity": "medium",
-                               "summary": "Index can go out of range.", "fix": "Check the length first.",
-                               "failure_scenario": None}
-    assert case["label_by"] is case["label_date"] is case["label_reason"] is None
-    assert case["rerun_model"] is case["rerun_reproduced"] is None
-    assert rep["prs"][0]["case_ids"] == [case["case_id"]]
+    assert rep["totals"] == {"prs_tested": 2, "prs_failed": 1, "prs_errored": 0, "false_positive_rate": 0.5}
+    assert rep["prs"][0]["findings"][0]["file"] == "src/a.py"
+    assert not (tmp_path / "cases").exists(), "scoring never writes cases"
 
 
-def test_mining_again_keeps_existing_labels(tmp_path):
-    gh = FakeGh([pr(1, BASE1, HEAD1)])
-    mesh = FakeMesh({url(1): report(HEAD1, [MEDIUM])})
-    mine(tmp_path, gh, mesh)
-    [case] = cases(tmp_path)
-    eval_cases.label(case["case_id"], "false_positive", "The length is checked by the caller.",
-                     cases_dir=tmp_path / "cases", by="claude-code", today=TODAY)
+def test_a_review_that_returns_no_report_is_an_error_left_out_of_the_rate(tmp_path):
+    gh = FakeGh([pr(1, BASE1, HEAD1), pr(2, BASE2, HEAD2)])
+    mesh = FakeMesh({url(1): report(HEAD1, [MEDIUM]), url(2): "ERROR: LLM API call failed"})
 
-    mine(tmp_path, gh, mesh)
+    rep = eval_cases.score(REPO, limit=2, model=MODEL, gh=gh, mesh=mesh, reports_dir=tmp_path / "reports",
+                           today=TODAY)
 
-    [case] = cases(tmp_path)
-    assert case["label"] == "false_positive"
-    assert (case["label_by"], case["label_date"]) == ("claude-code", "2026-10-26")
+    assert rep["totals"] == {"prs_tested": 1, "prs_failed": 1, "prs_errored": 1, "false_positive_rate": 1.0}
 
 
-def test_an_eval_run_never_posts_to_github(tmp_path):
-    gh = FakeGh([pr(1, BASE1, HEAD1)], comments={1: [report(OLD1, [MEDIUM])]})
+def test_mining_and_scoring_never_write_to_github(tmp_path):
+    gh = FakeGh([pr(1, BASE1, HEAD1)], comments={1: [report(OLD1, [MEDIUM])]},
+                comparisons={(OLD1, HEAD1): ("ahead", [])})
     mesh = FakeMesh({url(1): report(HEAD1, [MEDIUM])})
 
-    mine(tmp_path, gh, mesh)
-    eval_cases.rerun(cases_dir=tmp_path / "cases", mesh=mesh, today=TODAY)
+    mine(tmp_path, gh)
+    eval_cases.score(REPO, limit=10, model=MODEL, gh=gh, mesh=mesh, reports_dir=tmp_path / "reports", today=TODAY)
 
     assert mesh.calls, "the review was never run"
     for args in mesh.calls:
@@ -126,64 +186,3 @@ def test_an_eval_run_never_posts_to_github(tmp_path):
     for args in gh.calls:
         assert args[:2] == ["pr", "list"] or args[0] == "api", args
         assert not write_flags.intersection(args), args
-
-
-def test_a_case_whose_rerun_does_not_reproduce_is_left_out_of_the_rates(tmp_path):
-    other = Issue("src/c.py", 40, "medium", "Lock is never released.", None)
-    gh = FakeGh([pr(1, BASE1, HEAD1), pr(2, BASE2, HEAD2)])
-    mesh = FakeMesh({url(1): report(HEAD1, [MEDIUM]), url(2): report(HEAD2, [other])})
-    rep = mine(tmp_path, gh, mesh)
-    assert rep["labelled"]["false_positive_rate"] == 0.0  # nothing judged yet
-    pr1_case, pr2_case = cases(tmp_path)
-    eval_cases.label(pr2_case["case_id"], "false_positive", "The context manager releases it.",
-                     cases_dir=tmp_path / "cases", by="claude-code", today=TODAY)
-    moved = Issue("src/a.py", 30, "medium", "Index can go out of range.", None)  # 18 lines away
-    rerun_mesh = FakeMesh({url(1): report(HEAD1, [moved], model=MODEL)})
-
-    eval_cases.rerun(cases_dir=tmp_path / "cases", mesh=rerun_mesh, today=TODAY)
-
-    assert [c[0] for c in rerun_mesh.calls] == [url(1)], "a labelled case is not re-run"
-    assert ["--model", MODEL] == rerun_mesh.calls[0][-2:]
-    pr1_case, pr2_case = cases(tmp_path)
-    assert pr1_case["label"] == "not_reproduced" and pr1_case["rerun_reproduced"] is False
-    assert (pr1_case["rerun_model"], pr1_case["rerun_sha"]) == (MODEL, HEAD1)
-    labelled = eval_cases.report(tmp_path / "reports" / "eval_report_20261026.json",
-                                 cases_dir=tmp_path / "cases")["labelled"]
-    assert labelled["prs_with_false_positive"] == [2]
-    assert labelled["false_positive_rate"] == 0.5
-    assert labelled["label_counts"] == {"unlabelled": 0, "false_positive": 1, "real_issue": 0, "not_reproduced": 1}
-
-
-def test_a_rerun_finding_near_the_same_line_reproduces_the_case(tmp_path):
-    gh = FakeGh([pr(1, BASE1, HEAD1)])
-    mine(tmp_path, gh, FakeMesh({url(1): report(HEAD1, [MEDIUM])}))
-    near = Issue("src/a.py", 16, "high", "Out-of-range index.", None)  # 4 lines away
-
-    eval_cases.rerun(cases_dir=tmp_path / "cases", mesh=FakeMesh({url(1): report(HEAD1, [near])}), today=TODAY)
-
-    [case] = cases(tmp_path)
-    assert case["label"] == "unlabelled" and case["rerun_reproduced"] is True
-    assert case["rerun_finding"]["line"] == 16 and case["rerun_finding"]["severity"] == "high"
-
-
-def test_review_comments_on_the_final_commit_become_cases(tmp_path):
-    """Findings on the PR's final commit were merged unchanged, so the worker dismissed them.
-    Comments on earlier commits are skipped: their findings may have been fixed before the merge."""
-    high = Issue("src/a.py", 7, "high", "Line one.\nLine two.", "Guard it.")
-    earlier = Issue("src/b.py", 20, "high", "Fixed later.", None)
-    legacy = ("# AI Code Review\n\n> **Models:** per-file=`x` · overview=`x`\n\n## Issues\n\n"
-              "### 🔴 High\n\n#### `src/a.py` · line 7\n\n**Problem:** Old format.\n\n---\n")
-    gh = FakeGh([pr(1, BASE1, HEAD1)], comments={1: [
-        report(OLD1, [earlier]), report(HEAD1, [high, LOW], model=OTHER_MODEL), legacy, "LGTM, merging."]})
-    mesh = FakeMesh({url(1): report(HEAD1, [])})
-
-    rep = mine(tmp_path, gh, mesh)
-
-    [case] = cases(tmp_path)
-    assert {k: case[k] for k in ("pr_number", "base_sha", "head_sha", "source", "model")} == {
-        "pr_number": 1, "base_sha": BASE1, "head_sha": HEAD1, "source": "pr_comment", "model": OTHER_MODEL}
-    assert case["finding"]["severity"] == "high" and case["finding"]["line"] == 7
-    assert case["finding"]["summary"] == "Line one.\nLine two."
-    assert rep["comments_skipped_no_commit"] == 1
-    assert rep["comments_skipped_earlier_commit"] == 1
-    assert rep["prs"][0]["passed"] is True, "only the fresh run is scored"

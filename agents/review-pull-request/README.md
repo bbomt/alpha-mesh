@@ -420,8 +420,10 @@ scripts/smoke-resume.sh https://github.com/org/repo/pull/123 z-ai/glm-5.3-flash 
 
 ## Eval cases
 
-`eval/` mines false-positive eval cases from merged PRs by running `mesh review-pull-request` with
-`--no-post-comment` (PMAT-300). It does not change the review code; see [eval/README.md](eval/README.md).
+`eval/` mines false-positive eval cases from the review comments on merged PRs, with no model calls: a
+high or medium finding on a file that did not change before the merge (PMAT-300). It can also score the
+agent with `mesh review-pull-request --no-post-comment`. It does not change the review code; see
+[eval/README.md](eval/README.md).
 Its tests (`eval/tests/`) run with the suite above.
 
 ## Checkpoint infrastructure (AWS CDK)

@@ -1,0 +1,23 @@
+{
+  "case_id": "c60b873fc395",
+  "repo": "bbomt/alpha-mesh",
+  "pr_number": 8,
+  "base_sha": "f1258825136568722de30a491201abac76c8c220",
+  "head_sha": "2567885bf1932d3dad9041c345d709e857309ec6",
+  "raised_sha": "f72c6af1b885d155e42ad87baa18b71db4ace790",
+  "source": "pr_comment",
+  "model": null,
+  "finding": {
+    "file": "bin/pr-review",
+    "line": 1,
+    "severity": "medium",
+    "summary": "The bin/pr-review entry point is deleted and the mesh dispatcher (bin/mesh) now only accepts 'review-pull-request' — there is no 'pr-review' case or alias. Any existing callers, scripts, cron jobs, CI configs, or documentation invoking 'mesh pr-review' or 'bin/pr-review' will now fail hard with 'unknown command' or file-not-found, with no deprecation period or pointing error to guide them to the new name.",
+    "fix": "Add a backward-compatible shim for one release cycle: either a 'pr-review)' case in bin/mesh that prints a deprecation warning to stderr and execs scripts/review-pull-request \"$@\", or a small bin/pr-review script that warns and forwards to bin/review-pull-request. Remove the shim after callers have migrated.",
+    "failure_scenario": null
+  },
+  "times_raised": 1,
+  "label": "false_positive",
+  "label_by": "rule",
+  "label_date": "2026-10-27",
+  "label_reason": "Raised in review and merged with the file unchanged."
+}

@@ -1,0 +1,23 @@
+{
+  "case_id": "68547c7dd112",
+  "repo": "bbomt/alpha-mesh",
+  "pr_number": 19,
+  "base_sha": "3367c4eba70ab46c4a1a4e2bc4a695f53dadcfd8",
+  "head_sha": "df42e036f65c34a0bea1d2ef66f5a6cea47ba60d",
+  "raised_sha": "df42e036f65c34a0bea1d2ef66f5a6cea47ba60d",
+  "source": "pr_comment",
+  "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
+  "finding": {
+    "file": "agents/review-pull-request/src/review_pull_request/session.py",
+    "line": 87,
+    "severity": "high",
+    "summary": "The httpx.Client created in make_chat_model is never closed, leaking connection pools and file descriptors. ChatOpenAI does not take ownership of the passed http_client; the caller must close it.",
+    "fix": "Make ReviewSession a context manager that closes the client, or store the client on the session and add a close() method. Alternatively, use a context manager in make_chat_model and ensure the caller closes it.",
+    "failure_scenario": null
+  },
+  "times_raised": 1,
+  "label": "false_positive",
+  "label_by": "rule",
+  "label_date": "2026-10-27",
+  "label_reason": "Raised in review and merged with the file unchanged."
+}

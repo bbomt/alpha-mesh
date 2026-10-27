@@ -1,105 +1,106 @@
 # Eval cases for review-pull-request
 
-A dataset of the review's findings on merged PRs, labelled by a judge, and the harness that builds it
-(PMAT-300). A merged PR is treated as clean, so every high/medium finding on it is a *candidate* false
-positive until it is labelled.
+A dataset of the review agent's false positives on merged PRs, and the tool that builds it (PMAT-300).
+The dataset is used later to improve the agent: it should stop raising these findings, while still
+reporting the real issues collected by PMAT-301.
 
-`scripts/eval_cases.py` is a standalone data generator. It runs `mesh review-pull-request` as a user
-would and parses the report it prints. It never imports or changes the review code and never writes to
-GitHub: reviews run with `--no-post-comment` (not `--dry-run`, which swaps in a scripted fake model), and
-`gh` is only used to list PRs and read their comments.
+## The rule
+
+> **A false-positive case is a high or medium finding from a review comment on a merged PR, on a file
+> that did not change between the commit that review covered and the PR's final commit.**
+
+The worker saw the finding and merged that exact file anyway, so the finding was dismissed. A finding on
+a file that changed afterwards may have been fixed, so it is not a case.
+
+Mining therefore needs no model and no judgement: only the PR's review comments and git history. It is
+repeatable and gives the same cases every time.
+
+## Tool
+
+`scripts/eval_cases.py` is standalone. It never imports or changes the review code and never writes to
+GitHub: `gh` is only used to read PRs, comments and commit comparisons.
 
 | Folder | Holds |
 | :-- | :-- |
-| `scripts/` | the harness (stdlib only) |
+| `scripts/` | the tool (stdlib only) |
 | `cases/` | one JSON file per case (committed: the dataset) |
-| `reports/` | `eval_report_YYYYMMDD.json` run reports (gitignored) |
+| `reports/` | `eval_report_YYYYMMDD.json` score reports (gitignored) |
 | `tests/` | acceptance tests with a fake `gh` and a fake `mesh` |
-
-## Prerequisites
-
-As for `mesh review-pull-request`: `gh auth login`, the `CODE_REVIEW_*` settings in `alpha-mesh/.env`,
-and AWS access for the checkpoint store. `mesh` must be on `PATH`. Use the free Nemotron models
-(`alpha-mesh/CLAUDE_ENGINEERING.md`); the paid model only when asked.
-
-## Workflow
 
 ```bash
 cd agents/review-pull-request
 S=eval/scripts/eval_cases.py
 
-# 1. Mine: cases from the review comments on each PR's final commit, plus a fresh review (scored)
-python3 $S mine --repo bbomt/alpha-mesh --limit 20 --model nvidia/nemotron-3-ultra-550b-a55b:free
-python3 $S mine --repo bbomt/alpha-mesh --prs 12,16 --model nvidia/nemotron-3.5-super-vl:free  # redo some PRs
+# Build the dataset (no model calls; needs `gh auth login`)
+python3 $S mine --repo bbomt/alpha-mesh --limit 40
+python3 $S mine --repo bbomt/alpha-mesh --prs 19,20          # only some PRs
 
-# 2. Re-run: review each case's PR again with the model that raised the case
-python3 $S rerun
-python3 $S rerun --retry-not-reproduced    # once more, since model output varies
+# Override a case when a dismissed finding turns out to be a real bug (it then belongs to PMAT-301)
+python3 $S label <case_id> real_issue --reason "The caller never checks the length (src/x.py:40)."
 
-# 3. Judge: check each reproduced case against the code at its head_sha, then record the verdict
-python3 $S label <case_id> false_positive --reason "The caller checks the length (src/x.py:40)."
-python3 $S label <case_id> real_issue --reason "..."
-
-# 4. Rates from the judged cases
-python3 $S report eval/reports/eval_report_20261026.json
+# Score the agent: a full review of each PR, never posted (needs the review's .env and AWS access)
+python3 $S score --repo bbomt/alpha-mesh --limit 12 --model nvidia/nemotron-3-ultra-550b-a55b:free
 ```
 
-A review that throttles or fails leaves no report: the PR is recorded with `"error": true`, left out of
-the rates, and can be redone with `--prs` and another model. Each review runs with `--force-rerun`,
-because the checkpoint thread is keyed on the PR's head commit, not on the model.
+Mining again rewrites the case files from the comments but keeps any label set with `label`.
+
+## How `mine` applies the rule
+
+For each merged PR, each review comment (`# AI Code Review` or `# Partial pull request review`) is parsed
+for its `Reviewed commit` and its findings. Each high or medium finding is then:
+
+- **a case** if its file is not among the files changed from the reviewed commit to the PR's final
+  commit (GitHub's compare API). A comment on the final commit itself always qualifies.
+- **skipped as `file_changed`** if its file changed afterwards (a rename counts as a change).
+- **skipped as `not_ancestor`** if the reviewed commit is no longer in the PR's history (force-pushed
+  or rebased away), or the comparison lists too many files to be sure.
+- **skipped as `no_commit`** if the comment records no commit (the old pr-review-performance format,
+  PRs #5–#7).
+
+The same finding raised by several reviews (same PR, file and line; the wording may differ) is one case.
+`times_raised` counts the reviews that raised it, and `raised_sha` is the first.
+
+GitHub keeps every PR's commits after a squash merge and branch deletion (`refs/pull/N/head`), so the
+comparisons work on old PRs.
 
 ## Case file
 
 ```json
 {
   "case_id": "3f2a…", "repo": "bbomt/alpha-mesh", "pr_number": 19,
-  "base_sha": "…", "head_sha": "…",
-  "source": "pr_comment | fresh_run",
-  "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
-  "finding": {"file": "…", "line": 108, "severity": "high | medium", "summary": "Problem text",
+  "base_sha": "…", "head_sha": "<the PR's final commit>", "raised_sha": "<the commit the review covered>",
+  "source": "pr_comment", "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
+  "finding": {"file": "…", "line": 115, "severity": "high | medium", "summary": "Problem text",
               "fix": "Fix text or null", "failure_scenario": null},
-  "label": "unlabelled | false_positive | real_issue | not_reproduced",
-  "label_by": null, "label_date": null, "label_reason": null,
-  "rerun_model": null, "rerun_sha": null, "rerun_reproduced": null, "rerun_finding": null
+  "times_raised": 1,
+  "label": "false_positive | real_issue",
+  "label_by": "rule", "label_date": "2026-10-27",
+  "label_reason": "Raised in review and merged with the file unchanged."
 }
 ```
 
-- `head_sha` is always the PR's final commit: the code that was merged unchanged. A review comment
-  becomes cases only if its `Reviewed commit` is that commit: the worker saw its high/medium findings
-  and merged anyway, so they are strong false-positive candidates. Comments on earlier commits are
-  skipped (their findings may have been fixed before the merge) and counted in the report
-  (`comments_skipped_earlier_commit`). `base_sha` is the PR's base. Keep SHAs, not diffs: GitHub keeps
-  `refs/pull/N/head` after the merge, even when the branch is deleted.
 - The agent's severities are high/medium/low (there is no INFO). Only high and medium become cases.
-  `failure_scenario` is null: the agent writes a Problem and a Fix, not a separate failure scenario.
-- `case_id` is a hash of repo, PR, commit, source, file, line, severity and summary. Mining again never
-  overwrites a case already on disk, so labels survive.
-- Review comments that do not record their commit (the old pr-review-performance format, PRs #5–#7)
-  are skipped and counted in the report (`comments_skipped_no_commit`).
+- `failure_scenario` is null: the agent writes a Problem and a Fix, not a separate failure scenario.
+- `head_sha` is the merged code the case applies to; the finding's file is identical there and at
+  `raised_sha`, so the case's line number is valid at both.
 
-## Re-runs and labels
+## Score report
 
-- A re-run **reproduces** a case if it has a high or medium finding in the same file within ±5 lines
-  (or both have no line). The matching finding is saved in `rerun_finding` for the judge.
-- A case that does not reproduce is labelled `not_reproduced` and kept out of the rates.
-- `real_issue` cases become true-positive cases for PMAT-301. A real issue still present on master goes
-  into the single Jira ticket that tracks bugs found by evals (one ticket, never one per bug).
-- Where a PMAT-269 review-quality log entry matches a case, copy its verdict into `label_reason`.
-
-## Report
+`score` runs `mesh review-pull-request <PR> --no-post-comment --force-rerun --model <m>` on each PR (not
+`--dry-run`, which swaps in a scripted fake model) and parses the printed report. `--force-rerun` is
+needed because the review's checkpoint is keyed on the PR's commit, not on the model.
 
 ```json
 {
-  "repo": "…", "run_date": "2026-10-26", "model": "…", "comments_skipped_no_commit": 3, "comments_skipped_earlier_commit": 25,
-  "prs": [{"pr_number": 19, "passed": false, "false_positives": 2, "case_ids": ["…"], "error": false}],
-  "totals": {"prs_tested": 18, "prs_failed": 7, "prs_errored": 0, "false_positive_rate": 0.39},
-  "labelled": {"prs_with_false_positive": [19], "false_positive_rate": 0.06,
-               "label_counts": {"unlabelled": 0, "false_positive": 3, "real_issue": 1, "not_reproduced": 9}}
+  "repo": "…", "run_date": "2026-10-27", "model": "…",
+  "prs": [{"pr_number": 19, "passed": false, "false_positives": 2, "findings": ["…"], "error": false}],
+  "totals": {"prs_tested": 12, "prs_failed": 3, "prs_errored": 0, "false_positive_rate": 0.25}
 }
 ```
 
-- `totals.false_positive_rate`: PRs whose fresh review has any high/medium finding, over PRs tested.
-- `labelled.false_positive_rate`: PRs with at least one fresh-run case labelled `false_positive`, over
-  PRs tested. Unlabelled, `not_reproduced` and `real_issue` cases never count. `report` recomputes it
-  after labelling.
+- False Positive Rate = PRs whose full review has any high or medium finding / PRs reviewed.
+- A review that fails or throttles leaves no report: the PR is recorded with `"error": true`, left out
+  of the rate, and can be redone with `--prs` and another model.
+- Checking whether each case's finding is raised again needs a way to match findings across runs; that
+  belongs to the later work that runs these evals against agent changes.
 - The invalid-file-access rates are PMAT-302.

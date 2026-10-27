@@ -1,0 +1,23 @@
+{
+  "case_id": "837ba3405bc0",
+  "repo": "bbomt/alpha-mesh",
+  "pr_number": 23,
+  "base_sha": "8b1a558cb7b4da12f02bc47e3a9fc70f1f6efae8",
+  "head_sha": "b8e32a343e643368ee5cb11eb51f75cfcd7f260a",
+  "raised_sha": "b0e94696a8196b20dcea6bed184c8481e22407d4",
+  "source": "pr_comment",
+  "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
+  "finding": {
+    "file": "agents/orchestrator/src/orchestrator/tmux.py",
+    "line": 28,
+    "severity": "medium",
+    "summary": "The send() function passes user-controlled text (Jira ticket keys and comment IDs) directly to tmux send-keys with -l flag. While -l prevents special key interpretation, literal newline characters in the text will be sent as Ctrl+J, potentially causing premature command execution before the explicit Enter is sent. Jira comment IDs could theoretically contain newlines.",
+    "fix": "Sanitize the text parameter by replacing newlines with spaces or escaping them, or split multi-line text into multiple send-keys calls with explicit Enter between lines.",
+    "failure_scenario": null
+  },
+  "times_raised": 1,
+  "label": "false_positive",
+  "label_by": "rule",
+  "label_date": "2026-10-27",
+  "label_reason": "Raised in review and merged with the file unchanged."
+}
