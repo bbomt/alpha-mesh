@@ -5,6 +5,7 @@
   "base_sha": "fe74f5a2ae24a1c89514cad9fb23379065ac0708",
   "head_sha": "1bee692767a52f021664634db631fe038497f9b9",
   "raised_sha": "1bee692767a52f021664634db631fe038497f9b9",
+  "fix_sha": null,
   "source": "pr_comment",
   "model": "z-ai/glm-5.3-flash",
   "finding": {
@@ -13,7 +14,8 @@
     "severity": "medium",
     "summary": "The 'post' node calls runtime.context.publish and returns {} with no idempotency marker in the state. The graph is explicitly built checkpoint-ready (checkpointer parameter, results-only state), so once resume wiring lands (PMAT-266) a replay that re-enters after 'post' but before END — or a retry after publish succeeded but the super-step commit failed — will double-post the review comment. The PR context acknowledges this, but nothing in the code or tests guards it now.",
     "fix": "Record a 'posted' flag (or the report hash) in ReviewState before/after publishing and make post a no-op when it is already set, or exclude the post node from replay until durable posting with an idempotency key exists; add a test that re-invoking the graph after 'post' does not call publish twice.",
-    "failure_scenario": null
+    "failure_scenario": null,
+    "id": null
   },
   "times_raised": 1,
   "label": "false_positive",

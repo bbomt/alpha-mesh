@@ -5,6 +5,7 @@
   "base_sha": "f1258825136568722de30a491201abac76c8c220",
   "head_sha": "2567885bf1932d3dad9041c345d709e857309ec6",
   "raised_sha": "2567885bf1932d3dad9041c345d709e857309ec6",
+  "fix_sha": null,
   "source": "pr_comment",
   "model": null,
   "finding": {
@@ -13,7 +14,8 @@
     "severity": "medium",
     "summary": "The model-supplied tool argument `path` is passed straight into normalise() before any type validation. PolicyFileReader explicitly treats paths as untrusted (`if not isinstance(path, str) or not path ...: return ReadError(...)`), but this new pre-reader call bypasses that guard: a tool call like {\"path\": 123} or {\"path\": null} (llm.py only validates that arguments is a dict, not its values) raises AttributeError inside normalise(), which escapes run_file_review and is caught only by review.py's blanket `except Exception` — aborting the entire multi-file review (exit 1, nothing posted) over a single recoverable tool-call glitch that the reader layer was specifically designed to absorb as a per-call ReadError.",
     "fix": "Validate the argument before normalising, e.g. `if not isinstance(path, str) or not path: result = ReadError(f\"Error: invalid path: {path!r}\")` and skip the dedup/cache branch in that case, so a malformed tool call degrades to a per-call ReadError the model can recover from, matching PolicyFileReader's untrusted-input contract.",
-    "failure_scenario": null
+    "failure_scenario": null,
+    "id": null
   },
   "times_raised": 1,
   "label": "false_positive",

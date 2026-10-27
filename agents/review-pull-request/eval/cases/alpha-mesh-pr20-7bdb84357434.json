@@ -5,6 +5,7 @@
   "base_sha": "5a4ab60a392fcb816250e09a145b9d657f7e9229",
   "head_sha": "4a0579f0d0f8ccf4c25dc0760f4640adc5a01706",
   "raised_sha": "4a0579f0d0f8ccf4c25dc0760f4640adc5a01706",
+  "fix_sha": null,
   "source": "pr_comment",
   "model": "nvidia/nemotron-3.5-lightning:free",
   "finding": {
@@ -13,7 +14,8 @@
     "severity": "high",
     "summary": "The run_review function iterates over run.tasks after graph completion to call on_node for each start event, but this means on_node callbacks are not live - they only fire after the entire graph finishes. The PR aims to enable live, per-node progress events via on_node callback, but the current implementation defeats this purpose. The test test_node_events_arrive_while_the_graph_runs_not_after_it (added by the diff) expects interleaved on_node and model call events, which requires on_node to be called during graph execution.",
     "fix": "Change 'for task in run.tasks:' to 'for task in run:' in the run_review function. LangGraph v3's stream_events returns a Run object that is iterable, yielding events live as the graph executes. Iterating live will call on_node for each start event as nodes start, enabling the live progress feedback the PR intends.",
-    "failure_scenario": null
+    "failure_scenario": null,
+    "id": null
   },
   "times_raised": 1,
   "label": "false_positive",

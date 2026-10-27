@@ -5,6 +5,7 @@
   "base_sha": "5a4ab60a392fcb816250e09a145b9d657f7e9229",
   "head_sha": "4a0579f0d0f8ccf4c25dc0760f4640adc5a01706",
   "raised_sha": "50ba26d3b307360dbba9115a42af1f1f66ba28dc",
+  "fix_sha": null,
   "source": "pr_comment",
   "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
   "finding": {
@@ -13,7 +14,8 @@
     "severity": "medium",
     "summary": "The function returns `run.output` but the type hint says `dict | None`. The `StreamEvents.output` attribute may not be a dict (it's the final state which is a `ReviewState` TypedDict), and could be None if the graph hasn't produced output yet (though unlikely after full iteration).",
     "fix": "Update the return type hint to match the actual return type (`ReviewState | None`) or add a runtime check/assertion that `run.output` is not None before returning.",
-    "failure_scenario": null
+    "failure_scenario": null,
+    "id": null
   },
   "times_raised": 1,
   "label": "false_positive",
