@@ -208,6 +208,9 @@ The first run prints a link. Open it in a **fresh** browser tab (a reused tab fa
 `invalid_request`), choose the site, accept, and paste back the URL the browser ends on
 (`http://localhost:8765/callback?...`; the page itself fails to load). The login is saved in
 `~/.config/alpha-mesh/atlassian-oauth.json` (mode 600) and refreshed, so this is needed once.
+The file also keeps the token's expiry time and the login server's details, so a token gone stale over a
+restart is refreshed instead of asking for the login again. A login file saved before PMAT-294 lacks
+them, so the first stale token after upgrading asks for the login once more.
 
 The consent page lists every permission the server offers (about 30, all apps). It cannot be narrowed to
 Jira: unticking narrows only by read/write/search across all apps, and a Jira-only request is rejected.
