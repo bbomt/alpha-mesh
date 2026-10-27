@@ -9,10 +9,8 @@ never writes to GitHub (gh is only used to read PRs, comments and commit compari
           between the commit that review covered and the PR's final commit: the worker saw it
           and merged that exact code anyway.
   label   Override a case's label (false_positive / real_issue) with a reason.
-  score   Run a full `mesh review-pull-request --no-post-comment` on merged PRs and report the
-          False Positive Rate: PRs with any high/medium finding / PRs reviewed.
 
-Cases: eval/cases/ (committed). Reports: eval/reports/ (gitignored).
+Cases: eval/cases/ (committed).
 """
 
 import argparse
@@ -26,9 +24,8 @@ from pathlib import Path
 
 EVAL_DIR = Path(__file__).resolve().parent.parent
 CASES_DIR = EVAL_DIR / "cases"
-REPORTS_DIR = EVAL_DIR / "reports"
 
-SCORED = ("high", "medium")  # the agent's scale is high/medium/low; only these count
+CASE_SEVERITIES = ("high", "medium")  # only these become cases; low findings are often left by design
 LABELS = ("false_positive", "real_issue")
 
 _TITLES = ("# AI Code Review", "# Partial pull request review")
@@ -38,15 +35,10 @@ _SECTION = re.compile(r"^### \S+ (High|Medium|Low)$")
 _FINDING = re.compile(r"^#### (`+) ?(.+?) ?\1(?: · line (\d+))?(?: · model: (`+) ?(.+?) ?\4)?$")
 
 
-# ── GitHub and mesh (the only side effects; tests replace both) ─────────────
+# ── GitHub, read only (the only side effect; tests replace it) ──────────────
 
 def run_gh(args: list[str]) -> str:
     return subprocess.run(["gh", *args], check=True, capture_output=True, text=True).stdout
-
-
-def run_mesh(args: list[str]) -> str:
-    """The wrapper merges the review's stderr into stdout (and tees it to the daily log)."""
-    return subprocess.run(["mesh", "review-pull-request", *args], capture_output=True, text=True).stdout
 
 
 def merged_prs(gh, repo: str, limit: int) -> list[dict]:
@@ -69,17 +61,6 @@ def changed_files(gh, repo: str, base: str, head: str) -> set[str] | None:
     if out["status"] not in ("ahead", "identical") or out["truncated"]:
         return None
     return set(out["files"])
-
-
-def review(mesh, url: str, model: str | None) -> dict | None:
-    """A full review of the PR's final commit, never posted. None if no report came back."""
-    args = [url, "--no-post-comment", "--force-rerun"] + (["--model", model] if model else [])
-    out = mesh(args)
-    parsed = parse_report(out)
-    if parsed is None:
-        print(f"  ERROR: no review report for {url}; last output:\n" + "\n".join(out.splitlines()[-15:]),
-              file=sys.stderr)
-    return parsed
 
 
 # ── Report parsing ──────────────────────────────────────────────────────────
@@ -161,18 +142,18 @@ def mine(repo: str, limit: int, *, prs: list[int] | None = None, gh=run_gh, case
         final = pr["headRefOid"]
         for body in pr_comments(gh, repo, pr["number"]):
             parsed = parse_report(body) if body.startswith(_TITLES) else None
-            scored = [f for f in (parsed or {}).get("findings", []) if f["severity"] in SCORED]
-            if not scored:
+            candidates = [f for f in (parsed or {}).get("findings", []) if f["severity"] in CASE_SEVERITIES]
+            if not candidates:
                 continue
             raised = parsed["head_sha"]
             if raised is None:
-                skipped["no_commit"] += len(scored)
+                skipped["no_commit"] += len(candidates)
                 continue
             changed = set() if raised == final else changed_files(gh, repo, raised, final)
             if changed is None:
-                skipped["not_ancestor"] += len(scored)
+                skipped["not_ancestor"] += len(candidates)
                 continue
-            for f in scored:
+            for f in candidates:
                 if f["file"] in changed:
                     skipped["file_changed"] += 1
                     continue
@@ -212,48 +193,13 @@ def label(case_id: str, value: str, reason: str, *, cases_dir: Path = CASES_DIR,
     return case
 
 
-def score(repo: str, limit: int, model: str | None, *, prs: list[int] | None = None, gh=run_gh, mesh=run_mesh,
-          reports_dir: Path = REPORTS_DIR, today: date | None = None) -> dict:
-    today = today or date.today()
-    results = []
-    for pr in merged_prs(gh, repo, limit):
-        if prs and pr["number"] not in prs:
-            continue
-        print(f"PR #{pr['number']}: reviewing {pr['url']} ...", file=sys.stderr)
-        parsed = review(mesh, pr["url"], model)
-        if parsed is None:
-            results.append({"pr_number": pr["number"], "title": pr["title"], "error": True})
-            continue
-        scored = [f for f in parsed["findings"] if f["severity"] in SCORED]
-        results.append({"pr_number": pr["number"], "title": pr["title"], "head_sha": parsed["head_sha"],
-                        "model": parsed["model"] or model, "passed": not scored, "false_positives": len(scored),
-                        "findings": scored, "error": False})
-        print(f"  {'pass' if not scored else 'FAIL'}: {len(scored)} high/medium finding(s)", file=sys.stderr)
-
-    tested = [r for r in results if not r["error"]]
-    failed = [r for r in tested if not r["passed"]]
-    run = {"repo": repo, "run_date": today.isoformat(),
-           "model": model or next((r["model"] for r in tested if r["model"]), None), "prs": results,
-           "totals": {"prs_tested": len(tested), "prs_failed": len(failed), "prs_errored": len(results) - len(tested),
-                      "false_positive_rate": len(failed) / len(tested) if tested else None}}
-    reports_dir.mkdir(parents=True, exist_ok=True)
-    path = reports_dir / f"eval_report_{today:%Y%m%d}.json"
-    path.write_text(json.dumps(run, indent=2, ensure_ascii=False) + "\n")
-    print(f"Report: {path}", file=sys.stderr)
-    return run
-
-
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
-    for name, help_text in (("mine", "build false-positive cases from review comments (no model)"),
-                            ("score", "run full reviews and report the False Positive Rate")):
-        p = sub.add_parser(name, help=help_text)
-        p.add_argument("--repo", required=True, help="owner/name, e.g. bbomt/alpha-mesh")
-        p.add_argument("--limit", type=int, default=20, help="how many recently merged PRs (default 20)")
-        p.add_argument("--prs", help="only these PR numbers, comma-separated")
-        if name == "score":
-            p.add_argument("--model", help="review model (default: CODE_REVIEW_MODEL from .env)")
+    p = sub.add_parser("mine", help="build false-positive cases from review comments (no model)")
+    p.add_argument("--repo", required=True, help="owner/name, e.g. bbomt/alpha-mesh")
+    p.add_argument("--limit", type=int, default=20, help="how many recently merged PRs (default 20)")
+    p.add_argument("--prs", help="only these PR numbers, comma-separated")
     p = sub.add_parser("label", help="override a case's label")
     p.add_argument("case_id")
     p.add_argument("label", choices=LABELS)
@@ -261,11 +207,9 @@ def main(argv=None) -> int:
     p.add_argument("--by", default="claude-code")
     args = parser.parse_args(argv)
 
-    prs = [int(n) for n in args.prs.split(",")] if getattr(args, "prs", None) else None
     if args.command == "mine":
+        prs = [int(n) for n in args.prs.split(",")] if args.prs else None
         print(json.dumps(mine(args.repo, args.limit, prs=prs), indent=2))
-    elif args.command == "score":
-        print(json.dumps(score(args.repo, args.limit, args.model, prs=prs)["totals"], indent=2))
     else:
         label(args.case_id, args.label, args.reason, by=args.by)
     return 0

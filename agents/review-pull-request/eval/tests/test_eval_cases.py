@@ -56,21 +56,6 @@ class FakeGh:
         raise AssertionError(f"unexpected gh call: {args}")
 
 
-class FakeMesh:
-    """The mesh wrapper merges stderr into stdout, so progress lines surround the report."""
-
-    def __init__(self, reports):
-        self.reports, self.calls = reports, []
-
-    def __call__(self, args):
-        self.calls.append(list(args))
-        return f"Model: x\nFetching diff...\n{self.reports[args[0]]}\nPR review complete! Reviewed 2 file(s) in 0m 3s.\n"
-
-
-def no_model(args):
-    raise AssertionError(f"mining must not run a review: {args}")
-
-
 def mine(tmp_path, gh, **kw):
     return eval_cases.mine(REPO, limit=10, gh=gh, cases_dir=tmp_path / "cases", today=TODAY, **kw)
 
@@ -88,10 +73,11 @@ def test_a_finding_on_a_file_unchanged_until_the_merge_is_a_false_positive_case(
     kept = Issue("src/a.py", 7, "high", "Line one.\nLine two.", "Guard it.")
     fixed = Issue("src/b.py", 20, "high", "Changed afterwards.", None)
     final = Issue("src/c.py", 5, "medium", "Raised on the final commit.", None)
+    low_kept = Issue("src/a.py", 30, "low", "Low findings are often left by design.", None)  # never a case
     legacy = ("# AI Code Review\n\n> **Models:** per-file=`x` · overview=`x`\n\n## Issues\n\n"
               "### 🔴 High\n\n#### `src/a.py` · line 7\n\n**Problem:** Old format.\n\n---\n")
     gh = FakeGh([pr(1, BASE1, HEAD1)],
-                comments={1: [report(OLD1, [kept, fixed, LOW], model=OTHER_MODEL), report(HEAD1, [final]),
+                comments={1: [report(OLD1, [kept, fixed, LOW, low_kept], model=OTHER_MODEL), report(HEAD1, [final]),
                               legacy, "LGTM, merging."]},
                 comparisons={(OLD1, HEAD1): ("ahead", ["src/b.py"])})
 
@@ -131,8 +117,10 @@ def test_the_same_finding_raised_in_several_reviews_is_one_case(tmp_path):
     assert case["times_raised"] == 2
 
 
-def test_mining_runs_no_model_and_mining_again_keeps_a_judges_override(tmp_path, monkeypatch):
-    monkeypatch.setattr(eval_cases, "run_mesh", no_model)
+def test_mining_runs_nothing_but_gh_and_mining_again_keeps_a_judges_override(tmp_path, monkeypatch):
+    def no_process(*args, **kwargs):
+        raise AssertionError(f"mining must run no process (no review, no model): {args}")
+    monkeypatch.setattr(eval_cases.subprocess, "run", no_process)
     gh = FakeGh([pr(1, BASE1, HEAD1)], comments={1: [report(HEAD1, [MEDIUM])]})
     mine(tmp_path, gh)
     [case] = cases(tmp_path)
@@ -147,41 +135,14 @@ def test_mining_runs_no_model_and_mining_again_keeps_a_judges_override(tmp_path,
         eval_cases.label(case["case_id"], "unlabelled", "x", cases_dir=tmp_path / "cases")
 
 
-def test_score_runs_a_full_review_of_each_pr_and_reports_the_false_positive_rate(tmp_path):
-    gh = FakeGh([pr(1, BASE1, HEAD1), pr(2, BASE2, HEAD2)])
-    mesh = FakeMesh({url(1): report(HEAD1, [MEDIUM, LOW]), url(2): report(HEAD2, [LOW])})
-
-    eval_cases.score(REPO, limit=2, model=MODEL, gh=gh, mesh=mesh, reports_dir=tmp_path / "reports", today=TODAY)
-
-    rep = json.loads((tmp_path / "reports" / "eval_report_20261027.json").read_text())
-    assert (rep["repo"], rep["model"], rep["run_date"]) == (REPO, MODEL, "2026-10-27")
-    assert [(p["pr_number"], p["passed"], p["false_positives"]) for p in rep["prs"]] == [(1, False, 1), (2, True, 0)]
-    assert rep["totals"] == {"prs_tested": 2, "prs_failed": 1, "prs_errored": 0, "false_positive_rate": 0.5}
-    assert rep["prs"][0]["findings"][0]["file"] == "src/a.py"
-    assert not (tmp_path / "cases").exists(), "scoring never writes cases"
-
-
-def test_a_review_that_returns_no_report_is_an_error_left_out_of_the_rate(tmp_path):
-    gh = FakeGh([pr(1, BASE1, HEAD1), pr(2, BASE2, HEAD2)])
-    mesh = FakeMesh({url(1): report(HEAD1, [MEDIUM]), url(2): "ERROR: LLM API call failed"})
-
-    rep = eval_cases.score(REPO, limit=2, model=MODEL, gh=gh, mesh=mesh, reports_dir=tmp_path / "reports",
-                           today=TODAY)
-
-    assert rep["totals"] == {"prs_tested": 1, "prs_failed": 1, "prs_errored": 1, "false_positive_rate": 1.0}
-
-
-def test_mining_and_scoring_never_write_to_github(tmp_path):
-    gh = FakeGh([pr(1, BASE1, HEAD1)], comments={1: [report(OLD1, [MEDIUM])]},
+def test_mining_never_writes_to_github(tmp_path):
+    gh = FakeGh([pr(1, BASE1, HEAD1), pr(2, BASE2, HEAD2)],
+                comments={1: [report(OLD1, [MEDIUM])], 2: [report(HEAD2, [MEDIUM])]},
                 comparisons={(OLD1, HEAD1): ("ahead", [])})
-    mesh = FakeMesh({url(1): report(HEAD1, [MEDIUM])})
 
     mine(tmp_path, gh)
-    eval_cases.score(REPO, limit=10, model=MODEL, gh=gh, mesh=mesh, reports_dir=tmp_path / "reports", today=TODAY)
 
-    assert mesh.calls, "the review was never run"
-    for args in mesh.calls:
-        assert "--no-post-comment" in args and "--dry-run" not in args
+    assert len(cases(tmp_path)) == 2
     write_flags = {"-X", "--method", "-f", "-F", "--field", "--raw-field", "--input"}
     for args in gh.calls:
         assert args[:2] == ["pr", "list"] or args[0] == "api", args

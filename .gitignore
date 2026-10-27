@@ -28,6 +28,3 @@ uv.lock
 # CDK
 node_modules/
 cdk.out/
-
-# review-pull-request eval run output (PMAT-300)
-agents/review-pull-request/eval/reports/
