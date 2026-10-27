@@ -32,7 +32,7 @@ _TITLES = ("# AI Code Review", "# Partial pull request review")
 _COMMIT = re.compile(r"^> \*\*Reviewed commit:\*\* `([0-9a-f]{40})`")
 _MODEL = re.compile(r"^> \*\*Model:\*\* (`+) ?(.+?) ?\1$")
 _SECTION = re.compile(r"^### \S+ (High|Medium|Low)$")
-_FINDING = re.compile(r"^#### (`+) ?(.+?) ?\1(?: · line (\d+))?(?: · model: (`+) ?(.+?) ?\4)?$")
+_FINDING = re.compile(r"^#### (?:(R\d+-[0-9a-f]{7}-\d{3}) · )?(`+) ?(.+?) ?\2(?: · line (\d+))?(?: · model: (`+) ?(.+?) ?\5)?$")
 _REPO = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]*/(?!\.{1,2}$)[A-Za-z0-9_.][A-Za-z0-9_.-]*$")  # GitHub owner/name
 _SHA = re.compile(r"^[0-9a-f]{40}$")
 
@@ -109,9 +109,9 @@ def parse_report(text: str) -> dict | None:
         elif m := _SECTION.match(line):
             severity, current = m.group(1).lower(), None
         elif severity and (m := _FINDING.match(line)):
-            current = {"file": m.group(2), "line": int(m.group(3)) if m.group(3) else None,
+            current = {"file": m.group(3), "line": int(m.group(4)) if m.group(4) else None,
                        "severity": severity, "summary": "", "fix": None, "failure_scenario": None,
-                       "model": m.group(5) or model}
+                       "model": m.group(6) or model, "id": m.group(1)}
             findings.append(current)
             field = None
         elif current is not None:

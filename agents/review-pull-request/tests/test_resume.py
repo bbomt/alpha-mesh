@@ -175,10 +175,10 @@ def test_a6_resume_with_a_different_model(tmp_path):
     assert file_calls(new) == ["src/f3.py", "src/f4.py"]
     report = r.posts()[0]
     assert "**Models:** `fake/model-a` · `fake/model-b`" in report
-    assert "#### `src/f1.py` · line 1 · model: `fake/model-a`" in report
-    assert "#### `src/f2.py` · line 1 · model: `fake/model-a`" in report
-    assert "#### `src/f3.py` · line 1 · model: `fake/model-b`" in report
-    assert "#### `src/f4.py` · line 1 · model: `fake/model-b`" in report
+    assert "#### R42-head111-001 · `src/f1.py` · line 1 · model: `fake/model-a`" in report
+    assert "#### R42-head111-002 · `src/f2.py` · line 1 · model: `fake/model-a`" in report
+    assert "#### R42-head111-003 · `src/f3.py` · line 1 · model: `fake/model-b`" in report
+    assert "#### R42-head111-004 · `src/f4.py` · line 1 · model: `fake/model-b`" in report
     assert "- `src/f1.py` (model: `fake/model-a`)\n" in report
     assert "- `src/f4.py` (model: `fake/model-b`)\n" in report
 

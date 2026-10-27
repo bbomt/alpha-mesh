@@ -285,3 +285,36 @@ def test_an_incomplete_file_is_not_listed_as_reviewed():
     files = body.split("## Files reviewed\n")[1].split("\n## ")[0]
     assert "`a.py`" in files
     assert "b.py" not in files
+
+
+# PMAT-305: every finding's heading carries an ID that a fix commit can cite.
+ID_HEAD = "e0c98f3" + "a" * 33
+
+
+def _ids(report: str) -> list[str]:
+    import re
+    return re.findall(r"^#### (R\S+) · ", report, re.MULTILINE)
+
+
+@pytest.mark.parametrize("extra", [
+    {},
+    {"incremental_info": {"base_sha": "b" * 40, "commits": [ID_HEAD]}},
+    {"incomplete": ["z.py"]},
+], ids=["full", "incremental", "partial"])
+def test_each_finding_heading_carries_its_id_numbered_in_print_order(extra):
+    issues = [
+        Issue(file="b.py", line=2, severity="low", comment="c", suggestion=None),
+        Issue(file="z.py", line=9, severity="high", comment="c", suggestion=None),
+        Issue(file="a.py", line=1, severity="high", comment="c", suggestion=None),
+    ]
+    report = render_report("overview", issues, [], MockConfig(), head_sha=ID_HEAD, pr_number=31, **extra)
+    # High first (a.py, z.py), then Low (b.py); one sequence across the whole report.
+    assert _ids(report) == ["R31-e0c98f3-001", "R31-e0c98f3-002", "R31-e0c98f3-003"]
+    assert "#### R31-e0c98f3-001 · `a.py` · line 1" in report
+    assert "#31" not in report, "GitHub would link #31 to an issue or PR"
+
+
+def test_no_id_when_the_pr_or_commit_is_unknown():
+    issues = [Issue(file="a.py", line=1, severity="high", comment="c", suggestion=None)]
+    assert _ids(render_report("o", issues, [], MockConfig(), head_sha=ID_HEAD)) == []
+    assert _ids(render_report("o", issues, [], MockConfig(), pr_number=31)) == []
