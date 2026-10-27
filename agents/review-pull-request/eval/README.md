@@ -28,7 +28,7 @@ and AWS access for the checkpoint store. `mesh` must be on `PATH`. Use the free 
 cd agents/review-pull-request
 S=eval/scripts/eval_cases.py
 
-# 1. Mine: cases from the review comments on each PR, plus a fresh review of each PR (scored)
+# 1. Mine: cases from the review comments on each PR's final commit, plus a fresh review (scored)
 python3 $S mine --repo bbomt/alpha-mesh --limit 20 --model nvidia/nemotron-3-ultra-550b-a55b:free
 python3 $S mine --repo bbomt/alpha-mesh --prs 12,16 --model nvidia/nemotron-3.5-super-vl:free  # redo some PRs
 
@@ -64,9 +64,12 @@ because the checkpoint thread is keyed on the PR's head commit, not on the model
 }
 ```
 
-- `head_sha` is the commit the finding was raised on: the `Reviewed commit` of a PR comment, or the PR's
-  head for a fresh run. `base_sha` is the PR's base. Keep SHAs, not diffs: GitHub keeps
-  `refs/pull/N/head` after the merge.
+- `head_sha` is always the PR's final commit: the code that was merged unchanged. A review comment
+  becomes cases only if its `Reviewed commit` is that commit: the worker saw its high/medium findings
+  and merged anyway, so they are strong false-positive candidates. Comments on earlier commits are
+  skipped (their findings may have been fixed before the merge) and counted in the report
+  (`comments_skipped_earlier_commit`). `base_sha` is the PR's base. Keep SHAs, not diffs: GitHub keeps
+  `refs/pull/N/head` after the merge, even when the branch is deleted.
 - The agent's severities are high/medium/low (there is no INFO). Only high and medium become cases.
   `failure_scenario` is null: the agent writes a Problem and a Fix, not a separate failure scenario.
 - `case_id` is a hash of repo, PR, commit, source, file, line, severity and summary. Mining again never
@@ -79,10 +82,6 @@ because the checkpoint thread is keyed on the PR's head commit, not on the model
 - A re-run **reproduces** a case if it has a high or medium finding in the same file within ±5 lines
   (or both have no line). The matching finding is saved in `rerun_finding` for the judge.
 - A case that does not reproduce is labelled `not_reproduced` and kept out of the rates.
-- **Limitation:** `mesh review-pull-request` always reviews the PR's final head, so a case mined from a
-  comment on an earlier commit is re-run at the final head (`rerun_sha`). If it does not reproduce,
-  `label_reason` notes that it may have been fixed before the merge. Judge such cases at their own
-  `head_sha`.
 - `real_issue` cases become true-positive cases for PMAT-301. A real issue still present on master goes
   into the single Jira ticket that tracks bugs found by evals (one ticket, never one per bug).
 - Where a PMAT-269 review-quality log entry matches a case, copy its verdict into `label_reason`.
@@ -91,7 +90,7 @@ because the checkpoint thread is keyed on the PR's head commit, not on the model
 
 ```json
 {
-  "repo": "…", "run_date": "2026-10-26", "model": "…", "comments_skipped_no_commit": 3,
+  "repo": "…", "run_date": "2026-10-26", "model": "…", "comments_skipped_no_commit": 3, "comments_skipped_earlier_commit": 25,
   "prs": [{"pr_number": 19, "passed": false, "false_positives": 2, "case_ids": ["…"], "error": false}],
   "totals": {"prs_tested": 18, "prs_failed": 7, "prs_errored": 0, "false_positive_rate": 0.39},
   "labelled": {"prs_with_false_positive": [19], "false_positive_rate": 0.06,

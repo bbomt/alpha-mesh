@@ -166,26 +166,24 @@ def test_a_rerun_finding_near_the_same_line_reproduces_the_case(tmp_path):
     assert case["rerun_finding"]["line"] == 16 and case["rerun_finding"]["severity"] == "high"
 
 
-def test_review_comments_on_the_pr_become_cases_at_the_commit_they_reviewed(tmp_path):
+def test_review_comments_on_the_final_commit_become_cases(tmp_path):
+    """Findings on the PR's final commit were merged unchanged, so the worker dismissed them.
+    Comments on earlier commits are skipped: their findings may have been fixed before the merge."""
     high = Issue("src/a.py", 7, "high", "Line one.\nLine two.", "Guard it.")
+    earlier = Issue("src/b.py", 20, "high", "Fixed later.", None)
     legacy = ("# AI Code Review\n\n> **Models:** per-file=`x` · overview=`x`\n\n## Issues\n\n"
               "### 🔴 High\n\n#### `src/a.py` · line 7\n\n**Problem:** Old format.\n\n---\n")
     gh = FakeGh([pr(1, BASE1, HEAD1)], comments={1: [
-        report(OLD1, [high, LOW], model=OTHER_MODEL), legacy, "LGTM, merging."]})
+        report(OLD1, [earlier]), report(HEAD1, [high, LOW], model=OTHER_MODEL), legacy, "LGTM, merging."]})
     mesh = FakeMesh({url(1): report(HEAD1, [])})
 
     rep = mine(tmp_path, gh, mesh)
 
     [case] = cases(tmp_path)
     assert {k: case[k] for k in ("pr_number", "base_sha", "head_sha", "source", "model")} == {
-        "pr_number": 1, "base_sha": BASE1, "head_sha": OLD1, "source": "pr_comment", "model": OTHER_MODEL}
+        "pr_number": 1, "base_sha": BASE1, "head_sha": HEAD1, "source": "pr_comment", "model": OTHER_MODEL}
     assert case["finding"]["severity"] == "high" and case["finding"]["line"] == 7
     assert case["finding"]["summary"] == "Line one.\nLine two."
     assert rep["comments_skipped_no_commit"] == 1
+    assert rep["comments_skipped_earlier_commit"] == 1
     assert rep["prs"][0]["passed"] is True, "only the fresh run is scored"
-
-    eval_cases.rerun(cases_dir=tmp_path / "cases", mesh=FakeMesh({url(1): report(HEAD1, [])}), today=TODAY)
-
-    [case] = cases(tmp_path)
-    assert case["label"] == "not_reproduced" and case["rerun_sha"] == HEAD1
-    assert OLD1[:7] in case["label_reason"] and "fixed before the merge" in case["label_reason"]

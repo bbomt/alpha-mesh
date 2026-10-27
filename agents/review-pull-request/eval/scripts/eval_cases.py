@@ -6,8 +6,9 @@ report it prints. It never imports or changes the review code, and never writes 
 reviews run with --no-post-comment, and gh is only used to list PRs and read their comments.
 
   mine    For N recently merged PRs, turn every high/medium finding into an unlabelled case:
-          from the review comments already on the PR (at the commit each one reviewed) and from
-          a fresh review. Writes a run report with the False Positive Rate of the fresh run.
+          from the review comments on the PR's final commit (merged unchanged, so the worker
+          dismissed them) and from a fresh review. Writes a run report with the False Positive
+          Rate of the fresh run.
   rerun   Review again the PRs of unlabelled cases, with the model that raised each case, and
           label the cases that do not reproduce `not_reproduced`.
   label   Record a judge's verdict on a case (false_positive / real_issue).
@@ -158,7 +159,7 @@ def add_case(cases_dir: Path, case: dict) -> None:
 def mine(repo: str, limit: int, model: str | None, *, prs: list[int] | None = None, gh=run_gh, mesh=run_mesh,
          cases_dir: Path = CASES_DIR, reports_dir: Path = REPORTS_DIR, today: date | None = None) -> dict:
     today = today or date.today()
-    results, skipped = [], 0
+    results, skipped, earlier = [], 0, 0
     for pr in merged_prs(gh, repo, limit):
         if prs and pr["number"] not in prs:
             continue
@@ -169,6 +170,11 @@ def mine(repo: str, limit: int, model: str | None, *, prs: list[int] | None = No
                 continue
             if parsed["head_sha"] is None:
                 skipped += 1
+                continue
+            # Only the final commit was merged unchanged: its findings were dismissed by the worker.
+            # Findings on earlier commits may have been fixed before the merge.
+            if parsed["head_sha"] != pr["headRefOid"]:
+                earlier += 1
                 continue
             for f in parsed["findings"]:
                 if f["severity"] in SCORED:
@@ -196,7 +202,7 @@ def mine(repo: str, limit: int, model: str | None, *, prs: list[int] | None = No
     failed = [r for r in tested if not r["passed"]]
     run = {"repo": repo, "run_date": today.isoformat(),
            "model": model or next((r["model"] for r in tested if r["model"]), None),
-           "prs": results, "comments_skipped_no_commit": skipped,
+           "prs": results, "comments_skipped_no_commit": skipped, "comments_skipped_earlier_commit": earlier,
            "totals": {"prs_tested": len(tested), "prs_failed": len(failed), "prs_errored": len(results) - len(tested),
                       "false_positive_rate": len(failed) / len(tested) if tested else None}}
     run["labelled"] = labelled_summary(run, load_cases(cases_dir))
@@ -236,9 +242,6 @@ def rerun(*, cases_dir: Path = CASES_DIR, mesh=run_mesh, today: date | None = No
                 fin = c["finding"]
                 reason = (f"Re-run at {(parsed['head_sha'] or '?')[:7]} had no high/medium finding in "
                           f"{fin['file']} within ±{LINE_TOLERANCE} lines of line {fin['line']}.")
-                if parsed["head_sha"] != c["head_sha"]:
-                    reason += (f" The case was raised at the earlier commit {c['head_sha'][:7]}, so it may have "
-                               "been fixed before the merge.")
                 c.update(label="not_reproduced", label_by="eval_cases.py rerun", label_date=today.isoformat(),
                          label_reason=reason)
             elif c["label"] == "not_reproduced":  # reproduced on a retry: back to the judge
