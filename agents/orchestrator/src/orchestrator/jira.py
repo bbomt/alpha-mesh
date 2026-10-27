@@ -6,6 +6,7 @@ paste back the URL the browser ends on. Tokens are kept in ~/.config/alpha-mesh/
 """
 
 import json
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -14,7 +15,7 @@ import httpx2
 from mcp import ClientSession
 from mcp.client.auth import OAuthClientProvider, TokenStorage
 from mcp.client.streamable_http import streamable_http_client
-from mcp.shared.auth import AuthorizationCodeResult, OAuthClientInformationFull, OAuthClientMetadata, OAuthToken
+from mcp.shared.auth import AuthorizationCodeResult, OAuthClientInformationFull, OAuthClientMetadata, OAuthMetadata, OAuthToken
 
 URL = "https://mcp.atlassian.com/v2/mcp"
 CLOUD_ID = "d91f7eef-5262-4e7b-8e6e-197d0b74b248"
@@ -30,10 +31,14 @@ class Ticket:
 
 
 class FileStorage(TokenStorage):
+    """Also keeps what the SDK holds only in memory but needs to refresh after a restart (PMAT-294): the
+    token's absolute expiry (the token has only a relative expires_in) and the authorization server
+    metadata (without it the SDK refreshes at mcp.atlassian.com/token, which is 404)."""
+
     def _load(self) -> dict:
         return json.loads(STORE.read_text()) if STORE.exists() else {}
 
-    def _save(self, key: str, value: dict) -> None:
+    def _save(self, key: str, value) -> None:
         data = self._load() | {key: value}
         STORE.parent.mkdir(parents=True, exist_ok=True)
         STORE.touch(mode=0o600)
@@ -45,6 +50,18 @@ class FileStorage(TokenStorage):
 
     async def set_tokens(self, tokens):
         self._save("tokens", tokens.model_dump(mode="json"))
+        if tokens.expires_in is not None:
+            self._save("expires_at", time.time() + int(tokens.expires_in))
+
+    def expires_at(self) -> float | None:
+        return self._load().get("expires_at")
+
+    def get_metadata(self) -> OAuthMetadata | None:
+        m = self._load().get("metadata")
+        return OAuthMetadata.model_validate(m) if m else None
+
+    def set_metadata(self, metadata: OAuthMetadata) -> None:
+        self._save("metadata", metadata.model_dump(mode="json"))
 
     async def get_client_info(self):
         c = self._load().get("client")
@@ -82,9 +99,9 @@ def newest_owner_comment(newest_first: list[dict]) -> str | None:
                  if WORKER_MARK not in c["body"].strip().split("\n", 1)[0]), None)
 
 
-async def snapshot(keys: list[str]) -> dict[str, Ticket]:
-    """Labels, Done or not, and the owner's newest comment of each ticket."""
-    auth = OAuthClientProvider(
+def auth() -> OAuthClientProvider:
+    storage = FileStorage()
+    provider = OAuthClientProvider(
         URL,
         OAuthClientMetadata(
             client_name="alpha-mesh orchestrator",
@@ -93,13 +110,22 @@ async def snapshot(keys: list[str]) -> dict[str, Ticket]:
             response_types=["code"],
             token_endpoint_auth_method="none",
         ),
-        FileStorage(),
+        storage,
         redirect_handler=_show_link,
         callback_handler=_read_redirect,
     )
+    # Loading the tokens does not set these two, so set them here and the SDK refreshes a stale token.
+    provider.context.token_expiry_time = storage.expires_at()
+    provider.context.oauth_metadata = storage.get_metadata()
+    return provider
+
+
+async def snapshot(keys: list[str]) -> dict[str, Ticket]:
+    """Labels, Done or not, and the owner's newest comment of each ticket."""
     tickets = {}
+    provider = auth()
     async with (
-        httpx2.AsyncClient(auth=auth, timeout=60) as http,
+        httpx2.AsyncClient(auth=provider, timeout=60) as http,
         streamable_http_client(URL, http_client=http) as (read, write),
         ClientSession(read, write) as session,
     ):
@@ -116,4 +142,6 @@ async def snapshot(keys: list[str]) -> dict[str, Ticket]:
                 done=issue["fields"]["status"]["statusCategory"]["key"] == "done",
                 comment_id=newest_owner_comment(comments),
             )
+    if provider.context.oauth_metadata:
+        FileStorage().set_metadata(provider.context.oauth_metadata)
     return tickets
