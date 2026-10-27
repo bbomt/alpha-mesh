@@ -70,7 +70,7 @@ comparisons work on old PRs.
   "base_sha": "…", "head_sha": "<the PR's final commit>", "raised_sha": "<the commit the review covered>",
   "source": "pr_comment", "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
   "finding": {"file": "…", "line": 115, "severity": "high | medium", "summary": "Problem text",
-              "fix": "Fix text or null", "failure_scenario": null},
+              "fix": "Fix text or null", "failure_scenario": null, "id": "R19-1a2b3c4-002 or null"},
   "times_raised": 1,
   "label": "false_positive | real_issue",
   "label_by": "rule", "label_date": "2026-10-27",
@@ -79,6 +79,8 @@ comparisons work on old PRs.
 ```
 
 - The agent's severities are high/medium/low (there is no INFO).
+- `id` is the finding's ID from the review's heading (PMAT-305), from the first review that raised it;
+  null for reports written before IDs existed.
 - `failure_scenario` is null: the agent writes a Problem and a Fix, not a separate failure scenario.
 - `head_sha` is the merged code the case applies to; the finding's file is identical there and at
   `raised_sha`, so the case's line number is valid at both.

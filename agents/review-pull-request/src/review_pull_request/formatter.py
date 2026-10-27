@@ -44,6 +44,7 @@ def render_report(
     overview_model: str | None = None,
     file_models: dict[str, str] | None = None,
     issue_models: list[str] | None = None,
+    pr_number: int | None = None,
 ) -> str:
     """Build a Markdown review report.
 
@@ -67,6 +68,8 @@ def render_report(
         file_models: file -> the model that reviewed it; listed under "Files reviewed" (path and model
             only, no summary) and every model in the header.
         issue_models: the model that found each issue (same order as issues), named on its heading.
+        pr_number: with head_sha, gives each finding an ID on its heading for fix commits to cite:
+            R<PR>-<commit, 7 chars>-<number in print order, 3 digits>. No "#": GitHub would link it.
     """
     if summaries is None:
         summaries = []
@@ -134,6 +137,7 @@ def render_report(
             f"{len(low)} 🟢 LOW\n"
         )
 
+        finding_number = 0
         for severity in SEVERITY_ORDER:
             group = [i for i in issues if i.severity == severity]
             if not group:
@@ -146,7 +150,10 @@ def render_report(
             for iss in sorted(group, key=lambda i: i.file):
                 line_str = f" · line {iss.line}" if iss.line else ""
                 model_str = f" · model: {_code_span(model_of[id(iss)])}" if id(iss) in model_of else ""
-                lines.append(f"#### {_code_span(iss.file)}{line_str}{model_str}\n")
+                finding_number += 1
+                id_str = (f"R{pr_number}-{head_sha[:7]}-{finding_number:03d} · "
+                          if pr_number is not None and head_sha else "")
+                lines.append(f"#### {id_str}{_code_span(iss.file)}{line_str}{model_str}\n")
                 lines.append(f"**Problem:** {iss.comment}\n")
                 if iss.suggestion:
                     lines.append(f"**Fix:** {iss.suggestion}\n")

@@ -165,6 +165,10 @@ While reviewing a file the model can call `read_file` to look at other files. Re
 - A mixed PR's report lists the changed files that were skipped by exclusion patterns under "Excluded from review", so the all-clear never implies coverage it lacks. The "not reviewed" notice does not carry the `# AI Code Review` marker, so `--since-last-review` never mistakes it for a completed review.
 - An unreadable `.pr-review-ignore` aborts the run (it would otherwise send files you meant to exclude).
 - Severities other than high/medium/low from the model (`error`, `critical`, `warning`, anything else) are mapped to high/medium/low so no finding is dropped from the report.
+- Each finding's heading starts with its ID, `R<PR>-<reviewed commit, 7 chars>-<number>` (e.g.
+  `R31-e0c98f3-003`), numbered 001, 002, … in the order the report prints them. A commit that fixes a
+  finding cites its ID (PMAT-305). A later review that raises the same issue gives it a new ID. There is
+  no `#` before the PR number, because GitHub would turn it into a link.
 
 ## Excluded files stay away from the model
 
@@ -233,7 +237,7 @@ Resuming: 5 file(s) from checkpoint, 15 to review (thread review-pull-request:or
   review; nothing stale is reused. The model is *not* part of it.
 - **Switching model on resume:** `--model` may name another model. Files already reviewed keep their
   result; the report header lists every model used (`**Models:**`), and each issue names the model
-  that found it (``#### `src/x.py` · line 42 · model: `z-ai/glm-5.3-flash` ``; the overview names its model too).
+  that found it (``#### R31-e0c98f3-003 · `src/x.py` · line 42 · model: `z-ai/glm-5.3-flash` ``; the overview names its model too).
   *Files reviewed* lists each fully reviewed file with its model (path and model only).
 - **Free-model workflow:** review a large PR on a free model; when it throttles after file 5 of 20,
   rerun (same or another free model) until every file is done. Low token cost, more wall-clock time.

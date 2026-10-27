@@ -379,6 +379,7 @@ Rerunning the same command after a failure resumes from the file it stopped at.
                 symlinks=repo_symlinks,
                 overview_model=state["overview_model"],
                 file_models={r["file_path"]: r["model"] for r in results},
+                pr_number=pr_number,
             )
 
         def publish(report: str) -> None:

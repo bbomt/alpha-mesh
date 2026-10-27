@@ -31,10 +31,10 @@ def pr(n, base, head):
     return {"number": n, "title": f"PR {n}", "baseRefOid": base, "headRefOid": head, "url": url(n)}
 
 
-def report(head_sha, issues, model=MODEL):
+def report(head_sha, issues, model=MODEL, pr_number=None):
     config = SimpleNamespace(base_branch="master", model=model)
     return render_report(overview="Overview.", issues=issues, summaries=[(i.file, "s") for i in issues],
-                         config=config, model=model, head_sha=head_sha,
+                         config=config, model=model, head_sha=head_sha, pr_number=pr_number,
                          file_models={i.file: model for i in issues}, issue_models=[model for _ in issues])
 
 
@@ -88,7 +88,8 @@ def test_a_finding_on_a_file_unchanged_until_the_merge_is_a_false_positive_case(
         "repo": REPO, "pr_number": 1, "base_sha": BASE1, "head_sha": HEAD1, "raised_sha": OLD1,
         "source": "pr_comment", "model": OTHER_MODEL}
     assert old_case["finding"] == {"file": "src/a.py", "line": 7, "severity": "high",
-                                   "summary": "Line one.\nLine two.", "fix": "Guard it.", "failure_scenario": None}
+                                   "summary": "Line one.\nLine two.", "fix": "Guard it.", "failure_scenario": None,
+                                   "id": None}
     assert (old_case["label"], old_case["label_by"], old_case["label_date"]) == ("false_positive", "rule", "2026-10-27")
     assert (final_case["finding"]["file"], final_case["raised_sha"]) == ("src/c.py", HEAD1)
     assert summary["cases_written"] == 2
@@ -167,3 +168,12 @@ def test_mining_never_writes_to_github(tmp_path):
     for args in gh.calls:
         assert args[:2] == ["pr", "list"] or args[0] == "api", args
         assert not write_flags.intersection(args), args
+
+
+def test_the_parser_reads_each_findings_id_and_an_old_report_without_ids_as_before():  # PMAT-305
+    new = eval_cases.parse_report(report(HEAD1, [MEDIUM, LOW], pr_number=31))
+    assert [(f["id"], f["file"], f["line"], f["model"]) for f in new["findings"]] == [
+        ("R31-bbbbbbb-001", "src/a.py", 12, MODEL), ("R31-bbbbbbb-002", "src/b.py", 3, MODEL)]
+    old = eval_cases.parse_report(report(HEAD1, [MEDIUM]))
+    assert old["findings"] == [{"file": "src/a.py", "line": 12, "severity": "medium", "summary": MEDIUM.comment,
+                                "fix": MEDIUM.suggestion, "failure_scenario": None, "model": MODEL, "id": None}]
