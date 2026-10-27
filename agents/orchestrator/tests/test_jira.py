@@ -22,3 +22,14 @@ def test_only_worker_comments_or_none_means_no_owner_comment():
 def test_the_marker_counts_only_as_the_first_line():
     quoted = [{"id": "5", "body": "Re the worker's note:\n> MESSAGE-FROM-WORKER\nlooks good"}]
     assert newest_owner_comment(quoted) == "5"
+
+
+def test_logged_in_only_once_tokens_are_saved(tmp_path, monkeypatch):
+    # Until then the check has no deadline (PMAT-306): the owner is pasting the login redirect URL.
+    from orchestrator import jira
+    monkeypatch.setattr(jira, "STORE", tmp_path / "atlassian-oauth.json")
+    assert not jira.logged_in()
+    jira.STORE.write_text('{"client": {}}')
+    assert not jira.logged_in()
+    jira.STORE.write_text('{"client": {}, "tokens": {}}')
+    assert jira.logged_in()

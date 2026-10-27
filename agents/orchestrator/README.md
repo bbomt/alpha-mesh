@@ -125,7 +125,14 @@ Each tick, per ticket:
 
 It types into a tab only when the worker sits at its prompt (hook state `idle` or `waiting`). Each ticket
 is handled on its own: an error on one (a tab closed mid-tick, `gh` offline) is printed and retried next
-tick, and the others carry on. 
+tick, and the others carry on.
+
+Each tick's Jira check has a 2-minute deadline (`JIRA_DEADLINE` in `cli.py`), as an Atlassian MCP call can
+wait for a reply forever (PMAT-306). If Jira is down or the check runs out of time, Recent says so ("Jira check
+timed out, retrying next check"), that tick passes on no comments and closes no tabs, missing tabs are
+still resumed, and the next tick tries Jira again. The same applies to the first check after a start.
+There is no deadline while logging in, since the owner is pasting the redirect URL.
+
 ### The screen
 
 Redrawn in place each tick, as three boxes (colour when run in a terminal; the header counts down to the next

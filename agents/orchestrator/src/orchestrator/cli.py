@@ -77,6 +77,9 @@ OPS = loop.Ops(windows=tmux.windows, new_window=tmux.new_window, send=tmux.send,
                background=tmux.background, prune=prune)
 
 
+# Seconds one Jira check may take. An MCP call can wait for a reply for ever, which froze the loop (PMAT-306).
+JIRA_DEADLINE = 120
+
 # A key is a tab name, part of the shell command tmux runs, and a status file name, so it must be a plain Jira key.
 KEY = re.compile(r"[A-Z][A-Z0-9]*-[0-9]+")
 
@@ -130,7 +133,12 @@ def main(argv: list[str] | None = None, once: bool = False) -> int:
     while True:
         keys = status.active()
         try:
-            tickets = asyncio.run(jira.snapshot(keys)) if keys else {}
+            # No deadline while logging in: the owner is pasting the redirect URL.
+            deadline = JIRA_DEADLINE if jira.logged_in() else None
+            tickets = asyncio.run(asyncio.wait_for(jira.snapshot(keys), deadline)) if keys else {}
+        except TimeoutError:  # an MCP call that never answers (PMAT-306): same as Jira down
+            event("Jira check timed out, retrying next check")
+            tickets = {}
         except Exception as e:  # Jira or network down: keep the workers' tabs alive, try again next tick
             event(f"Jira read failed, trying again next tick: {e!r}")
             tickets = {}
