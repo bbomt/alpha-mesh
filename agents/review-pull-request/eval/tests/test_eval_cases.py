@@ -135,6 +135,26 @@ def test_mining_runs_nothing_but_gh_and_mining_again_keeps_a_judges_override(tmp
         eval_cases.label(case["case_id"], "unlabelled", "x", cases_dir=tmp_path / "cases")
 
 
+@pytest.mark.parametrize("repo", ["org/repo/../../users/x", "org", "-X/POST", "org/repo extra", "org/re;po"])
+def test_a_repo_that_is_not_owner_slash_name_is_refused_before_any_gh_call(tmp_path, repo):
+    gh = FakeGh([])
+
+    with pytest.raises(ValueError, match="owner/name"):
+        eval_cases.mine(repo, limit=10, gh=gh, cases_dir=tmp_path / "cases", today=TODAY)
+
+    assert gh.calls == []
+
+
+def test_a_commit_that_is_not_a_full_sha_never_reaches_a_gh_api_path(tmp_path):
+    bad_head = "b" * 39 + "/../x"
+    gh = FakeGh([pr(1, BASE1, bad_head)], comments={1: [report(OLD1, [MEDIUM])]})
+
+    with pytest.raises(ValueError, match="commit"):
+        mine(tmp_path, gh)
+
+    assert not any("/compare/" in a[1] for a in gh.calls if a[0] == "api")
+
+
 def test_mining_never_writes_to_github(tmp_path):
     gh = FakeGh([pr(1, BASE1, HEAD1), pr(2, BASE2, HEAD2)],
                 comments={1: [report(OLD1, [MEDIUM])], 2: [report(HEAD2, [MEDIUM])]},

@@ -33,12 +33,29 @@ _COMMIT = re.compile(r"^> \*\*Reviewed commit:\*\* `([0-9a-f]{40})`")
 _MODEL = re.compile(r"^> \*\*Model:\*\* (`+) ?(.+?) ?\1$")
 _SECTION = re.compile(r"^### \S+ (High|Medium|Low)$")
 _FINDING = re.compile(r"^#### (`+) ?(.+?) ?\1(?: · line (\d+))?(?: · model: (`+) ?(.+?) ?\4)?$")
+_REPO = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]*/(?!\.{1,2}$)[A-Za-z0-9_.][A-Za-z0-9_.-]*$")  # GitHub owner/name
+_SHA = re.compile(r"^[0-9a-f]{40}$")
 
 
 # ── GitHub, read only (the only side effect; tests replace it) ──────────────
 
 def run_gh(args: list[str]) -> str:
+    # A list and no shell: each value reaches gh as one argument and is never parsed by a shell.
+    # Values that go into gh api paths are checked first (check_repo, check_sha), so they cannot
+    # point a read at another endpoint.
     return subprocess.run(["gh", *args], check=True, capture_output=True, text=True).stdout
+
+
+def check_repo(repo: str) -> str:
+    if not _REPO.match(repo):
+        raise ValueError(f"repo must be owner/name, got {repo!r}")
+    return repo
+
+
+def check_sha(sha: str) -> str:
+    if not isinstance(sha, str) or not _SHA.match(sha):
+        raise ValueError(f"not a full commit SHA: {sha!r}")
+    return sha
 
 
 def merged_prs(gh, repo: str, limit: int) -> list[dict]:
@@ -48,14 +65,14 @@ def merged_prs(gh, repo: str, limit: int) -> list[dict]:
 
 def pr_comments(gh, repo: str, number: int) -> list[str]:
     """Comment bodies, oldest first."""
-    out = gh(["api", f"repos/{repo}/issues/{number}/comments", "--paginate", "--jq", ".[].body | @json"])
+    out = gh(["api", f"repos/{check_repo(repo)}/issues/{int(number)}/comments", "--paginate", "--jq", ".[].body | @json"])
     return [json.loads(line) for line in out.splitlines() if line.strip()]
 
 
 def changed_files(gh, repo: str, base: str, head: str) -> set[str] | None:
     """Files changed from base to head (both names of a rename), or None if that cannot be told:
     base is not an ancestor of head (rewritten out of the PR's history) or the list is cut off."""
-    out = json.loads(gh(["api", f"repos/{repo}/compare/{base}...{head}", "--jq",
+    out = json.loads(gh(["api", f"repos/{check_repo(repo)}/compare/{check_sha(base)}...{check_sha(head)}", "--jq",
                          "{status, truncated: ((.files | length) >= 300), "
                          "files: [.files[] | .filename, (.previous_filename // empty)]}"]))
     if out["status"] not in ("ahead", "identical") or out["truncated"]:
@@ -131,6 +148,7 @@ def load_cases(cases_dir: Path) -> list[dict]:
 
 def mine(repo: str, limit: int, *, prs: list[int] | None = None, gh=run_gh, cases_dir: Path = CASES_DIR,
          today: date | None = None) -> dict:
+    check_repo(repo)  # before any gh call
     today = today or date.today()
     skipped = {"file_changed": 0, "no_commit": 0, "not_ancestor": 0}
     found: dict[str, dict] = {}
