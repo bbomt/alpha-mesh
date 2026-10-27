@@ -5,6 +5,7 @@
   "base_sha": "5a4ab60a392fcb816250e09a145b9d657f7e9229",
   "head_sha": "4a0579f0d0f8ccf4c25dc0760f4640adc5a01706",
   "raised_sha": "50ba26d3b307360dbba9115a42af1f1f66ba28dc",
+  "fix_sha": null,
   "source": "pr_comment",
   "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
   "finding": {
@@ -13,7 +14,8 @@
     "severity": "high",
     "summary": "The Recorder.process method signature doesn't match the StreamTransformer protocol. The langgraph StreamTransformer.process method expects two parameters (event, state), but the test defines only one (event). This will cause a TypeError when the framework calls process(event, state), breaking the test's event recording.",
     "fix": "Update the process method to accept both event and state parameters: `def process(self, event, state): events.append(event); return event` (return the event to pass it through the stream).",
-    "failure_scenario": null
+    "failure_scenario": null,
+    "id": null
   },
   "times_raised": 1,
   "label": "false_positive",

@@ -5,6 +5,7 @@
   "base_sha": "f1258825136568722de30a491201abac76c8c220",
   "head_sha": "2567885bf1932d3dad9041c345d709e857309ec6",
   "raised_sha": "e6a14ed6a0597e17fd8bf9485ef0d6c8913a44fb",
+  "fix_sha": null,
   "source": "pr_comment",
   "model": null,
   "finding": {
@@ -13,7 +14,8 @@
     "severity": "high",
     "summary": "SafeDiff.from_raw's guarantee ('excluded content reaches the model cannot happen') is bypassable through build_chunks' section splitting. build_chunks iterates raw_diff with str.splitlines(keepends=True), which splits on Unicode line boundaries beyond \\n (\\r, \\x0b, \\x0c, \\x85, \\u2028, \\u2029), and starts a new section on ANY line beginning with 'diff --git '. A PR author can modify an excluded file (e.g. .env) and add one line whose content contains a form feed (or bare \\r) followed by 'diff --git a/notes.txt b/notes.txt'. The excluded file's own chunk is correctly dropped, but the split creates a phantom section starting at the forged header; the remaining hunk lines of the excluded file — including context lines carrying the real pre-existing secrets — are appended to that phantom chunk, parsed with the decoy path 'notes.txt', found not-excluded, kept, and returned in SafeDiff.text, so the excluded file's content reaches the model (and can then be quoted into the posted review). This defeats the PR's core invariant and the canary tests would not catch it since they presumably use well-formed diffs.",
     "fix": "Make section boundaries unforgeable in build_chunks: split the raw diff on \\n only (e.g. iterate raw_diff.replace('\\r\\n','\\n').split('\\n') reconstructing keepends, or use re.split with an explicit \\n) instead of str.splitlines, so a content line can never be interpreted as a new 'diff --git' section. Additionally add a canary/architecture test that places '\\x0cdiff --git a/decoy b/decoy' inside an excluded file's hunk body and asserts no chunk containing the excluded content survives in SafeDiff.chunks.",
-    "failure_scenario": null
+    "failure_scenario": null,
+    "id": null
   },
   "times_raised": 1,
   "label": "false_positive",

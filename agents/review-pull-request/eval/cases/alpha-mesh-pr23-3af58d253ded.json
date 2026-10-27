@@ -5,6 +5,7 @@
   "base_sha": "8b1a558cb7b4da12f02bc47e3a9fc70f1f6efae8",
   "head_sha": "b8e32a343e643368ee5cb11eb51f75cfcd7f260a",
   "raised_sha": "d032b8dba52e62c3dbb490edbac0e9c634fb7b8e",
+  "fix_sha": null,
   "source": "pr_comment",
   "model": "nvidia/nemotron-3.5-super-vl:free",
   "finding": {
@@ -13,7 +14,8 @@
     "severity": "medium",
     "summary": "STORE.touch(mode=0o600) only sets permissions when the file is created and is subject to umask; if the token file already exists with more permissive permissions, they are never tightened, leaving OAuth tokens potentially world-readable.",
     "fix": "After writing the file, explicitly call os.chmod(STORE, 0o600) to enforce the intended permissions regardless of prior state or umask.",
-    "failure_scenario": null
+    "failure_scenario": null,
+    "id": null
   },
   "times_raised": 1,
   "label": "false_positive",

@@ -5,6 +5,7 @@
   "base_sha": "3367c4eba70ab46c4a1a4e2bc4a695f53dadcfd8",
   "head_sha": "df42e036f65c34a0bea1d2ef66f5a6cea47ba60d",
   "raised_sha": "df42e036f65c34a0bea1d2ef66f5a6cea47ba60d",
+  "fix_sha": null,
   "source": "pr_comment",
   "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
   "finding": {
@@ -13,7 +14,8 @@
     "severity": "medium",
     "summary": "The contextvar-based watchdog (_current in watchdog.py) is global. If make_chat_model is called multiple times (e.g., for different models) and used concurrently in an async or multi-threaded context, the contextvar could leak across calls because contextvars are task-local, not call-local. The current synchronous single-threaded usage is safe, but the architecture doesn't prevent future misuse.",
     "fix": "Document that LangChainLLM.chat is not thread-safe for concurrent calls on the same model instance, or restructure to pass the watch explicitly rather than relying on a global contextvar.",
-    "failure_scenario": null
+    "failure_scenario": null,
+    "id": null
   },
   "times_raised": 1,
   "label": "false_positive",

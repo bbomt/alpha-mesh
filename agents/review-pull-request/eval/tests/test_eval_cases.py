@@ -1,4 +1,4 @@
-"""Acceptance tests for the eval case miner (PMAT-300).
+"""Acceptance tests for the eval case miner (PMAT-300, PMAT-301).
 
 The canned reports are made by the review's own render_report, so the parser is tested
 against the exact text `mesh review-pull-request` prints and posts. gh and mesh are fakes
@@ -41,8 +41,9 @@ def report(head_sha, issues, model=MODEL, pr_number=None):
 class FakeGh:
     """comparisons: (base, head) -> (status, changed file names), as GitHub's compare API reports them."""
 
-    def __init__(self, prs, comments=None, comparisons=None):
+    def __init__(self, prs, comments=None, comparisons=None, commits=None):
         self.prs, self.comments, self.comparisons, self.calls = prs, comments or {}, comparisons or {}, []
+        self.commits = commits or {}  # PR number -> [{"sha", "message"}], oldest first
 
     def __call__(self, args):
         self.calls.append(list(args))
@@ -50,6 +51,8 @@ class FakeGh:
             return json.dumps(self.prs)
         if args[0] == "api" and args[1].endswith("/comments"):  # repos/<owner>/<repo>/issues/<n>/comments
             return "".join(json.dumps(body) + "\n" for body in self.comments.get(int(args[1].split("/")[4]), []))
+        if args[0] == "api" and args[1].endswith("/commits"):  # repos/<owner>/<repo>/pulls/<n>/commits
+            return "".join(json.dumps(c) + "\n" for c in self.commits.get(int(args[1].split("/")[4]), []))
         if args[0] == "api" and "/compare/" in args[1]:  # repos/<owner>/<repo>/compare/<base>...<head>
             status, files = self.comparisons[tuple(args[1].split("/compare/")[1].split("..."))]
             return json.dumps({"status": status, "files": files, "truncated": False})
@@ -177,3 +180,49 @@ def test_the_parser_reads_each_findings_id_and_an_old_report_without_ids_as_befo
     old = eval_cases.parse_report(report(HEAD1, [MEDIUM]))
     assert old["findings"] == [{"file": "src/a.py", "line": 12, "severity": "medium", "summary": MEDIUM.comment,
                                 "fix": MEDIUM.suggestion, "failure_scenario": None, "model": MODEL, "id": None}]
+
+
+def commit(sha, message):
+    return {"sha": sha, "message": message}
+
+
+FIX1, OTHER1 = "1" * 40, "2" * 40
+
+
+def test_a_finding_whose_id_a_later_pr_commit_cites_is_a_real_issue_case(tmp_path):  # PMAT-301
+    fixed = Issue("src/a.py", 12, "high", "Index can go out of range.", "Check the length first.")
+    changed = Issue("src/b.py", 20, "medium", "Changed afterwards, never cited.", None)
+    elsewhere = Issue("src/c.py", 5, "medium", "Fixed in the caller: its own file never changed.", None)
+    gh = FakeGh([pr(7, BASE1, HEAD1)],
+                comments={7: [report(OLD1, [fixed, changed, elsewhere], pr_number=7)]},
+                comparisons={(OLD1, HEAD1): ("ahead", ["src/a.py", "src/b.py", "src/d.py"])},
+                commits={7: [commit(OLD1, "feature[PMAT-1]: first cut"),
+                             commit(FIX1, "fix[PMAT-1]: fixed review finding R7-eeeeeee-001 in src/a.py (bounds)\n\n"
+                                          "Also R7-eeeeeee-003 in src/d.py, and R9-eeeeeee-002 from another PR."),
+                             commit(OTHER1, "fix[PMAT-1]: fixed R7-eeeeeee-001 again")]})
+
+    summary = mine(tmp_path, gh)
+
+    real, caller = cases(tmp_path)
+    assert {k: real[k] for k in ("pr_number", "base_sha", "head_sha", "raised_sha", "fix_sha")} == {
+        "pr_number": 7, "base_sha": BASE1, "head_sha": HEAD1, "raised_sha": OLD1, "fix_sha": FIX1}
+    assert real["finding"]["id"] == "R7-eeeeeee-001"
+    assert (real["label"], real["label_by"]) == ("real_issue", "rule")
+    assert "R7-eeeeeee-001" in real["label_reason"] and FIX1[:7] in real["label_reason"]
+    assert (caller["finding"]["file"], caller["label"], caller["fix_sha"]) == ("src/c.py", "real_issue", FIX1), \
+        "citation wins over the false-positive rule"
+    assert summary["cases_written"] == 2 and summary["real_issues"] == 2
+    assert summary["skipped"]["file_changed"] == 1, "R7-eeeeeee-002: its file changed but no commit cites it"
+
+
+def test_mining_again_turns_a_rule_false_positive_into_a_real_issue_once_a_commit_cites_it(tmp_path):
+    gh = FakeGh([pr(7, BASE1, HEAD1)], comments={7: [report(HEAD1, [MEDIUM], pr_number=7)]})
+    mine(tmp_path, gh)
+    [case] = cases(tmp_path)
+    assert (case["label"], case["fix_sha"]) == ("false_positive", None)
+
+    gh.commits = {7: [commit(FIX1, "fix[PMAT-1]: fixed review finding R7-bbbbbbb-001")]}
+    mine(tmp_path, gh)
+
+    [case] = cases(tmp_path)
+    assert (case["label"], case["label_by"], case["fix_sha"]) == ("real_issue", "rule", FIX1)

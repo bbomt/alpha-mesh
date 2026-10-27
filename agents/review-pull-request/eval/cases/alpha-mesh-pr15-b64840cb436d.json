@@ -5,6 +5,7 @@
   "base_sha": "fe74f5a2ae24a1c89514cad9fb23379065ac0708",
   "head_sha": "1bee692767a52f021664634db631fe038497f9b9",
   "raised_sha": "d280e29c55021e335aa7aa5a933f6b884905439f",
+  "fix_sha": null,
   "source": "pr_comment",
   "model": "z-ai/glm-5.3-flash",
   "finding": {
@@ -13,7 +14,8 @@
     "severity": "medium",
     "summary": "Provider-error detection relies on the last traceback frame being named '_create_chat_result', a LangChain-internal implementation detail. If langchain-openai refactors, wraps, or re-raises (e.g. adds a `raise ... from` wrapper or renames the method), a deterministic 200-with-error-object would silently be misclassified as _Malformed and retried 3 times before failing, or worse a local ValueError could be misclassified as a provider error.",
     "fix": "Match on something more stable: catch the specific exception type/langchain versioned symbol if available, or inspect the exception's module/qualname rather than a frame name, and add a regression test that pins the expected classification so a library upgrade fails loudly in CI.",
-    "failure_scenario": null
+    "failure_scenario": null,
+    "id": null
   },
   "times_raised": 1,
   "label": "false_positive",
