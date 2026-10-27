@@ -1,0 +1,23 @@
+{
+  "case_id": "cd2cebe5dc3c",
+  "repo": "bbomt/alpha-mesh",
+  "pr_number": 20,
+  "base_sha": "5a4ab60a392fcb816250e09a145b9d657f7e9229",
+  "head_sha": "4a0579f0d0f8ccf4c25dc0760f4640adc5a01706",
+  "raised_sha": "50ba26d3b307360dbba9115a42af1f1f66ba28dc",
+  "source": "pr_comment",
+  "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
+  "finding": {
+    "file": "agents/review-pull-request/src/review_pull_request/review.py",
+    "line": 22,
+    "severity": "medium",
+    "summary": "The SIGINT handler uses `os._exit(130)` which immediately terminates the process without running any cleanup handlers (finally blocks, context managers, atexit callbacks, etc.). While the comment explains this is intentional due to LangGraph's worker thread blocking KeyboardInterrupt, it means resources like file handles, database connections, or locks may not be properly released. The sync checkpointing ensures no review work is lost, but other application state could be corrupted.",
+    "fix": "Document this trade-off explicitly in the code comments. Consider whether a softer approach (e.g., setting a flag checked by the main thread, or using a daemon thread for the graph) could allow graceful shutdown while still avoiding the KeyboardInterrupt block. If `os._exit` is the only viable option, add a comment explaining why no cleanup is needed for this CLI tool's resources.",
+    "failure_scenario": null
+  },
+  "times_raised": 1,
+  "label": "false_positive",
+  "label_by": "rule",
+  "label_date": "2026-10-27",
+  "label_reason": "Raised in review and merged with the file unchanged."
+}

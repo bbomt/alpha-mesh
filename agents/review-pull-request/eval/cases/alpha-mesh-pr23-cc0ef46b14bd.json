@@ -1,0 +1,23 @@
+{
+  "case_id": "cc0ef46b14bd",
+  "repo": "bbomt/alpha-mesh",
+  "pr_number": 23,
+  "base_sha": "8b1a558cb7b4da12f02bc47e3a9fc70f1f6efae8",
+  "head_sha": "b8e32a343e643368ee5cb11eb51f75cfcd7f260a",
+  "raised_sha": "b0e94696a8196b20dcea6bed184c8481e22407d4",
+  "source": "pr_comment",
+  "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
+  "finding": {
+    "file": "agents/orchestrator/tests/claude-stub",
+    "line": 19,
+    "severity": "medium",
+    "summary": "JSON constructed via printf with unescaped variables. If $session, $PWD, or $source contain double quotes, backslashes, or control characters, the emitted JSON will be malformed, causing the hook consumer to fail or misbehave.",
+    "fix": "Use a proper JSON generator (e.g., `jq -n --arg session_id \"$session\" --arg cwd \"$PWD\" --arg hook_event_name \"$2\" --arg source \"$source\" '{session_id: $session_id, cwd: $cwd, hook_event_name: $hook_event_name, source: $source}'`) or escape values with a helper function before printf.",
+    "failure_scenario": null
+  },
+  "times_raised": 1,
+  "label": "false_positive",
+  "label_by": "rule",
+  "label_date": "2026-10-27",
+  "label_reason": "Raised in review and merged with the file unchanged."
+}

@@ -1,0 +1,23 @@
+{
+  "case_id": "9f45cb2942b4",
+  "repo": "bbomt/alpha-mesh",
+  "pr_number": 8,
+  "base_sha": "f1258825136568722de30a491201abac76c8c220",
+  "head_sha": "2567885bf1932d3dad9041c345d709e857309ec6",
+  "raised_sha": "2567885bf1932d3dad9041c345d709e857309ec6",
+  "source": "pr_comment",
+  "model": null,
+  "finding": {
+    "file": "agents/review-pull-request/tests/helpers.py",
+    "line": 51,
+    "severity": "medium",
+    "summary": "The factory dispatches by model name: `overview if model == cfg.effective_overview_model and overview_llm is not else review_llm`. ReviewSession.create calls the factory once with config.model (review role) and once with config.effective_overview_model (overview role). When the test config does not set `overview_model`, effective_overview_model falls back to config.model (config.py: `return self.overview_model or self.model`), so both calls compare equal and BOTH roles receive the overview stub. A test calling make_session(config, llm=scripted_review_llm, overview_llm=overview_stub) with a default config silently wires the overview stub into the review stage: the scripted responder never runs, the review stage gets 'Overview.' instead of JSON, and tests fail confusingly — or worse, tests asserting the incomplete/parse-failure path pass vacuously for the wrong reason. Nothing in the docstring warns that config.overview_model must be set for distinct llm/overview_llm to work.",
+    "fix": "Don't dispatch on model-name equality, since the two roles are indistinguishable when overview_model is unset. Either (a) fail fast in make_session: `if overview_llm is not None and not config.overview_model: raise ValueError('overview_llm requires config.overview_model to be set')`, or (b) distinguish roles positionally — ReviewSession.create invokes the factory deterministically (review first, overview second), so use a call counter/flag, or build the two GuardedLLMs explicitly instead of routing through the shared factory.",
+    "failure_scenario": null
+  },
+  "times_raised": 1,
+  "label": "false_positive",
+  "label_by": "rule",
+  "label_date": "2026-10-27",
+  "label_reason": "Raised in review and merged with the file unchanged."
+}

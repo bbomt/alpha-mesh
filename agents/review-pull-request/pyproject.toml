@@ -34,4 +34,4 @@ packages = ["src/review_pull_request"]
 allow-direct-references = true
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "eval/tests"]

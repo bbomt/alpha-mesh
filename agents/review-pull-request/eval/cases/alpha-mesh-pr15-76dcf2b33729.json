@@ -1,0 +1,23 @@
+{
+  "case_id": "76dcf2b33729",
+  "repo": "bbomt/alpha-mesh",
+  "pr_number": 15,
+  "base_sha": "fe74f5a2ae24a1c89514cad9fb23379065ac0708",
+  "head_sha": "1bee692767a52f021664634db631fe038497f9b9",
+  "raised_sha": "1bee692767a52f021664634db631fe038497f9b9",
+  "source": "pr_comment",
+  "model": "z-ai/glm-5.3-flash",
+  "finding": {
+    "file": "agents/review-pull-request/src/review_pull_request/session.py",
+    "line": 100,
+    "severity": "medium",
+    "summary": "not_found_reason(config) is computed once at create() time from config.model, but make_chat_model (the factory) can be called with a different model argument. If any caller ever passes a non-default model to the factory, the 404 diagnostic baked into LangChainLLM will describe the wrong model/URL (e.g. telling the user CODE_REVIEW_MODEL was sent as X when Y was actually sent), producing a misleading resume hint.",
+    "fix": "Make not_found a function of the model actually used: pass a callable (e.g. lambda model: not_found_reason_for(config, model)) into LangChainLLM, or have LangChainLLM consult self._model when formatting the 404 message so the diagnostic always matches the model that hit the 404.",
+    "failure_scenario": null
+  },
+  "times_raised": 1,
+  "label": "false_positive",
+  "label_by": "rule",
+  "label_date": "2026-10-27",
+  "label_reason": "Raised in review and merged with the file unchanged."
+}
