@@ -71,6 +71,11 @@ class FileStorage(TokenStorage):
         self._save("client", client_info.model_dump(mode="json"))
 
 
+def logged_in() -> bool:
+    """Whether a login is saved; without one, the next check asks the owner to log in."""
+    return "tokens" in FileStorage()._load()
+
+
 async def _show_link(url: str) -> None:
     print(f"\nAtlassian login: open this link in a fresh browser tab, accept, then copy the URL the browser"
           f" ends on (it will fail to load):\n\n{url}\n")
