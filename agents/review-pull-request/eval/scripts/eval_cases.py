@@ -1,22 +1,23 @@
 #!/usr/bin/env python3
-"""Eval cases for review-pull-request (PMAT-300, PMAT-301).
+"""Eval cases for review-pull-request (PMAT-300, PMAT-301, PMAT-307).
 
 A standalone tool next to the review agent: it never imports or changes the review code, and
-never writes to GitHub (gh is only used to read PRs, comments and commit comparisons).
+never writes to GitHub (gh is only used to read PRs, their comments and their commits).
 
   mine    Build the dataset from merged PRs, with no model calls. A high/medium finding from a
-          review comment on the PR is
-          - a real issue if a commit in the PR cites its ID (R<PR>-<commit7>-<NNN>, PMAT-305):
-            the worker fixed it;
-          - otherwise a false positive if its file did not change between the commit that review
-            covered and the PR's final commit: the worker saw it and merged that exact code anyway.
+          review comment on the PR is labelled by what happened to its ID (R<PR>-<commit7>-<NNN>):
+          - a real issue if a commit in the PR cites the ID: the worker fixed it;
+          - a false positive if a PR comment dismisses it with the line
+            `Dismissed review finding <ID>: <reason>` (a reason starting `duplicate of <ID>` gives
+            no case: the original is the case);
+          - no case if both happened (conflict), neither happened (unresolved) or it has no ID.
   label   Override a case's label (false_positive / real_issue) with a reason.
 
-Cases: eval/cases/ (committed).
+Cases: eval/cases/<repo name>/<ID>.json (committed); eval/cases/legacy-file-rule/ holds the frozen
+cases of PMAT-300's file rule, which mine never reads or writes.
 """
 
 import argparse
-import hashlib
 import json
 import re
 import subprocess
@@ -36,15 +37,16 @@ _MODEL = re.compile(r"^> \*\*Model:\*\* (`+) ?(.+?) ?\1$")
 _SECTION = re.compile(r"^### \S+ (High|Medium|Low)$")
 _FINDING = re.compile(r"^#### (?:(R\d+-[0-9a-f]{7}-\d{3}) · )?(`+) ?(.+?) ?\2(?: · line (\d+))?(?: · model: (`+) ?(.+?) ?\5)?$")
 _REPO = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]*/(?!\.{1,2}$)[A-Za-z0-9_.][A-Za-z0-9_.-]*$")  # GitHub owner/name
-_SHA = re.compile(r"^[0-9a-f]{40}$")
 _FINDING_ID = re.compile(r"\bR\d+-[0-9a-f]{7}-\d{3}\b")
+_DISMISSAL = re.compile(r"^Dismissed review finding (R(\d+)-[0-9a-f]{7}-\d{3}): (.+)$")
+_DUPLICATE = re.compile(r"^duplicate of R\d+-[0-9a-f]{7}-\d{3}\b")
 
 
 # ── GitHub, read only (the only side effect; tests replace it) ──────────────
 
 def run_gh(args: list[str]) -> str:
     # A list and no shell: each value reaches gh as one argument and is never parsed by a shell.
-    # Values that go into gh api paths are checked first (check_repo, check_sha), so they cannot
+    # Values that go into gh api paths are checked first (check_repo, int), so they cannot
     # point a read at another endpoint.
     return subprocess.run(["gh", *args], check=True, capture_output=True, text=True).stdout
 
@@ -53,12 +55,6 @@ def check_repo(repo: str) -> str:
     if not _REPO.match(repo):
         raise ValueError(f"repo must be owner/name, got {repo!r}")
     return repo
-
-
-def check_sha(sha: str) -> str:
-    if not isinstance(sha, str) or not _SHA.match(sha):
-        raise ValueError(f"not a full commit SHA: {sha!r}")
-    return sha
 
 
 def merged_prs(gh, repo: str, limit: int) -> list[dict]:
@@ -88,15 +84,14 @@ def cited_ids(commits: list[dict]) -> dict[str, str]:
     return cited
 
 
-def changed_files(gh, repo: str, base: str, head: str) -> set[str] | None:
-    """Files changed from base to head (both names of a rename), or None if that cannot be told:
-    base is not an ancestor of head (rewritten out of the PR's history) or the list is cut off."""
-    out = json.loads(gh(["api", f"repos/{check_repo(repo)}/compare/{check_sha(base)}...{check_sha(head)}", "--jq",
-                         "{status, truncated: ((.files | length) >= 300), "
-                         "files: [.files[] | .filename, (.previous_filename // empty)]}"]))
-    if out["status"] not in ("ahead", "identical") or out["truncated"]:
-        return None
-    return set(out["files"])
+def dismissals(comments: list[str], number: int) -> dict[str, str]:
+    """Finding ID of this PR -> the reason of the first PR comment line that dismisses it."""
+    dismissed: dict[str, str] = {}
+    for body in comments:
+        for line in body.splitlines():
+            if (m := _DISMISSAL.match(line.rstrip())) and int(m.group(2)) == number:
+                dismissed.setdefault(m.group(1), m.group(3).strip())
+    return dismissed
 
 
 # ── Report parsing ──────────────────────────────────────────────────────────
@@ -150,17 +145,23 @@ def parse_report(text: str) -> dict | None:
 
 # ── Case files ──────────────────────────────────────────────────────────────
 
-def case_path(cases_dir: Path, case: dict) -> Path:
-    return cases_dir / f"{case['repo'].split('/')[-1]}-pr{case['pr_number']}-{case['case_id']}.json"
+def repo_dir(cases_dir: Path, repo: str) -> Path:
+    """One folder per repo: a finding ID is unique only within its repo (PR numbers are per repo)."""
+    return Path(cases_dir) / repo.split("/")[-1]
 
 
-def write_case(cases_dir: Path, case: dict) -> None:
-    cases_dir.mkdir(parents=True, exist_ok=True)
-    case_path(cases_dir, case).write_text(json.dumps(case, indent=2, ensure_ascii=False) + "\n")
+def write_case(path: Path, case: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(case, indent=2, ensure_ascii=False) + "\n")
+
+
+def case_files(cases_dir: Path) -> list[Path]:
+    """Every case file: the per-repo folders and legacy-file-rule/."""
+    return sorted(Path(cases_dir).glob("*/*.json"))
 
 
 def load_cases(cases_dir: Path) -> list[dict]:
-    return [json.loads(p.read_text()) for p in sorted(Path(cases_dir).glob("*.json"))]
+    return [json.loads(p.read_text()) for p in case_files(cases_dir)]
 
 
 # ── Commands ────────────────────────────────────────────────────────────────
@@ -169,79 +170,84 @@ def mine(repo: str, limit: int, *, prs: list[int] | None = None, gh=run_gh, case
          today: date | None = None) -> dict:
     check_repo(repo)  # before any gh call
     today = today or date.today()
-    skipped = {"file_changed": 0, "no_commit": 0, "not_ancestor": 0}
+    counts = {"cited": 0, "dismissed": 0, "duplicate": 0, "unresolved": 0, "conflict": 0, "no_id": 0}
     found: dict[str, dict] = {}
+    seen: set[str] = set()
     mined = 0
     for pr in merged_prs(gh, repo, limit):
         if prs and pr["number"] not in prs:
             continue
         mined += 1
-        final = pr["headRefOid"]
         cited = cited_ids(pr_commits(gh, repo, pr["number"]))
-        for body in pr_comments(gh, repo, pr["number"]):
+        comments = pr_comments(gh, repo, pr["number"])
+        dismissed = dismissals(comments, pr["number"])
+        for body in comments:
             parsed = parse_report(body) if body.startswith(_TITLES) else None
-            candidates = [f for f in (parsed or {}).get("findings", []) if f["severity"] in CASE_SEVERITIES]
-            if not candidates:
-                continue
-            raised = parsed["head_sha"]
-            if raised is None:
-                skipped["no_commit"] += len(candidates)
-                continue
-            changed = set() if raised == final else changed_files(gh, repo, raised, final)
-            if changed is None:
-                skipped["not_ancestor"] += len(candidates)
-                continue
-            for f in candidates:
-                # Only this PR's IDs: an ID names its PR, and a finding's ID is unique within a PR.
-                fix = cited.get(f["id"]) if f["id"] and f["id"].startswith(f"R{pr['number']}-") else None
-                if fix is None and f["file"] in changed:
-                    skipped["file_changed"] += 1
+            for f in (parsed or {}).get("findings", []):
+                if f["severity"] not in CASE_SEVERITIES:
                     continue
-                # One case per finding: a later review repeating it (same line, maybe reworded) is the same case.
-                key = [repo, pr["number"], f["file"], f["line"] if f["line"] is not None else f["summary"]]
-                case_id = hashlib.sha1(json.dumps(key).encode()).hexdigest()[:12]
-                if case_id in found and (fix is None or found[case_id]["fix_sha"]):
-                    found[case_id]["times_raised"] += 1
+                # Only this PR's IDs: an ID names its PR, and is unique within it.
+                finding_id = f["id"] if f["id"] and f["id"].startswith(f"R{pr['number']}-") else None
+                if finding_id is None:
+                    counts["no_id"] += 1
                     continue
+                if finding_id in seen:  # the same report posted again
+                    continue
+                seen.add(finding_id)
+                fix, reason = cited.get(finding_id), dismissed.get(finding_id)
+                if fix and reason:
+                    counts["conflict"] += 1  # no deterministic label
+                    continue
+                if reason and _DUPLICATE.match(reason):
+                    counts["duplicate"] += 1  # the original ID is the case
+                    continue
+                if not fix and not reason:
+                    counts["unresolved"] += 1
+                    continue
+                counts["cited" if fix else "dismissed"] += 1
+                # Every case applies to raised_sha, the code the review saw; head_sha is the merged code.
                 case = {
-                    "case_id": case_id, "repo": repo, "pr_number": pr["number"], "base_sha": pr["baseRefOid"],
-                    "head_sha": final, "raised_sha": raised, "fix_sha": None, "source": "pr_comment",
-                    "model": f["model"], "finding": {k: v for k, v in f.items() if k != "model"},
-                    "times_raised": found[case_id]["times_raised"] + 1 if case_id in found else 1,
+                    "case_id": finding_id, "repo": repo, "pr_number": pr["number"], "base_sha": pr["baseRefOid"],
+                    "head_sha": pr["headRefOid"], "raised_sha": parsed["head_sha"], "fix_sha": fix,
+                    "source": "pr_comment", "model": f["model"], "finding": {k: v for k, v in f.items() if k != "model"},
                     "label": "false_positive", "label_by": "rule", "label_date": today.isoformat(),
-                    "label_reason": "Raised in review and merged with the file unchanged."}
-                if fix:  # the review that issued the cited ID covered code that still had the bug
-                    case.update(fix_sha=fix, label="real_issue",
-                                label_reason=f"Commit {fix[:7]} in the PR cites finding {f['id']}.")
-                found[case_id] = case
+                    "label_reason": reason}
+                if fix:
+                    case.update(label="real_issue", label_reason=f"Commit {fix[:7]} in the PR cites finding {finding_id}.")
+                found[finding_id] = case
         print(f"PR #{pr['number']}: {sum(c['pr_number'] == pr['number'] for c in found.values())} case(s)",
               file=sys.stderr)
 
-    existing = {c["case_id"]: c for c in load_cases(cases_dir)}
+    folder = repo_dir(cases_dir, repo)
     for case_id, case in found.items():
-        if case_id in existing and existing[case_id]["label_by"] != "rule":  # keep a judge's override
-            case.update({k: existing[case_id][k] for k in ("label", "label_by", "label_date", "label_reason")})
-        write_case(cases_dir, case)
+        path = folder / f"{case_id}.json"
+        existing = json.loads(path.read_text()) if path.exists() else None
+        if existing and existing["label_by"] != "rule":  # keep a judge's override
+            case.update({k: existing[k] for k in ("label", "label_by", "label_date", "label_reason")})
+        write_case(path, case)
     return {"repo": repo, "run_date": today.isoformat(), "prs_mined": mined, "cases_written": len(found),
-            "real_issues": sum(c["label"] == "real_issue" for c in found.values()), "skipped": skipped}
+            "findings": counts}
 
 
 def label(case_id: str, value: str, reason: str, *, cases_dir: Path = CASES_DIR, by: str = "claude-code",
           today: date | None = None) -> dict:
     if value not in LABELS:
         raise ValueError(f"label must be one of {', '.join(LABELS)}")
-    case = next((c for c in load_cases(cases_dir) if c["case_id"] == case_id), None)
-    if case is None:
+    matches = [(p, c) for p in case_files(cases_dir) if (c := json.loads(p.read_text()))["case_id"] == case_id]
+    if not matches:
         raise ValueError(f"no case {case_id} in {cases_dir}")
+    if len(matches) > 1:
+        raise ValueError(f"case {case_id} is in several folders: {', '.join(str(p) for p, _ in matches)}")
+    [(path, case)] = matches
     case.update(label=value, label_by=by, label_date=(today or date.today()).isoformat(), label_reason=reason)
-    write_case(cases_dir, case)
+    write_case(path, case)
     return case
 
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
-    p = sub.add_parser("mine", help="build cases from review comments and PR commits (no model)")
+    p = sub.add_parser("mine", help="build cases from review comments, dismissals and PR commits (no model)")
     p.add_argument("--repo", required=True, help="owner/name, e.g. bbomt/alpha-mesh")
     p.add_argument("--limit", type=int, default=20, help="how many recently merged PRs (default 20)")
     p.add_argument("--prs", help="only these PR numbers, comma-separated")

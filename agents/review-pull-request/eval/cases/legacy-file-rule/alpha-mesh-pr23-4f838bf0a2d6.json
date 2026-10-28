@@ -1,0 +1,25 @@
+{
+  "case_id": "4f838bf0a2d6",
+  "repo": "bbomt/alpha-mesh",
+  "pr_number": 23,
+  "base_sha": "8b1a558cb7b4da12f02bc47e3a9fc70f1f6efae8",
+  "head_sha": "b8e32a343e643368ee5cb11eb51f75cfcd7f260a",
+  "raised_sha": "b0e94696a8196b20dcea6bed184c8481e22407d4",
+  "fix_sha": null,
+  "source": "pr_comment",
+  "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
+  "finding": {
+    "file": "agents/orchestrator/tests/claude-stub",
+    "line": 10,
+    "severity": "medium",
+    "summary": "Required environment variables (ORCH_TICKET, E2E_DIR, E2E_HOOK) are used without validation. With `set -u` the script exits on first use, but the error message ('unbound variable') is unhelpful for debugging test failures.",
+    "fix": "Add explicit checks at the top: `[[ -n \"$ORCH_TICKET\" && -n \"$E2E_DIR\" && -n \"$E2E_HOOK\" ]] || { echo 'Missing required env vars' >&2; exit 1; }`. Also verify `$E2E_HOOK` is executable.",
+    "failure_scenario": null,
+    "id": null
+  },
+  "times_raised": 1,
+  "label": "false_positive",
+  "label_by": "file_rule",
+  "label_date": "2026-10-27",
+  "label_reason": "Raised in review and merged with the file unchanged."
+}

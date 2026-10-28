@@ -1,0 +1,24 @@
+{
+  "case_id": "R36-c3e9e57-002",
+  "repo": "bbomt/alpha-mesh",
+  "pr_number": 36,
+  "base_sha": "0b7f57b7b21329d19ca70ab1809e09518b5b74f2",
+  "head_sha": "d1fe42573e928459e1c1d77e375f0ed2bdffbf5d",
+  "raised_sha": "c3e9e579aecfef2a75018f1f707c64ce62ee86e8",
+  "fix_sha": null,
+  "source": "pr_comment",
+  "model": "nvidia/nemotron-3.5-super-vl:free",
+  "finding": {
+    "file": "agents/orchestrator/src/orchestrator/cli.py",
+    "line": 151,
+    "severity": "medium",
+    "summary": "status.save_queue(queue) removes the ticket from queue.txt before loop.start() writes the status file. If the process crashes in between, the ticket is lost — neither queued nor active.",
+    "fix": "Call loop.start() first (which writes the status file), then remove the ticket from the queue. On the next tick, check status.active() before starting to skip tickets that were already started by a previous partial execution.",
+    "failure_scenario": null,
+    "id": "R36-c3e9e57-002"
+  },
+  "label": "false_positive",
+  "label_by": "rule",
+  "label_date": "2026-10-28",
+  "label_reason": "same claim as R36-812f904-001; the only gap is between two local file writes a few lines apart, and saving the queue after the start would risk starting a ticket twice."
+}

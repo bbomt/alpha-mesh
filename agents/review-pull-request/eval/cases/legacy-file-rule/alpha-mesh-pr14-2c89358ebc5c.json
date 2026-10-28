@@ -1,0 +1,25 @@
+{
+  "case_id": "2c89358ebc5c",
+  "repo": "bbomt/alpha-mesh",
+  "pr_number": 14,
+  "base_sha": "b642143957a5ea01d9c3d8e4f06dd2d3c9763fef",
+  "head_sha": "477f311d9fa33fd69e6afe2b1480d48659d4e77b",
+  "raised_sha": "282a2d71245f837e669d5d414686582c75773ee4",
+  "fix_sha": null,
+  "source": "pr_comment",
+  "model": "z-ai/glm-5.3-flash",
+  "finding": {
+    "file": "agents/review-pull-request/infra/cdk/test/checkpoint-stack.test.ts",
+    "line": 64,
+    "severity": "high",
+    "summary": "The SSM assertions expect Value to be `{ Ref: <resource logical id> }`, but the stack sets explicit physical names (tableName, bucketName), so CDK synthesizes the SSM parameter values as plain strings: the table param's Value is the literal `pmat_<env>_ALPHA_MESH_REVIEW_CHECKPOINTS` (the exact same string the first test asserts as the table's TableName), and the bucket param's Value is an Fn::Join of the name prefix and the AWS::AccountId pseudo-parameter (the test app passes no env, so this.account is a token). Neither can ever equal `{ Ref: tableId }` / `{ Ref: bucketId }`, so the 'publishes table, bucket and ttl-days to SSM' test fails for both dev and prod (same defect at line 68).",
+    "fix": "Assert the values CDK actually emits: for the table, `Value: `pmat_${deployEnv}_ALPHA_MESH_REVIEW_CHECKPOINTS``; for the bucket, pass an explicit env (e.g. env: { account: '123456789012', region: 'us-east-1' }) when constructing the stack in synth() so this.account is concrete, then assert the full literal bucket name `pmat-${deployEnv}-alpha-mesh-review-checkpoints-123456789012`. The logicalId() helper can then be dropped from this test (it is still used by the IAM test).",
+    "failure_scenario": null,
+    "id": null
+  },
+  "times_raised": 1,
+  "label": "false_positive",
+  "label_by": "file_rule",
+  "label_date": "2026-10-27",
+  "label_reason": "Raised in review and merged with the file unchanged."
+}

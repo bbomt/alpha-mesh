@@ -1,0 +1,25 @@
+{
+  "case_id": "8d094d2ad494",
+  "repo": "bbomt/alpha-mesh",
+  "pr_number": 8,
+  "base_sha": "f1258825136568722de30a491201abac76c8c220",
+  "head_sha": "2567885bf1932d3dad9041c345d709e857309ec6",
+  "raised_sha": "2567885bf1932d3dad9041c345d709e857309ec6",
+  "fix_sha": null,
+  "source": "pr_comment",
+  "model": null,
+  "finding": {
+    "file": "agents/review-pull-request/src/review_pull_request/config.py",
+    "line": 165,
+    "severity": "medium",
+    "summary": "exclusions_section.get(\"patterns\", []) is passed straight to normalise_patterns without any type validation. In TOML, `patterns = \"secrets\"` (a string instead of a list) is valid and will be iterated character-by-character, producing bogus patterns like **/s, **/e, **/c... The user's intended exclusion (e.g. secrets/) is then silently NOT applied, so a file the user believed was excluded can be sent to the LLM — the opposite of this PR's fail-loud/exclusion guarantee.",
+    "fix": "Validate the value before use: `patterns = exclusions_section.get(\"patterns\", [])`; if `not isinstance(patterns, list) or not all(isinstance(p, str) for p in patterns)`, print an ERROR naming the offending key and sys.exit(1), consistent with how a missing --config file is handled.",
+    "failure_scenario": null,
+    "id": null
+  },
+  "times_raised": 1,
+  "label": "false_positive",
+  "label_by": "file_rule",
+  "label_date": "2026-10-27",
+  "label_reason": "Raised in review and merged with the file unchanged."
+}

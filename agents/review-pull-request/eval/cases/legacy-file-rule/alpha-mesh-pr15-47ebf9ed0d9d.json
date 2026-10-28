@@ -1,0 +1,25 @@
+{
+  "case_id": "47ebf9ed0d9d",
+  "repo": "bbomt/alpha-mesh",
+  "pr_number": 15,
+  "base_sha": "fe74f5a2ae24a1c89514cad9fb23379065ac0708",
+  "head_sha": "1bee692767a52f021664634db631fe038497f9b9",
+  "raised_sha": "d280e29c55021e335aa7aa5a933f6b884905439f",
+  "fix_sha": null,
+  "source": "pr_comment",
+  "model": "z-ai/glm-5.3-flash",
+  "finding": {
+    "file": "agents/review-pull-request/src/review_pull_request/review.py",
+    "line": 332,
+    "severity": "medium",
+    "summary": "Results are now stored in a dict keyed by file_path (graph.py ReviewState.results), and render() reads state[\"results\"][f] per entry of state[\"files\"]. A diff can legitimately contain two chunks with the same file_path (e.g. a file touched twice, or a rename whose target equals another chunk's path — chunker does not dedupe chunks). The old code reviewed each chunk independently and appended both results; the new code reviews the same chunk twice (next(c for c in ctx.diff.chunks if c.file_path == path) always picks the first match), the second result silently overwrites the first, and the report under-reports issues/summaries for one chunk.",
+    "fix": "Key results by chunk index (or a unique chunk id) instead of file_path, or dedupe/merge chunks by file_path in build_chunks so paths are unique before building initial_state.",
+    "failure_scenario": null,
+    "id": null
+  },
+  "times_raised": 1,
+  "label": "false_positive",
+  "label_by": "file_rule",
+  "label_date": "2026-10-27",
+  "label_reason": "Raised in review and merged with the file unchanged."
+}
