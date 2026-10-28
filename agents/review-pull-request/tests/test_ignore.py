@@ -261,7 +261,7 @@ def test_toml_exclusion_patterns_that_are_not_a_list_of_strings_abort(tmp_path, 
     toml_file = tmp_path / "review_config.toml"
     toml_file.write_text(f"[exclusions]\npatterns = {value}\n")
     monkeypatch.setattr(config_module, "IGNORE_FILE", tmp_path / "missing")
-    monkeypatch.setattr(config_module, "load_dotenv", lambda *a, **k: None)
+    monkeypatch.setattr(config_module, "ENV_FILE", _empty_env(tmp_path))
     for var, val in [("CODE_REVIEW_URL", "http://x"), ("CODE_REVIEW_TOKEN", "t"), ("CODE_REVIEW_MODEL", "m")]:
         monkeypatch.setenv(var, val)
 
