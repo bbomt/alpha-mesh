@@ -271,3 +271,18 @@ def test_max_workers_must_be_at_least_one(tmp_path, monkeypatch, capsys):
     with pytest.raises(SystemExit) as done:
         cli.main(["--max-workers", "0"], once=True)
     assert done.value.code == 2 and "--max-workers" in capsys.readouterr().err
+
+
+def test_a_queued_ticket_that_fails_to_start_does_not_stop_the_orchestrator(tmp_path, monkeypatch, capsys):
+    # R36-812f904-002: the first start, before the loop, must be guarded like the ones inside it.
+    monkeypatch.setattr(status, "DIR", tmp_path / "status")
+    repo = tmp_path / "repo"
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+
+    def refused(*args):
+        raise RuntimeError("tmux refused the tab")
+
+    monkeypatch.setattr(cli, "prs", lambda keys, repo_dir: {})
+    monkeypatch.setattr(cli, "OPS", loop.Ops(windows=set, new_window=refused, send=None, kill=None))
+    assert cli.main(["PMAT-1", "--repo-dir", str(repo)], once=True) == 0
+    assert "Starting a queued ticket failed" in capsys.readouterr().out

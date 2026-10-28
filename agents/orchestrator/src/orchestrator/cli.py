@@ -145,8 +145,14 @@ def main(argv: list[str] | None = None, once: bool = False) -> int:
         queue, running = status.queued(), len(status.active())
         while queue and running < args.max_workers:
             key, folder = queue.pop(0)
-            status.save_queue(queue)  # first: a crash after starting must not start it twice
-            loop.start(key, folder, OPS)
+            # First: loop.start saves the ticket's status (so it is active, and resumed if its tab is missing)
+            # before opening the tab, so it must not stay queued too, or it would start twice.
+            status.save_queue(queue)
+            try:
+                loop.start(key, folder, OPS)
+            except Exception as e:  # e.g. tmux refused the tab: the running workers still need watching
+                event(f"Starting a queued ticket failed: {e!r}")
+                return
             event(f"{key}: started a worker in tab {key}")
             running += 1
 
@@ -156,10 +162,7 @@ def main(argv: list[str] | None = None, once: bool = False) -> int:
             event(f"{key}: queued, {args.max_workers} workers already running")
 
     while True:
-        try:
-            start_queued()
-        except Exception as e:  # e.g. tmux refused the tab: the running workers still need watching
-            event(f"Starting a queued ticket failed: {e!r}")
+        start_queued()
         keys = status.active()
         try:
             # No deadline while logging in: the owner is pasting the redirect URL.
