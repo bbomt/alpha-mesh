@@ -369,6 +369,15 @@ patterns = [
 
 ## Environment Variables (`.env`)
 
+The agent reads `.env` from the alpha-mesh root (next to `bin/mesh`) by explicit path, in Python
+(`python-dotenv`), so `mesh review-pull-request` and `python -m review_pull_request` load it the same way
+from any directory. The bash wrapper does not read it. Rules:
+
+- One `KEY=value` per line; no shell syntax (`export`, `$(...)`, unquoted spaces).
+- A variable already set in the environment wins over the file.
+- A missing `.env` or an unset variable below stops the run with an error naming the `.env` path.
+  `--dry-run` still reads `.env` but needs neither: unset variables get placeholder values.
+
 | Variable | Description |
 |----------|-------------|
 | `CODE_REVIEW_URL` | Base URL of the LLM API (e.g. OpenRouter endpoint) |
