@@ -1,8 +1,8 @@
-"""mesh orchestrate [TICKET ...] [--repo-dir DIR] [--interval SECONDS]
+"""mesh orchestrate [TICKET ...] [--repo-dir DIR] [--max-workers N] [--interval SECONDS]
 
-Starts a worker for each new ticket, then loops: resumes any worker whose tab is gone (after a reboot,
-just run it again), passes on the owner's Jira comments, closes finished tabs, and redraws a
-screen saying what needs the owner.
+Starts a worker for each new ticket (up to --max-workers at once; the rest wait in a queue), then loops:
+resumes any worker whose tab is gone (after a reboot, just run it again), passes on the owner's Jira comments,
+closes finished tabs, starts queued tickets, and redraws a screen saying what needs the owner.
 """
 
 import argparse
@@ -47,6 +47,8 @@ a tab named after its ticket; it works the ticket itself, as CLAUDE.md says. Eac
   - its tab is missing (reboot, closed tab)   reopen the tab and resume the same Claude session
   - you commented on Jira                     type "The owner commented on Jira ..." into the tab
   - the ticket is Done                        warn in the tab, close it {loop.CLOSE_GRACE.seconds // 60} minutes later unless you type there
+No more than --max-workers workers run at once. Further tickets wait in the Queue box, in command-line order;
+each check starts the next one when a worker has finished. Resumed workers count toward the cap.
 
 Talking to workers: answer a worker's question with a Jira comment, or type in its tab. Worker comments
 start with MESSAGE-FROM-WORKER; any other comment is taken as yours. Merge a worker's PR yourself (by hand,
@@ -57,6 +59,7 @@ time, and only one copy can run.
 
 Files (in ~/environment/logs/orchestrator/):
   <TICKET>.json   each worker's session, state and what was passed on
+  queue.txt       tickets waiting for a free worker, in order
   events.log      every event, as shown under Recent
 
 First run: it prints an Atlassian login link; open it in a fresh browser tab and paste back the URL the
@@ -91,12 +94,16 @@ def main(argv: list[str] | None = None, once: bool = False) -> int:
     p.add_argument("tickets", nargs="*", help="Jira keys to start, e.g. PMAT-282")
     p.add_argument("--repo-dir", metavar="DIR",
                    help="local folder of the repo (its root) where the tickets named here start; required with tickets")
+    p.add_argument("--max-workers", type=int, default=3, metavar="N",
+                   help="most workers running at once; further tickets wait in a queue (default 3)")
     p.add_argument("--interval", type=int, default=30, help="seconds between checks (default 30)")
     args = p.parse_args(argv)
     if args.tickets and not args.repo_dir:  # never start a ticket in whatever folder the owner happens to be in
         p.error("--repo-dir is required when starting tickets: the local folder of their repo")
     if bad := [k for k in args.tickets if not KEY.fullmatch(k)]:
         p.error(f"not a Jira key (expected e.g. PMAT-282): {', '.join(bad)}")
+    if args.max_workers < 1:
+        p.error("--max-workers must be at least 1")
     # One mesh orchestrator at a time: two would both type into the same tabs. The lock goes when the process does.
     status.DIR.mkdir(parents=True, exist_ok=True)
     lock = open(status.DIR / "orchestrator.lock", "w")
@@ -123,14 +130,42 @@ def main(argv: list[str] | None = None, once: bool = False) -> int:
     if args.tickets:
         repo = subprocess.run(["git", "-C", args.repo_dir, "rev-parse", "--show-toplevel"],
                               check=True, capture_output=True, text=True).stdout.strip()
+    queue = status.queued()
     for key in args.tickets:
         if key in status.active():
             event(f"{key}: already running")
+        elif key in (k for k, _ in queue):
+            event(f"{key}: already queued")
         else:
-            loop.start(key, repo, OPS)
+            queue.append((key, repo))
+    status.save_queue(queue)
+
+    def start_queued() -> None:
+        """Start queued tickets while fewer than --max-workers run (finished workers have left active())."""
+        queue, running = status.queued(), len(status.active())
+        while queue and running < args.max_workers:
+            key, folder = queue.pop(0)
+            # First: loop.start saves the ticket's status (so it is active, and resumed if its tab is missing)
+            # before opening the tab, so it must not stay queued too, or it would start twice.
+            status.save_queue(queue)
+            try:
+                loop.start(key, folder, OPS)
+            except Exception as e:  # e.g. tmux refused the tab: the running workers still need watching
+                # No tab, so no session to resume: undo the start and put it back first in line, to start afresh.
+                status.update(key, launch_dir=None)
+                status.save_queue([(key, folder), *queue])
+                event(f"Starting a queued ticket failed, trying again next check: {e!r}")
+                return
             event(f"{key}: started a worker in tab {key}")
+            running += 1
+
+    start_queued()
+    for key, _ in status.queued():
+        if key in args.tickets:
+            event(f"{key}: queued, {args.max_workers} workers already running")
 
     while True:
+        start_queued()
         keys = status.active()
         try:
             # No deadline while logging in: the owner is pasting the redirect URL.
@@ -162,7 +197,8 @@ def main(argv: list[str] | None = None, once: bool = False) -> int:
             draw = functools.partial(display.render, keys, {k: status.read(k) for k in keys}, tickets, found,
                                      OPS.windows(), list(events), datetime.now(timezone.utc),
                                      grace_minutes=loop.CLOSE_GRACE.seconds // 60, color=tty,
-                                     background=OPS.background(), disk=disk_used())
+                                     background=OPS.background(), disk=disk_used(),
+                                     queued=[k for k, _ in status.queued()])
         except Exception as e:
             print(f"Screen failed, trying again next tick: {e!r}", file=sys.stderr, flush=True)
             draw = None

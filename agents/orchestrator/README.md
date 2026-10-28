@@ -78,6 +78,9 @@ sums them up as they stood on 2026-10-23.
   (a prompt in the tab); NEEDS YOU appears only while the worker is at its prompt. The header shows disk use,
   in red from 90%.
 - **Closes Done tabs** after a 5-minute warning (typing in the tab keeps it), then runs `git worktree prune`.
+- **Caps running workers** at `--max-workers` (default 3; this machine has 3.8 GB of RAM). Further tickets wait
+  in a queue, in command-line order, and the next one starts on the check after a worker finishes (its tab
+  closed, or kept by the owner). Resumed workers count toward the cap; the queue survives a restart.
 - **Never writes Jira and never merges.** Ticket keys must look like `PMAT-282`. One copy runs at a time.
 
 ### Not part of the process
@@ -103,7 +106,11 @@ mesh orchestrate --repo-dir ~/environment/pmat/alpha-mesh PMAT-282 PMAT-283   # 
 mesh orchestrate                     # after a reboot: reopen and resume the workers, then keep watching
 ```
 
-Options: `--repo-dir DIR` (required with tickets), `--interval SECONDS` (default 30).
+Options: `--repo-dir DIR` (required with tickets), `--max-workers N` (default 3: tickets beyond it wait in
+the Queue box), `--interval SECONDS` (default 30).
+
+`bin/orchestrate` runs `uv sync` once, then the venv's Python directly rather than `uv run`, which would hold
+uv's lock as long as the orchestrator runs (so `uv sync` and `uv cache prune` elsewhere would wait on it).
 
 Tickets from several repos: a running ticket keeps the folder it started in (its PRs are looked up there), so
 to add tickets from another repo, Ctrl-C and run `mesh orchestrate --repo-dir ~/environment/pmat/<other-repo> KEY ...`.
@@ -135,7 +142,7 @@ There is no deadline while logging in, since the owner is pasting the redirect U
 
 ### The screen
 
-Redrawn in place each tick, as three boxes (colour when run in a terminal; the header counts down to the next
+Redrawn in place each tick, as three boxes, plus a Queue box under Workers while tickets wait (colour when run in a terminal; the header counts down to the next
 check each second):
 
 ```
@@ -164,6 +171,7 @@ check each second):
   workers green, idle ones dim.
 - **NEEDS YOU** (shown only while the worker is at its prompt; a working worker isn't waiting on you): `▶ answer on Jira`, `▶ merge PR #N` (then `▶ tell the worker PR #N is merged`), `▶ check the tab: <message>` (a permission prompt or any
   notification other than the 60-second idle one), the close countdown, or `resuming the worker`.
+- **Queue:** tickets waiting for a free worker (`--max-workers`), in the order they start; hidden when empty.
 - **Recent:** the last 10 events, newest first, each cut to 110 characters so the boxes stay one screen wide. Every event is also appended to
   `~/environment/logs/orchestrator/events.log`, and the last 10 are shown again after a restart.
 
@@ -186,7 +194,8 @@ a worker by answering in its tab and telling it not to post to Jira.
 - `src/orchestrator/loop.py`: start a worker, one tick, the status table.
 - `src/orchestrator/jira.py`: read-only Jira through the Atlassian MCP server (`https://mcp.atlassian.com/v2/mcp`).
 - `src/orchestrator/status.py`: the per-ticket status files, `~/environment/logs/orchestrator/<KEY>.json`,
-  shared with the hooks under the same lock.
+  shared with the hooks under the same lock, and the queue, `~/environment/logs/orchestrator/queue.txt`
+  (one `KEY FOLDER` line per waiting ticket).
 - `src/orchestrator/tmux.py`: the tabs, named by ticket key, in the tmux session the orchestrator runs in.
 - `settings.json`: the settings every worker is started with (`--settings`):
   - the status hooks (`SessionStart` → started, `UserPromptSubmit` → working, `Stop` → idle,
