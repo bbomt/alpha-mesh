@@ -66,7 +66,7 @@ DISK_FULL = 0.90
 def render(keys: list[str], statuses: dict[str, dict], tickets: dict[str, Ticket], prs: dict[str, Pr | None],
            alive: set[str], events: list[tuple[datetime, str]], now: datetime, next_in: int,
            grace_minutes: int, color: bool = True, background: set[str] = frozenset(),
-           disk: float | None = None) -> str:
+           disk: float | None = None, queued: list[str] = ()) -> str:
     def paint(text: str, code: str) -> str:
         return f"{code}{text}{RESET}" if color and code and text else text
 
@@ -92,6 +92,7 @@ def render(keys: list[str], statuses: dict[str, dict], tickets: dict[str, Ticket
     recent = [f"{when.astimezone():%H:%M:%S}  {text[:EVENT_WIDTH]}" for when, text in reversed(events)]
     sections = [("mesh orchestrate", [(head, paint(head, RED if full else DIM))]),
                 ("Workers", table if keys else [("(none)", paint("(none)", DIM))]),
+                *([("Queue", [(line, line) for line in (f"{i}. {k}" for i, k in enumerate(queued, 1))])] if queued else []),
                 ("Recent", [(r, paint(r, RED if "failed" in r else DIM)) for r in recent] or [("(nothing yet)", paint("(nothing yet)", DIM))])]
     inner = max(len(plain) for _, lines in sections for plain, _ in lines)
     inner = max(inner, *(len(title) + 2 for title, _ in sections))

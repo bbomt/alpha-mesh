@@ -7,4 +7,7 @@ set -euo pipefail
 SCRIPT_REALPATH="$(readlink -f "${BASH_SOURCE[0]}")"
 AGENT_DIR="$(cd "$(dirname "$SCRIPT_REALPATH")/.." && pwd)"
 
-exec uv run --quiet --project "$AGENT_DIR" python -m orchestrator.cli "$@"
+# Sync once, then run the venv's Python directly: `uv run` holds uv's lock for as long as the orchestrator runs,
+# so `uv sync` and `uv cache prune` in other sessions would wait on it (PMAT-298).
+uv sync --quiet --project "$AGENT_DIR"
+exec "$AGENT_DIR/.venv/bin/python" -m orchestrator.cli "$@"
