@@ -1,6 +1,7 @@
 """The loop around the ticks, and the real tmux wrapper's parsing."""
 
 import json
+import subprocess
 
 import pytest
 
@@ -113,8 +114,8 @@ def test_only_jira_style_keys_are_started(tmp_path, monkeypatch, capsys):
     # outside the status folder. Nothing starts unless every key looks like PROJECT-123.
     monkeypatch.setattr(status, "DIR", tmp_path)
     opened = []
-    monkeypatch.setattr(cli, "OPS", loop.Ops(windows=set, new_window=lambda *a: opened.append(a), send=None,
-                                             kill=None))
+    monkeypatch.setattr(cli, "OPS", loop.Ops(windows=lambda: {key for key, *_ in opened},
+                                             new_window=lambda *a: opened.append(a), send=None, kill=None))
     for bad in ("../x", "PMAT-1;rm -rf ~", "pmat-1", "PMAT"):
         with pytest.raises(SystemExit) as done:
             cli.main([bad, "--repo-dir", str(tmp_path)], once=True)
@@ -212,3 +213,90 @@ def test_a_jira_check_that_never_returns_is_cut_off_and_retried_next_check(tmp_p
     assert "Jira check timed out, retrying next check" in out1
     assert tabs1 == {"PMAT-1", "PMAT-2"} and sent1 == []  # missing tab resumed, no Jira-driven action
     assert sent2 == [("PMAT-1", loop.REPLY.format(key="PMAT-1", after="c1", comment="c2"))]  # Jira answered
+
+
+def test_max_workers_caps_running_workers_and_queues_the_rest(tmp_path, monkeypatch, capsys):
+    # PMAT-298: 4 tickets, --max-workers 3: 3 tabs open, the 4th waits in the Queue box. When one of the 3 closes
+    # as Done, the 4th starts on the next check. Each cli.main call is a restart, so the cap survives one too.
+    from datetime import datetime, timedelta, timezone
+    monkeypatch.setattr(status, "DIR", tmp_path / "status")
+    repo = tmp_path / "repo"
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    tabs, opened = set(), []
+
+    def new_window(key, cwd, cmd):
+        tabs.add(key)
+        opened.append(key)
+
+    tickets = {}
+
+    async def snapshot(keys):
+        return {k: tickets.get(k, jira.Ticket(labels=[], done=False, comment_id=None)) for k in keys}
+
+    monkeypatch.setattr(cli.jira, "snapshot", snapshot)
+    monkeypatch.setattr(cli.jira, "logged_in", lambda: True)
+    monkeypatch.setattr(cli, "prs", lambda keys, repo_dir: {})
+    monkeypatch.setattr(cli, "OPS", loop.Ops(windows=lambda: set(tabs), new_window=new_window, send=lambda *a: None,
+                                             kill=tabs.discard))
+
+    assert cli.main(["PMAT-1", "PMAT-2", "PMAT-3", "PMAT-4", "--repo-dir", str(repo), "--max-workers", "3"],
+                    once=True) == 0
+    out = capsys.readouterr().out
+    assert opened == ["PMAT-1", "PMAT-2", "PMAT-3"]
+    assert "Queue" in out and "1. PMAT-4" in out
+
+    # A restart keeps the cap: the 3 running workers count toward it, PMAT-4 stays queued, and naming it again
+    # does not queue it twice.
+    assert cli.main(["PMAT-4", "--repo-dir", str(repo)], once=True) == 0
+    out = capsys.readouterr().out
+    assert opened == ["PMAT-1", "PMAT-2", "PMAT-3"] and "PMAT-4: already queued" in out
+    assert status.queued() == [("PMAT-4", str(repo))] and "1. PMAT-4" in out
+
+    # PMAT-1 is Done and its close warning has run out: this check closes its tab...
+    long_ago = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat(timespec="seconds")
+    status.update("PMAT-1", state="idle", close_warned_at=long_ago)
+    tickets["PMAT-1"] = jira.Ticket(labels=[], done=True, comment_id=None)
+    assert cli.main([], once=True) == 0
+    assert "PMAT-1" not in tabs and opened == ["PMAT-1", "PMAT-2", "PMAT-3"]
+    capsys.readouterr()
+    # ...and the next check starts the queued ticket, in the repo it was named for.
+    assert cli.main([], once=True) == 0
+    out = capsys.readouterr().out
+    assert opened[-1] == "PMAT-4" and status.read("PMAT-4")["launch_dir"] == str(repo)
+    assert "Queue" not in out
+
+
+def test_max_workers_must_be_at_least_one(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(status, "DIR", tmp_path)
+    with pytest.raises(SystemExit) as done:
+        cli.main(["--max-workers", "0"], once=True)
+    assert done.value.code == 2 and "--max-workers" in capsys.readouterr().err
+
+
+def test_a_queued_ticket_that_fails_to_start_does_not_stop_the_orchestrator(tmp_path, monkeypatch, capsys):
+    # R36-812f904-002: the first start, before the loop, must be guarded like the ones inside it.
+    monkeypatch.setattr(status, "DIR", tmp_path / "status")
+    repo = tmp_path / "repo"
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+
+    def refused(*args):
+        raise RuntimeError("tmux refused the tab")
+
+    async def snapshot(keys):
+        return {}
+
+    monkeypatch.setattr(cli.jira, "snapshot", snapshot)
+    monkeypatch.setattr(cli.jira, "logged_in", lambda: True)
+    monkeypatch.setattr(cli, "prs", lambda keys, repo_dir: {})
+    monkeypatch.setattr(cli, "OPS", loop.Ops(windows=set, new_window=refused, send=None, kill=None))
+    assert cli.main(["PMAT-1", "--repo-dir", str(repo)], once=True) == 0
+    assert "Starting a queued ticket failed" in capsys.readouterr().out
+    # R36-d2309a5-001: it goes back to the front of the queue, not active, so it is not resumed as a session that
+    # never started; the next check starts it afresh.
+    assert status.active() == [] and status.queued() == [("PMAT-1", str(repo))]
+    opened = []
+    monkeypatch.setattr(cli, "OPS", loop.Ops(windows=lambda: {key for key, *_ in opened},
+                                             new_window=lambda *a: opened.append(a), send=None, kill=None))
+    assert cli.main([], once=True) == 0
+    assert [(key, cwd) for key, cwd, _ in opened] == [("PMAT-1", str(repo))]
+    assert "'Work on Jira PMAT-1.'" in opened[0][2] and status.queued() == []

@@ -36,3 +36,17 @@ def active() -> list[str]:
         return []
     keys = (p.stem for p in sorted(DIR.glob("*.json")))
     return [k for k in keys if (s := read(k)).get("launch_dir") and not s.get("finished")]
+
+
+def queued() -> list[tuple[str, str]]:
+    """Tickets waiting for a free worker (--max-workers), in order, each with the repo folder it starts in.
+    Kept in queue.txt (one "KEY FOLDER" line each), not a .json file, so active() never takes it for a ticket."""
+    p = DIR / "queue.txt"
+    return [tuple(line.split(" ", 1)) for line in p.read_text().splitlines()] if p.exists() else []
+
+
+def save_queue(entries: list[tuple[str, str]]) -> None:
+    DIR.mkdir(parents=True, exist_ok=True)
+    tmp = DIR / "queue.txt.tmp"
+    tmp.write_text("".join(f"{key} {folder}\n" for key, folder in entries))
+    tmp.replace(DIR / "queue.txt")
