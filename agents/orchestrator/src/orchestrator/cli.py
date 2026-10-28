@@ -151,7 +151,10 @@ def main(argv: list[str] | None = None, once: bool = False) -> int:
             try:
                 loop.start(key, folder, OPS)
             except Exception as e:  # e.g. tmux refused the tab: the running workers still need watching
-                event(f"Starting a queued ticket failed: {e!r}")
+                # No tab, so no session to resume: undo the start and put it back first in line, to start afresh.
+                status.update(key, launch_dir=None)
+                status.save_queue([(key, folder), *queue])
+                event(f"Starting a queued ticket failed, trying again next check: {e!r}")
                 return
             event(f"{key}: started a worker in tab {key}")
             running += 1

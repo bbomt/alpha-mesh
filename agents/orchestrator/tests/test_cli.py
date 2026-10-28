@@ -114,8 +114,8 @@ def test_only_jira_style_keys_are_started(tmp_path, monkeypatch, capsys):
     # outside the status folder. Nothing starts unless every key looks like PROJECT-123.
     monkeypatch.setattr(status, "DIR", tmp_path)
     opened = []
-    monkeypatch.setattr(cli, "OPS", loop.Ops(windows=set, new_window=lambda *a: opened.append(a), send=None,
-                                             kill=None))
+    monkeypatch.setattr(cli, "OPS", loop.Ops(windows=lambda: {key for key, *_ in opened},
+                                             new_window=lambda *a: opened.append(a), send=None, kill=None))
     for bad in ("../x", "PMAT-1;rm -rf ~", "pmat-1", "PMAT"):
         with pytest.raises(SystemExit) as done:
             cli.main([bad, "--repo-dir", str(tmp_path)], once=True)
@@ -282,7 +282,21 @@ def test_a_queued_ticket_that_fails_to_start_does_not_stop_the_orchestrator(tmp_
     def refused(*args):
         raise RuntimeError("tmux refused the tab")
 
+    async def snapshot(keys):
+        return {}
+
+    monkeypatch.setattr(cli.jira, "snapshot", snapshot)
+    monkeypatch.setattr(cli.jira, "logged_in", lambda: True)
     monkeypatch.setattr(cli, "prs", lambda keys, repo_dir: {})
     monkeypatch.setattr(cli, "OPS", loop.Ops(windows=set, new_window=refused, send=None, kill=None))
     assert cli.main(["PMAT-1", "--repo-dir", str(repo)], once=True) == 0
     assert "Starting a queued ticket failed" in capsys.readouterr().out
+    # R36-d2309a5-001: it goes back to the front of the queue, not active, so it is not resumed as a session that
+    # never started; the next check starts it afresh.
+    assert status.active() == [] and status.queued() == [("PMAT-1", str(repo))]
+    opened = []
+    monkeypatch.setattr(cli, "OPS", loop.Ops(windows=lambda: {key for key, *_ in opened},
+                                             new_window=lambda *a: opened.append(a), send=None, kill=None))
+    assert cli.main([], once=True) == 0
+    assert [(key, cwd) for key, cwd, _ in opened] == [("PMAT-1", str(repo))]
+    assert "'Work on Jira PMAT-1.'" in opened[0][2] and status.queued() == []
