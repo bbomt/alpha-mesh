@@ -154,3 +154,13 @@ def test_the_header_shows_disk_use_and_turns_red_when_nearly_full():
 def test_the_header_line_is_dimmed():
     screen = render([], {}, {}, {}, set(), [], NOW, next_in=8, grace_minutes=5, color=True)
     assert f"\033[2m0 workers · checked {NOW.astimezone():%H:%M:%S} · next check in 8s" in screen
+
+
+def test_a_lost_jira_connector_says_how_to_reconnect_and_comes_before_other_actions():
+    # The worker can't read Jira, so an open question or merge on Jira waits until it reconnects.
+    lost = {"state": "idle", "ticket": "PMAT-300", "jira_lost": at(2)}
+    assert need(s=lost, t=Ticket(labels=["AWAITING-USER-RESPONSE"], done=False)) == \
+        '▶ Jira lost: in tab PMAT-300 run /mcp (may need a browser login), then type "continue"'
+    assert need(s={**lost, "jira_lost": None}) == ""  # cleared by the hook
+    # Busy, e.g. retrying after the owner typed "continue".
+    assert needs({**lost, "state": "working"}, None, None, True, NOW, grace_minutes=5, busy=True)[0] == ""

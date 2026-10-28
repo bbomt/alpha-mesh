@@ -21,6 +21,10 @@
     "Stop": [
       {"hooks": [{"type": "command", "command": "$HOME/environment/pmat/alpha-mesh/agents/orchestrator/status-hook.sh idle"}]}
     ],
+    "PostToolUse": [
+      {"matcher": "^mcp__(plugin_atlassian_)?atlassian__(?!authenticate$|complete_authentication$)",
+       "hooks": [{"type": "command", "command": "$HOME/environment/pmat/alpha-mesh/agents/orchestrator/jira-access.sh ok"}]}
+    ],
     "Notification": [
       {"hooks": [{"type": "command", "command": "$HOME/environment/pmat/alpha-mesh/agents/orchestrator/status-hook.sh waiting"}]}
     ]
