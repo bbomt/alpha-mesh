@@ -14,6 +14,9 @@ import httpx
 from review_pull_request.constants import REVIEW_SIGNATURE
 
 
+# GitHub's compare API lists at most 300 changed files; a range that reaches it may be cut short.
+COMPARE_MAX_FILES = 300
+
 _REVIEWED_COMMIT = re.compile(r"^> \*\*Reviewed commit:\*\* `([0-9a-f]{40})`$")
 
 
@@ -143,8 +146,9 @@ def get_commits_between(
 ) -> list[dict] | None:
     """Return the commits after base_sha up to head_sha, oldest first.
 
-    Returns [] when head_sha is base_sha, and None on an API error or when base_sha is
-    not an ancestor of head_sha (force-push or rebase); the caller then reviews in full.
+    Returns [] when head_sha is base_sha, and None on an API error, when base_sha is
+    not an ancestor of head_sha (force-push or rebase), or when the range is too large for
+    GitHub to list completely (commits or files); the caller then reviews in full.
     """
     headers = {
         "Authorization": f"Bearer {token}",
@@ -169,7 +173,17 @@ def get_commits_between(
         print(f"WARNING: the last reviewed commit is not an ancestor of the head ({status}).",
               file=sys.stderr)
         return None
-    return data.get("commits", [])
+    commits = data.get("commits", [])
+    total = data.get("total_commits", len(commits))
+    if total > len(commits):
+        print(f"WARNING: GitHub listed {len(commits)} of the {total} commits since the last review.",
+              file=sys.stderr)
+        return None
+    if len(data.get("files", [])) >= COMPARE_MAX_FILES:
+        print(f"WARNING: the changes since the last review reach GitHub's {COMPARE_MAX_FILES}-file "
+              "compare limit, so its diff may be incomplete.", file=sys.stderr)
+        return None
+    return commits
 
 
 def build_incremental_diff(

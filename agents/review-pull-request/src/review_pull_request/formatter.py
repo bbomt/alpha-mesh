@@ -7,6 +7,8 @@ from review_pull_request.constants import REVIEW_SIGNATURE
 
 MAX_LISTED_FILES = 50
 
+FINDINGS_END = "<!-- end of findings -->"  # invisible on GitHub
+
 
 def _code_span(text: str) -> str:
     """Markdown inline code for untrusted text: the fence is longer than any backtick run inside."""
@@ -158,6 +160,9 @@ def render_report(
                 if iss.suggestion:
                     lines.append(f"**Fix:** {iss.suggestion}\n")
                 lines.append("---\n")
+
+    # Everything after this marker is kept when an oversized report is truncated (github.post_comment).
+    lines.append(FINDINGS_END)
 
     not_done = set(incomplete or [])
     reviewed = [path for path, _ in summaries if path not in not_done]  # incomplete files are listed below
