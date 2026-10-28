@@ -170,7 +170,8 @@ check each second):
 - **Colours:** ticket keys yellow, Done green, PR URLs blue; owner actions bold yellow, problems red, working
   workers green, idle ones dim.
 - **NEEDS YOU** (shown only while the worker is at its prompt; a working worker isn't waiting on you): `▶ answer on Jira`, `▶ merge PR #N` (then `▶ tell the worker PR #N is merged`), `▶ check the tab: <message>` (a permission prompt or any
-  notification other than the 60-second idle one), the close countdown, or `resuming the worker`.
+  notification other than the 60-second idle one), `▶ Jira lost: in tab <KEY> run /mcp (may need a browser login), then type "continue"`
+  (the worker lost its Atlassian connector, see below; it goes when the worker's next Jira call works), the close countdown, or `resuming the worker`.
 - **Queue:** tickets waiting for a free worker (`--max-workers`), in the order they start; hidden when empty.
 - **Recent:** the last 10 events, newest first, each cut to 110 characters so the boxes stay one screen wide. Every event is also appended to
   `~/environment/logs/orchestrator/events.log`, and the last 10 are shown again after a restart.
@@ -183,7 +184,20 @@ on every start and resume). It is the only difference from a manual session:
 - start every Jira comment with `MESSAGE-FROM-WORKER` (workers and the owner post from the same Jira
   account, so a comment without the marker is taken as the owner's);
 - always work in a git worktree (at `.claude/worktrees/<TICKET>`, per `CLAUDE_GLOBAL.md`), never in the checkout all
-  workers start from.
+  workers start from;
+- if its Atlassian tools are missing or fail with a login or connection error, look again after about 30 seconds
+  (just after a resume they may still be connecting), then, if still gone, run `jira-access.sh lost` and stop.
+
+**A lost Jira connector (PMAT-303).** Workers and the owner talk only through Jira, and a worker can lose its
+Atlassian connector (seen after a restart: `/mcp` showed it needing a browser login). No Claude Code hook reports
+an MCP server's connection: `SessionStart` fires before the servers connect, and a missing tool is not a failed
+call. So the worker marks the loss itself (`jira-access.sh lost`, per its prompt), and the `PostToolUse` hook clears
+it after the next Atlassian call that works (`PostToolUse` fires only on success). The mark is `jira_lost` (a time,
+or null) in the ticket's status file. Reconnecting (`/mcp`) is not a turn, so the worker stays idle until the
+owner types "continue"; that turn's first working Jira call clears the warning. Workers can reach Jira through two
+connectors, the plugin in `settings.json` (`mcp__plugin_atlassian_atlassian__*`) and the user-level `atlassian`
+server in `~/.claude.json` (`mcp__atlassian__*`); the hook matches both, but not their `authenticate` and
+`complete_authentication` login tools.
 
 Manual sessions ask in the chat only, so manual tickets get no extra Jira comments. The owner can take over
 a worker by answering in its tab and telling it not to post to Jira.
@@ -200,6 +214,7 @@ a worker by answering in its tab and telling it not to post to Jira.
 - `settings.json`: the settings every worker is started with (`--settings`):
   - the status hooks (`SessionStart` → started, `UserPromptSubmit` → working, `Stop` → idle,
     `Notification` → waiting), each running `status-hook.sh`;
+  - a `PostToolUse` hook on the Atlassian tools, running `jira-access.sh ok`;
   - the Atlassian plugin;
   - what a worker needs to work inside its sandbox without approvals: write access to `~/.mesh` (review
     locks and checkpoints), `~/.cache/uv` and pnpm's store, cache and state folders, and the hosts it reaches
@@ -210,6 +225,8 @@ a worker by answering in its tab and telling it not to post to Jira.
   `~/environment/logs/orchestrator/$ORCH_TICKET.json` (state, session ID, worktree, transcript, notification
   type, history; the full `SessionStart` input as `session_start_input`), under the same lock as the
   orchestrator. Tested by `test/test-orchestrator-status-hook`.
+- `jira-access.sh lost|ok`: sets or clears `jira_lost` in the same status file, under the same lock. `lost` is run
+  by the worker, `ok` by the `PostToolUse` hook. Tested by `test/test-orchestrator-status-hook` too.
 - Tests: `tests/`, run by `test/test-orchestrator`.
   - Unit tests: the decisions, the screen and the CLI, with fake tmux, gh and Jira.
   - `test_e2e.py`: the real `mesh orchestrate` loop, one check at a time (each check is also a restart), against

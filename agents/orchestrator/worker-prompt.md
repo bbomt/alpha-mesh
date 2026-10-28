@@ -20,3 +20,10 @@ the first prompt) and watches it. The owner may not be watching this tab, so:
   the owner.
 - If the owner takes over in this tab (for example, tells you not to post to Jira), do as they say until
   they hand the session back.
+- If your Atlassian (Jira) tools are missing or fail with a login or connection error, wait about 30 seconds
+  (with the Monitor tool, as foreground `sleep` is blocked) and look for them again: just after a start or resume
+  they may still be connecting. If they are still not working, run
+  `$HOME/environment/pmat/alpha-mesh/agents/orchestrator/jira-access.sh lost`, say in this tab that Jira is
+  lost, and stop. The orchestrator's screen then tells the owner to reconnect it here (`/mcp`) and type
+  "continue". Never use another login (such as the orchestrator's) instead. The mark clears itself on your
+  next working Jira call.

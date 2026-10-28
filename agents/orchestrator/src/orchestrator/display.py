@@ -35,6 +35,10 @@ def needs(s: dict, t: Ticket | None, pr: Pr | None, alive: bool, now: datetime, 
         return "resuming the worker", YELLOW
     if busy:  # working, or its background command runs: not waiting on the owner (it may be about to push)
         return "", ""
+    if s.get("jira_lost"):  # set by the worker, cleared by its hook on the next working call (jira-access.sh)
+        # A reconnect is not a turn, so the worker sits idle until typed to.
+        return (f'▶ Jira lost: in tab {s.get("ticket")} run /mcp (may need a browser login), '
+                f'then type "continue"'), BOLD + RED
     if t and "AWAITING-USER-RESPONSE" in t.labels:
         return "▶ answer on Jira", BOLD + YELLOW
     if s.get("state") == "waiting" and s.get("notification_type") not in (None, "idle_prompt"):

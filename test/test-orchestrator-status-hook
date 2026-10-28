@@ -38,6 +38,31 @@ done
 wait
 check "20 concurrent hooks keep all 20 history entries" '(.history | length) == 20'
 
+# PMAT-303: jira-access.sh sets the "Jira lost" marker (the worker runs it) and clears it (the PostToolUse hook).
+ACCESS="$MESH_DIR/agents/orchestrator/jira-access.sh"
+access() { HOME="$FAKE_HOME" ORCH_TICKET=T-1 "$ACCESS" "$1" < /dev/null; }
+echo '{"session_id":"s-1","cwd":"/wt","hook_event_name":"Stop"}' | hook idle
+access lost
+check "lost records when Jira was lost and keeps the state" '(.jira_lost | type) == "string" and .state == "idle"'
+echo '{"session_id":"s-1","cwd":"/wt","hook_event_name":"UserPromptSubmit"}' | hook working
+check "a later status hook keeps the marker" '(.jira_lost | type) == "string" and .state == "working"'
+echo '{"tool_name":"mcp__atlassian__getJiraIssue"}' | HOME="$FAKE_HOME" ORCH_TICKET=T-1 "$ACCESS" ok
+check "ok (as the PostToolUse hook, input on stdin) clears the marker" '.jira_lost == null and .state == "working"'
+
+rm -f "$FILE"
+for i in $(seq 1 10); do
+  echo '{"session_id":"s-1","cwd":"/wt","hook_event_name":"Stop"}' | hook idle &
+  access lost &
+done
+wait
+check "concurrent status hooks and jira-access keep every update" '(.history | length) == 10 and (.jira_lost | type) == "string"'
+
+if HOME="$FAKE_HOME" ORCH_TICKET=T-1 "$ACCESS" maybe < /dev/null 2> /dev/null; then
+  echo "FAIL: jira-access refuses anything but lost or ok"; FAILED=1
+else
+  echo "PASS: jira-access refuses anything but lost or ok"
+fi
+
 if echo '{}' | HOME="$FAKE_HOME" ORCH_TICKET= "$HOOK" idle 2> /dev/null; then
   echo "FAIL: a missing ORCH_TICKET is refused"; FAILED=1
 else

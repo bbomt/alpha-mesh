@@ -1,6 +1,8 @@
 """The loop around the ticks, and the real tmux wrapper's parsing."""
 
 import json
+import os
+import re
 import subprocess
 
 import pytest
@@ -300,3 +302,43 @@ def test_a_queued_ticket_that_fails_to_start_does_not_stop_the_orchestrator(tmp_
     assert cli.main([], once=True) == 0
     assert [(key, cwd) for key, cwd, _ in opened] == [("PMAT-1", str(repo))]
     assert "'Work on Jira PMAT-1.'" in opened[0][2] and status.queued() == []
+
+
+def test_a_worker_that_lost_its_jira_connector_is_flagged_until_jira_works_again(tmp_path, monkeypatch, capsys):
+    # PMAT-303: the worker marks the loss itself (jira-access.sh lost, per worker-prompt.md); the PostToolUse hook
+    # clears it on the next working Atlassian call (jira-access.sh ok). Both run the real script.
+    monkeypatch.setattr(status, "DIR", tmp_path / "environment/logs/orchestrator")
+    status.update("PMAT-300", ticket="PMAT-300", session_id="s", launch_dir="/repos/a", relayed_comment="c1",
+                  state="idle")
+
+    async def snapshot(keys):
+        return {"PMAT-300": jira.Ticket(labels=["ALPHA-MESH"], done=False, comment_id="c1")}
+
+    monkeypatch.setattr(cli.jira, "snapshot", snapshot)
+    monkeypatch.setattr(cli, "prs", lambda keys, repo_dir: {})
+    monkeypatch.setattr(cli, "OPS", loop.Ops(windows=lambda: {"PMAT-300"}, new_window=None, send=None, kill=None))
+
+    def access(what):
+        subprocess.run([str(loop.AGENT_DIR / "jira-access.sh"), what], check=True, input="{}", text=True,
+                       env={**os.environ, "HOME": str(tmp_path), "ORCH_TICKET": "PMAT-300"})
+
+    warning = 'Jira lost: in tab PMAT-300 run /mcp (may need a browser login), then type "continue"'
+    access("lost")
+    assert cli.main([], once=True) == 0
+    assert warning in capsys.readouterr().out
+    access("ok")
+    assert cli.main([], once=True) == 0
+    assert warning not in capsys.readouterr().out
+
+
+def test_the_jira_access_hook_matches_both_atlassian_connectors_but_not_their_login_tools():
+    # Claude Code reads a matcher with other characters than letters, digits, _, -, | as an unanchored JavaScript
+    # regex; this one uses nothing Python's re reads differently.
+    hooks = json.loads((loop.AGENT_DIR / "settings.json").read_text())["hooks"]["PostToolUse"]
+    matcher = next(h["matcher"] for h in hooks if "jira-access.sh ok" in h["hooks"][0]["command"])
+    for name in ("mcp__plugin_atlassian_atlassian__getJiraIssue", "mcp__atlassian__addCommentToJiraIssue",
+                 "mcp__plugin_atlassian_atlassian__executeRead"):
+        assert re.search(matcher, name), name
+    for name in ("mcp__plugin_atlassian_atlassian__authenticate", "mcp__atlassian__complete_authentication",
+                 "mcp__claude_ai_Gmail__authenticate", "Bash", "ToolSearch"):
+        assert not re.search(matcher, name), name
