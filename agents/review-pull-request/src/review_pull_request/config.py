@@ -20,6 +20,8 @@ SENSITIVE_PATTERNS = ["**/.env", "**/.env.*", "**/.envrc", "**/.claude/*", "**/.
 
 # Global list of files excluded from review, at the alpha-mesh root.
 IGNORE_FILE = Path(__file__).resolve().parents[4] / ".pr-review-ignore"
+# Simple KEY=value lines only (no shell syntax); variables already in the environment win.
+ENV_FILE = Path(__file__).resolve().parents[4] / ".env"
 
 
 def _has_glob(pattern: str) -> bool:
@@ -118,19 +120,27 @@ class Config:
 
 def load_config(args) -> Config:
     """Load config from .env + TOML + CLI overrides."""
-    # In dry-run mode, set placeholder values so we skip .env validation.
-    # The bash entry point already skips sourcing .env for --dry-run.
-    if getattr(args, "dry_run", False):
+    dry_run = getattr(args, "dry_run", False)
+    if not ENV_FILE.is_file() and not dry_run:
+        print(
+            f"ERROR: {ENV_FILE} not found. "
+            f"Copy .env.example to .env and fill in your credentials.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    load_dotenv(ENV_FILE)
+
+    # In dry-run mode, placeholders fill any variable the environment and .env left unset.
+    if dry_run:
         for var in REQUIRED_ENV_VARS:
             os.environ.setdefault(var, "dry-run-placeholder")
-
-    load_dotenv()
 
     for var in REQUIRED_ENV_VARS:
         if not os.environ.get(var):
             print(
                 f"ERROR: {var} is not set. "
-                f"Copy .env.example to .env and fill in your credentials.",
+                f"Set it in {ENV_FILE} (see .env.example).",
                 file=sys.stderr,
             )
             sys.exit(1)
