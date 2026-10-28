@@ -164,6 +164,10 @@ While reviewing a file the model can call `read_file` to look at other files. Re
 - If the review (or the "not reviewed" notice) could not be posted to the PR, the run exits non-zero instead of reporting success.
 - A mixed PR's report lists the changed files that were skipped by exclusion patterns under "Excluded from review", so the all-clear never implies coverage it lacks. The "not reviewed" notice does not carry the `# AI Code Review` marker, so `--since-last-review` never mistakes it for a completed review.
 - An unreadable `.pr-review-ignore` aborts the run (it would otherwise send files you meant to exclude).
+- A `!` (negation) line in `.pr-review-ignore` or `[exclusions] patterns` aborts the run: negation is not supported. `[exclusions] patterns` that is not a list of strings aborts too.
+- A finding whose fields have the wrong types (e.g. `"file": null`) is dropped and its file listed under "Not fully reviewed". A `read_file` call without a string path, or a call to any other tool, gets an error reply.
+- `--since-last-review` falls back to a full review when GitHub's compare API cannot list the whole range (over 250 commits, or 300 or more changed files).
+- A report over GitHub's comment size limit is cut in its findings; the header and the closing sections ("Not fully reviewed", "Excluded from review", …) are kept.
 - Severities other than high/medium/low from the model (`error`, `critical`, `warning`, anything else) are mapped to high/medium/low so no finding is dropped from the report.
 - Each finding's heading starts with its ID, `R<PR>-<reviewed commit, 7 chars>-<number>` (e.g.
   `R31-e0c98f3-003`), numbered 001, 002, … in the order the report prints them. A commit that fixes a

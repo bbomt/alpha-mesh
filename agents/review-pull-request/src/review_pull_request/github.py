@@ -5,6 +5,7 @@ import subprocess
 
 import httpx
 
+from review_pull_request.formatter import FINDINGS_END
 from review_pull_request.git import parse_pr_url
 
 
@@ -28,6 +29,16 @@ MAX_COMMENT_CHARS = 65_000  # GitHub rejects comment bodies over 65,536 characte
 TRUNCATION_NOTE = "\n\n… _report truncated to fit GitHub's comment size limit_"
 
 
+def _truncate(body: str) -> str:
+    """Cut the findings, not the coverage disclosures that follow them (FINDINGS_END)."""
+    cut = body.rfind(FINDINGS_END)
+    tail = body[cut:] if cut != -1 else ""
+    room = MAX_COMMENT_CHARS - len(TRUNCATION_NOTE) - len(tail)
+    if cut == -1 or room <= 0:  # no marker, or a tail too long to keep whole
+        return body[: MAX_COMMENT_CHARS - len(TRUNCATION_NOTE)] + TRUNCATION_NOTE
+    return body[:room] + TRUNCATION_NOTE + tail
+
+
 def post_comment(body: str, pr_url: str, config) -> bool:
     """Post body as a comment on the GitHub PR at pr_url.
 
@@ -46,7 +57,7 @@ def post_comment(body: str, pr_url: str, config) -> bool:
 
     if len(body) > MAX_COMMENT_CHARS:
         print(f"WARNING: report is {len(body)} characters; truncating to fit GitHub's limit.", flush=True)
-        body = body[: MAX_COMMENT_CHARS - len(TRUNCATION_NOTE)] + TRUNCATION_NOTE
+        body = _truncate(body)
 
     headers = {
         "Authorization": f"Bearer {github_token}",

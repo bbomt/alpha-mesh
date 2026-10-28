@@ -41,6 +41,10 @@ def normalise_patterns(lines: list[str]) -> list[str]:
         line = re.sub(r"\s+#.*$", "", raw).strip()  # inline comment
         if not line or line.startswith("#"):
             continue
+        if line.startswith("!"):
+            print(f"ERROR: exclusion line '{line}' uses '!' (negation), which is not supported. "
+                  "Remove it; aborting rather than reviewing files you meant to exclude.", file=sys.stderr)
+            sys.exit(1)
         if line.endswith("/") and line.startswith("/"):  # anchored directory: repo root only
             patterns.append(f"{line.strip('/')}/*")
         elif line.endswith("/"):  # gitignore-style directory: match it at any depth
@@ -155,8 +159,13 @@ def load_config(args) -> Config:
 
     max_tool_calls = limits.get("max_tool_calls", 20)
     max_file_lines = limits.get("max_file_lines", 8000)
+    toml_patterns = exclusions_section.get("patterns", [])
+    if not isinstance(toml_patterns, list) or not all(isinstance(p, str) for p in toml_patterns):
+        print(f"ERROR: [exclusions] patterns must be a list of strings, got {toml_patterns!r}. "
+              "Aborting rather than reviewing files you meant to exclude.", file=sys.stderr)
+        sys.exit(1)
     exclusions = list(dict.fromkeys(
-        normalise_patterns(exclusions_section.get("patterns", []))
+        normalise_patterns(toml_patterns)
         + load_ignore_patterns(IGNORE_FILE) + SENSITIVE_PATTERNS
     ))
     github_repo = github_section.get("repo", "")

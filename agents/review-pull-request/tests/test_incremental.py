@@ -192,6 +192,21 @@ class TestGetCommitsBetween:
         with patch("review_pull_request.incremental.httpx.get", side_effect=Exception("timeout")):
             assert get_commits_between("o", "r", "base", "head", "token") is None
 
+    def test_returns_none_when_github_lists_fewer_commits_than_the_range_holds(self, capsys):
+        # The compare API lists at most 250 commits; the rest are silently missing.
+        data = {"status": "ahead", "total_commits": 251, "commits": [{"sha": f"c{i}"} for i in range(250)]}
+        with patch("review_pull_request.incremental.httpx.get", return_value=_mock_response(data)):
+            assert get_commits_between("o", "r", "base", "head", "token") is None
+        assert "251" in capsys.readouterr().err
+
+    def test_returns_none_when_the_range_reaches_githubs_file_limit(self, capsys):
+        # The compare API stops at 300 files, so its diff can miss changes.
+        data = {"status": "ahead", "total_commits": 1, "commits": [{"sha": "c1"}],
+                "files": [{"filename": f"f{i}"} for i in range(300)]}
+        with patch("review_pull_request.incremental.httpx.get", return_value=_mock_response(data)):
+            assert get_commits_between("o", "r", "base", "head", "token") is None
+        assert "300" in capsys.readouterr().err
+
 
 # ─── reviewed_sha ────────────────────────────────────────────────────────────
 

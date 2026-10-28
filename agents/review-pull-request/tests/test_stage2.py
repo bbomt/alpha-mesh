@@ -525,3 +525,52 @@ def test_equivalent_path_spellings_share_dedup_and_cache():
 
     assert len(reader.asked) == 1
     assert list(config.read_cache) == ["src/x.py"]
+
+
+@pytest.mark.parametrize("bad_issue", [
+    '{"file": null, "severity": "high", "comment": "c"}',
+    '{"file": 123, "severity": "high", "comment": "c"}',
+    '{"file": "src/a.py", "line": "forty", "severity": "high", "comment": "c"}',
+    '{"file": "src/a.py", "severity": "high", "comment": ["c"]}',
+    '{"file": "src/a.py", "severity": "high", "comment": "c", "suggestion": {"x": 1}}',
+])
+def test_issues_with_badly_typed_fields_are_dropped_and_the_answer_is_malformed(bad_issue):
+    good = '{"file": "src/a.py", "line": 3, "severity": "low", "comment": "ok", "suggestion": null}'
+    result = _review(model=MockLLMResponse(content=f'{{"summary": "s", "issues": [{good}, {bad_issue}]}}'))
+
+    assert [i.comment for i in result.issues] == ["ok"]
+    assert result.incomplete is True
+
+
+def test_a_numeric_string_line_is_read_as_a_number():
+    payload = '{"summary": "s", "issues": [{"file": "src/a.py", "line": "7", "severity": "low", "comment": "c"}]}'
+
+    result = _review(model=MockLLMResponse(content=payload))
+
+    assert result.issues[0].line == 7
+    assert result.incomplete is False
+
+
+@pytest.mark.parametrize("path", [None, 123, "", "   ", ["src/a.py"]])
+def test_a_read_file_call_without_a_usable_path_is_refused_before_any_read(path):
+    reader = StubReader(default="BODY")
+    llm = FakeLLM(_scripted([SimpleNamespace(id="1", name="read_file", arguments={"path": path})]))
+
+    result = _review(model=llm, reader=reader)
+
+    assert reader.asked == []
+    assert "path" in _tool_messages(llm)[0]
+    assert result.summary == "ok"
+
+
+def test_an_unknown_tool_call_gets_an_error_reply_so_no_call_is_left_unanswered():
+    llm = FakeLLM(_scripted([SimpleNamespace(id="x1", name="write_file", arguments={"path": "a"})]))
+
+    result = _review(model=llm)
+
+    last_messages = llm.calls[-1][0]
+    calls = [tc["id"] for m in last_messages for tc in (m.get("tool_calls") or [])]
+    answers = [m["tool_call_id"] for m in last_messages if m.get("role") == "tool"]
+    assert calls == answers == ["x1"]
+    assert "read_file" in _tool_messages(llm)[0]
+    assert result.summary == "ok"

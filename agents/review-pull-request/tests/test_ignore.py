@@ -243,3 +243,35 @@ def test_active_config_is_excluded_at_any_depth():
     assert [c.file_path for c in build_chunks(diff, SENSITIVE_PATTERNS)] == ["src/a.py"]
     shipped = load_ignore_patterns(IGNORE_FILE)
     assert [c.file_path for c in build_chunks(diff, shipped)] == ["src/a.py"]
+
+
+def _args_for(toml_file):
+    return SimpleNamespace(config=str(toml_file), model=None, base=None, repo_path=None,
+                           dry_run=False, verbose=False, hide_pr_comment=False)
+
+
+@pytest.mark.parametrize("value", ['"secrets"', '[1, 2]', '{ a = "b" }'])
+def test_toml_exclusion_patterns_that_are_not_a_list_of_strings_abort(tmp_path, monkeypatch, capsys, value):
+    toml_file = tmp_path / "review_config.toml"
+    toml_file.write_text(f"[exclusions]\npatterns = {value}\n")
+    monkeypatch.setattr(config_module, "IGNORE_FILE", tmp_path / "missing")
+    monkeypatch.setattr(config_module, "load_dotenv", lambda *a, **k: None)
+    for var, val in [("CODE_REVIEW_URL", "http://x"), ("CODE_REVIEW_TOKEN", "t"), ("CODE_REVIEW_MODEL", "m")]:
+        monkeypatch.setenv(var, val)
+
+    with pytest.raises(SystemExit) as exc:
+        load_config(_args_for(toml_file))
+
+    assert exc.value.code != 0
+    assert "[exclusions] patterns" in capsys.readouterr().err
+
+
+def test_a_negation_line_in_the_ignore_file_aborts_because_it_is_not_supported(tmp_path, capsys):
+    f = tmp_path / ".pr-review-ignore"
+    f.write_text("*.log\n!keep.log\n")
+
+    with pytest.raises(SystemExit) as exc:
+        load_ignore_patterns(f)
+
+    assert exc.value.code != 0
+    assert "!keep.log" in capsys.readouterr().err

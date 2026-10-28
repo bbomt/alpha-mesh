@@ -99,3 +99,32 @@ def test_oversized_report_is_truncated_to_githubs_comment_limit():
     sent = post.call_args.kwargs["json"]["body"]
     assert len(sent) <= MAX_COMMENT_CHARS
     assert "truncated" in sent[-300:].lower()
+
+
+def test_truncation_cuts_the_findings_and_keeps_the_header_and_coverage_disclosures():
+    from types import SimpleNamespace
+
+    from review_pull_request.formatter import render_report
+    from review_pull_request.github import MAX_COMMENT_CHARS, post_comment
+    from review_pull_request.stage2 import Issue
+
+    issues = [Issue(file=f"src/f{i}.py", line=1, severity="low", comment="c" * 2_000, suggestion=None)
+              for i in range(60)]
+    config = SimpleNamespace(base_branch="master", model="m")
+    report = render_report("overview", issues, [("src/a.py", "s"), ("src/b.py", "s")], config,
+                           incomplete=["src/b.py"], excluded=[".env"], head_sha="a" * 40)
+    assert len(report) > MAX_COMMENT_CHARS
+
+    resp = MagicMock(status_code=201, text="ok")
+    resp.json.return_value = {"html_url": "u"}
+    with patch("review_pull_request.github._get_github_token", return_value="t"), \
+         patch("review_pull_request.github.httpx.post", return_value=resp) as post:
+        assert post_comment(report, "https://github.com/o/r/pull/1", None) is True
+
+    sent = post.call_args.kwargs["json"]["body"]
+    assert len(sent) <= MAX_COMMENT_CHARS
+    assert sent.startswith("# Partial pull request review")
+    assert "Reviewed commit" in sent
+    assert "truncated" in sent.lower()
+    assert "## ⚠️ Not fully reviewed" in sent and "`src/b.py`" in sent.split("Not fully reviewed")[1]
+    assert "## Excluded from review" in sent and "`.env`" in sent.split("Excluded from review")[1]

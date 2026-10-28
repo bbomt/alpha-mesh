@@ -165,6 +165,30 @@ NOT_FOUND_AGAIN_NOTE = (
 )
 
 
+UNKNOWN_TOOL_NOTE = "Unknown tool: only read_file is available."
+
+BAD_PATH_NOTE = "Error: read_file needs a non-empty string 'path'."
+
+
+def _to_issue(iss, default_file: str) -> Issue | None:
+    """An Issue from one model-supplied finding, or None if its fields have the wrong types."""
+    if not isinstance(iss, dict):
+        return None
+    file = iss.get("file", default_file)
+    line = iss.get("line")
+    comment = iss.get("comment", "")
+    suggestion = iss.get("suggestion")
+    if isinstance(line, str) and line.strip().isdigit():
+        line = int(line)
+    if (not isinstance(file, str) or not file
+            or not (line is None or (isinstance(line, int) and not isinstance(line, bool)))
+            or not isinstance(comment, str)
+            or not (suggestion is None or isinstance(suggestion, str))):
+        return None
+    return Issue(file=file, line=line, severity=_normalise_severity(iss.get("severity")),
+                 comment=comment, suggestion=suggestion)
+
+
 def _with_hints(result: NotFound, suggestions: list[str], folder: str, entries: list[str]) -> NotFound:
     lines = [str(result)]
     if suggestions:
@@ -220,8 +244,16 @@ def _run_file_review(chunk, overview: str, session, paths_read: set[str],
             )
         if response.tool_calls:
             for tc in response.tool_calls:
-                if tc.name == "read_file":
-                    path = tc.arguments.get("path", "")
+                path = tc.arguments.get("path", "")
+                if tc.name != "read_file":
+                    print(f"  → unknown tool {tc.name!r} refused  (while reviewing {chunk.file_path})",
+                          file=sys.stderr, flush=True)
+                    result = UNKNOWN_TOOL_NOTE  # every tool call gets an answer
+                elif not isinstance(path, str) or not path.strip():
+                    print(f"  → read_file without a usable path refused  (while reviewing {chunk.file_path})",
+                          file=sys.stderr, flush=True)
+                    result = ReadError(BAD_PATH_NOTE)
+                else:
                     reason = tc.arguments.get("reason", "")
                     print(f"  → read_file: {path}  (while reviewing {chunk.file_path})", file=sys.stderr, flush=True)
                     print(f"     reason: {reason}", file=sys.stderr, flush=True)
@@ -253,26 +285,26 @@ def _run_file_review(chunk, overview: str, session, paths_read: set[str],
                             print(f"     (failed: {result})", file=sys.stderr, flush=True)
                     if not isinstance(result, ReadError):
                         paths_read.add(key)  # failed reads stay retryable
-                    messages.append({
-                        "role": "assistant",
-                        "content": None,
-                        "tool_calls": [
-                            {
-                                "id": tc.id,
-                                "type": "function",
-                                "function": {
-                                    "name": "read_file",
-                                    "arguments": _json.dumps(tc.arguments),
-                                },
-                            }
-                        ],
-                    })
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tc.id,
-                        "content": result,
-                    })
-                    tool_calls_made += 1
+                messages.append({
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": tc.id,
+                            "type": "function",
+                            "function": {
+                                "name": tc.name,
+                                "arguments": _json.dumps(tc.arguments),
+                            },
+                        }
+                    ],
+                })
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": result,
+                })
+                tool_calls_made += 1
 
             if tool_calls_made >= config.max_tool_calls:
                 # Keep what the model has learned: no more reads, ask for the answer now.
@@ -306,15 +338,11 @@ def _run_file_review(chunk, overview: str, session, paths_read: set[str],
             raw_issues = parsed.get("issues")
             malformed = not isinstance(raw_issues, list) or any(not isinstance(i, dict) for i in raw_issues)
             for iss in raw_issues if isinstance(raw_issues, list) else []:
-                if not isinstance(iss, dict):
+                issue = _to_issue(iss, chunk.file_path)
+                if issue is None:
+                    malformed = True  # a badly typed finding is dropped, so the file is not clean
                     continue
-                issues.append(Issue(
-                    file=iss.get("file", chunk.file_path),
-                    line=iss.get("line"),
-                    severity=_normalise_severity(iss.get("severity")),
-                    comment=iss.get("comment", ""),
-                    suggestion=iss.get("suggestion"),
-                ))
+                issues.append(issue)
 
             return FileReviewResult(
                 file_path=chunk.file_path,
