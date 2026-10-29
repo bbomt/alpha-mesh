@@ -136,6 +136,21 @@ def test_a_finding_without_an_id_and_another_prs_dismissal_give_no_case(tmp_path
                                    "no_id": 1}
 
 
+def test_a_later_dismissal_of_the_same_id_corrects_the_earlier_one(tmp_path):
+    original = Issue("src/a.py", 12, "medium", "Index can go out of range.", None)
+    repeat = Issue("src/a.py", 13, "medium", "Index can go out of range here too.", None)
+    gh = FakeGh([pr(7, BASE1, HEAD1)],
+                comments={7: [report(HEAD1, [original, repeat], pr_number=7),
+                              "Dismissed review finding R7-bbbbbbb-001: checked by the caller.\n"
+                              "Dismissed review finding R7-bbbbbbb-002: same claim as R7-bbbbbbb-001.",
+                              "Dismissed review finding R7-bbbbbbb-002: duplicate of R7-bbbbbbb-001"]})
+
+    summary = mine(tmp_path, gh)
+
+    assert sorted(repo_cases(tmp_path)) == ["R7-bbbbbbb-001.json"]
+    assert (summary["findings"]["dismissed"], summary["findings"]["duplicate"]) == (1, 1)
+
+
 def test_mining_runs_nothing_but_gh_and_mining_again_keeps_a_judges_override(tmp_path, monkeypatch):
     def no_process(*args, **kwargs):
         raise AssertionError(f"mining must run no process (no review, no model): {args}")

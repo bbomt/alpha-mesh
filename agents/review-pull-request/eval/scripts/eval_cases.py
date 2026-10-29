@@ -85,12 +85,13 @@ def cited_ids(commits: list[dict]) -> dict[str, str]:
 
 
 def dismissals(comments: list[str], number: int) -> dict[str, str]:
-    """Finding ID of this PR -> the reason of the first PR comment line that dismisses it."""
+    """Finding ID of this PR -> the reason of the last PR comment line that dismisses it
+    (a later line corrects an earlier one)."""
     dismissed: dict[str, str] = {}
     for body in comments:
         for line in body.splitlines():
             if (m := _DISMISSAL.match(line.rstrip())) and int(m.group(2)) == number:
-                dismissed.setdefault(m.group(1), m.group(3).strip())
+                dismissed[m.group(1)] = m.group(3).strip()
     return dismissed
 
 

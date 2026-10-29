@@ -7,7 +7,8 @@ High and medium review findings from merged PRs, each labelled by what happened 
 
 - **Real issue:** a commit in the PR cites the ID, e.g. `fix[PMAT-12]: fixed review finding R31-e0c98f3-003 in src/x.py`.
 - **False positive:** a comment on the PR dismisses it on a line of its own:
-  `Dismissed review finding R31-e0c98f3-004: <reason>`.
+  `Dismissed review finding R31-e0c98f3-004: <reason>`. If an ID is dismissed more than once, the last
+  line wins, so a wrong dismissal is corrected by posting a new line.
 
 Everything else is not a case: duplicates (a dismissal reason starting `duplicate of <ID>`), conflicts
 (both cited and dismissed), unresolved findings (neither), findings without an ID, and low findings.
