@@ -14,7 +14,6 @@ from review_pull_request.checkpoints import ThreadBusy, lock_thread, make_checkp
 from review_pull_request.config import load_config
 from review_pull_request.formatter import _code_span, render_report
 from review_pull_request.git import (
-    get_diff,
     get_pr_description,
     get_pr_info,
     parse_pr_url,
@@ -25,6 +24,7 @@ from review_pull_request.llm import DRY_RUN_MODEL, LLMError
 from review_pull_request.incremental import (
     find_last_review_comment,
     get_commits_between,
+    get_diff,
     build_incremental_diff,
     reviewed_sha,
 )
@@ -207,6 +207,7 @@ Rerunning the same command after a failure resumes from the file it stopped at.
 
     # Always read files via GitHub API at the PR head SHA
     head_sha = pr_info.get("headRefOid", "")
+    base_sha = pr_info.get("baseRefOid", "")  # a full review is the diff base_sha...head_sha
     if not _token:
         print(
             "ERROR: no GitHub token found. Run 'gh auth login' (or set GITHUB_TOKEN) and try again.",
@@ -250,7 +251,7 @@ Rerunning the same command after a failure resumes from the file it stopped at.
                 )
                 print("Fetching full diff...", file=sys.stderr)
                 try:
-                    diff = get_diff(owner, repo, pr_number)
+                    diff = get_diff(owner, repo, base_sha, head_sha, _token)
                 except Exception as e:
                     print(f"ERROR: failed to get diff: {e}", file=sys.stderr)
                     return 1
@@ -302,14 +303,14 @@ Rerunning the same command after a failure resumes from the file it stopped at.
                 if not incremental_info:
                     print("Fetching full diff...", file=sys.stderr)
                     try:
-                        diff = get_diff(owner, repo, pr_number)
+                        diff = get_diff(owner, repo, base_sha, head_sha, _token)
                     except Exception as e:
                         print(f"ERROR: failed to get diff: {e}", file=sys.stderr)
                         return 1
         else:
             print("Fetching diff...", file=sys.stderr)
             try:
-                diff = get_diff(owner, repo, pr_number)
+                diff = get_diff(owner, repo, base_sha, head_sha, _token)
             except Exception as e:
                 print(f"ERROR: failed to get diff: {e}", file=sys.stderr)
                 return 1
