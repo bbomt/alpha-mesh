@@ -220,25 +220,17 @@ Rerunning the same command after a failure resumes from the file it stopped at.
             file=sys.stderr,
         )
         return 1
-    # Kept local, never on config: stages see only the policy-wrapped reader in the session.
-    github_reader = GitHubFileReader(owner, repo, head_sha, _token)
     if args.dry_run:
         config.model = DRY_RUN_MODEL  # the session gets the scripted dry-run model, no network
-    # Everything that reaches the model or the file reader goes through this session's policy.
-    session = ReviewSession.create(config, inner_reader=github_reader, secrets=[_token])
     _verbose_print(config, f"read_file: GitHub API (ref={head_sha[:8]})")
 
     # Print model info if verbose
     _verbose_print(config, f"Model: {config.model}")
     _verbose_print(config, f"API URL: {_safe_url(config.api_url)}")
 
-    start_time = time.time()
+    diff = None  # None: review_commit fetches the full diff base_sha...head_sha
     incremental_info = None
-    current_step = "review"
-    incomplete_files: list[str] = []
     prior_review_exists = False
-    run_lock = None
-    kept = ""
     try:
         # ── Incremental diff (--since-last-review) ──────────────────────────
         if args.since_last_review and not args.dry_run:
@@ -250,11 +242,6 @@ Rerunning the same command after a failure resumes from the file it stopped at.
                     file=sys.stderr,
                 )
                 print("Fetching full diff...", file=sys.stderr)
-                try:
-                    diff = get_diff(owner, repo, base_sha, head_sha, _token)
-                except Exception as e:
-                    print(f"ERROR: failed to get diff: {e}", file=sys.stderr)
-                    return 1
             else:
                 last_sha = reviewed_sha(last_review.get("body", ""))
                 new_commits = None
@@ -296,21 +283,106 @@ Rerunning the same command after a failure resumes from the file it stopped at.
                             "commits": [c["sha"] for c in new_commits],
                         }
                     else:
+                        diff = None
                         print(
                             "WARNING: incremental diff is empty — running full review.",
                             file=sys.stderr,
                         )
                 if not incremental_info:
                     print("Fetching full diff...", file=sys.stderr)
-                    try:
-                        diff = get_diff(owner, repo, base_sha, head_sha, _token)
-                    except Exception as e:
-                        print(f"ERROR: failed to get diff: {e}", file=sys.stderr)
-                        return 1
         else:
             print("Fetching diff...", file=sys.stderr)
+    except Exception as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 1
+
+    def all_excluded(paths: list[str]) -> int:
+        if incremental_info or prior_review_exists:
+            # The PR already has a review; new commits only touch excluded files. Saying
+            # "this PR has not been reviewed" would be false, and the notice (which is not a
+            # baseline) would be re-posted on every later incremental run.
+            print(
+                f"No new reviewable changes: the {len(paths)} file(s) changed since the "
+                "last review are all excluded by exclusion patterns.",
+                file=sys.stderr,
+            )
+            return 0
+        notice = _excluded_notice(paths)
+        print(
+            f"No files to review: all {len(paths)} changed file(s) were excluded "
+            "by exclusion patterns.",
+            file=sys.stderr,
+        )
+        will_post = not args.dry_run and not args.no_post_comment and args.pr_url
+        if not args.no_output and not (args.hide_pr_comment and will_post):
+            print(notice)
+        if not args.dry_run and not args.no_post_comment and args.pr_url:
+            if not post_comment(notice, args.pr_url, config):
+                print("ERROR: could not post the 'not reviewed' notice to the PR.", file=sys.stderr)
+                return 1
+        return 0
+
+    post_to_pr = not args.dry_run and not args.no_post_comment and args.pr_url
+    show_comment = not args.no_output and not (args.hide_pr_comment and post_to_pr)
+
+    def publish(report: str) -> None:
+        if show_comment:
+            print(report)
+        if post_to_pr:
+            print("Posting to PR...", file=sys.stderr)
+            if not post_comment(report, args.pr_url, config):
+                raise PostFailed()
+
+    return review_commit(
+        owner, repo, base_sha, head_sha, pr_desc,
+        config=config, token=_token, publish=publish, all_excluded=all_excluded,
+        pr_number=pr_number, diff=diff, incremental_info=incremental_info,
+        dry_run=args.dry_run, force_rerun=args.force_rerun, no_output=args.no_output,
+        checkpointer=checkpointer,
+    )
+
+
+def review_commit(
+    owner: str,
+    repo: str,
+    base_sha: str,
+    head_sha: str,
+    pr_description: str,
+    *,
+    config,
+    token: str,
+    publish,
+    all_excluded,
+    pr_number: int | None = None,
+    diff: str | None = None,
+    incremental_info: dict | None = None,
+    dry_run: bool = False,
+    force_rerun: bool = False,
+    no_output: bool = False,
+    checkpointer=None,
+) -> int:
+    """Review the diff base_sha...head_sha of owner/repo, reading files at head_sha; return the exit code.
+
+    The review core: `mesh review-pull-request` (main, the PR adapter) and the evals call it with
+    the same inputs. It never posts: publish(report) gets the finished report, and
+    all_excluded(paths) -> exit code handles a diff whose changed files are all excluded.
+    diff is base_sha...head_sha when the caller has already fetched it; None fetches it.
+    pr_number, when known, goes into the checkpoint key and the finding IDs.
+    """
+    # Kept local, never on config: stages see only the policy-wrapped reader in the session.
+    github_reader = GitHubFileReader(owner, repo, head_sha, token)
+    # Everything that reaches the model or the file reader goes through this session's policy.
+    session = ReviewSession.create(config, inner_reader=github_reader, secrets=[token])
+
+    start_time = time.time()
+    current_step = "review"
+    incomplete_files: list[str] = []
+    run_lock = None
+    kept = ""
+    try:
+        if diff is None:
             try:
-                diff = get_diff(owner, repo, base_sha, head_sha, _token)
+                diff = get_diff(owner, repo, base_sha, head_sha, token)
             except Exception as e:
                 print(f"ERROR: failed to get diff: {e}", file=sys.stderr)
                 return 1
@@ -322,38 +394,12 @@ Rerunning the same command after a failure resumes from the file it stopped at.
             if not all_paths:
                 print("No files to review (diff is empty).", file=sys.stderr)
                 return 0
-            if incremental_info or prior_review_exists:
-                # The PR already has a review; new commits only touch excluded files. Saying
-                # "this PR has not been reviewed" would be false, and the notice (which is not a
-                # baseline) would be re-posted on every later incremental run.
-                print(
-                    f"No new reviewable changes: the {len(all_paths)} file(s) changed since the "
-                    "last review are all excluded by exclusion patterns.",
-                    file=sys.stderr,
-                )
-                return 0
-            notice = _excluded_notice(all_paths)
-            print(
-                f"No files to review: all {len(all_paths)} changed file(s) were excluded "
-                "by exclusion patterns.",
-                file=sys.stderr,
-            )
-            will_post = not args.dry_run and not args.no_post_comment and args.pr_url
-            if not args.no_output and not (args.hide_pr_comment and will_post):
-                print(notice)
-            if not args.dry_run and not args.no_post_comment and args.pr_url:
-                if not post_comment(notice, args.pr_url, config):
-                    print("ERROR: could not post the 'not reviewed' notice to the PR.", file=sys.stderr)
-                    return 1
-            return 0
+            return all_excluded(all_paths)
 
         excluded_files = list(safe.excluded)
         print(f"Diff: {len(chunks)} file chunk(s) to review", file=sys.stderr)
-        if args.dry_run:
+        if dry_run:
             print("=== review-pull-request [DRY-RUN] ===", file=sys.stderr)
-
-        post_to_pr = not args.dry_run and not args.no_post_comment and args.pr_url
-        show_comment = not args.no_output and not (args.hide_pr_comment and post_to_pr)
 
         def render(state) -> str:
             results = [state["results"][f] for f in state["files"]]
@@ -363,7 +409,7 @@ Rerunning the same command after a failure resumes from the file it stopped at.
                     missing.setdefault(path, []).append(r["file_path"])
             incomplete_files[:] = [r["file_path"] for r in results if r["incomplete"]]  # idempotent node
             # Before listing_failed is read: this may be the first (and only) fetch of the repo tree.
-            repo_symlinks = [] if args.dry_run else session.symlinks()
+            repo_symlinks = [] if dry_run else session.symlinks()
             return render_report(
                 overview=state["overview"],
                 issues=[Issue(**i) for r in results for i in r["issues"]],
@@ -383,27 +429,19 @@ Rerunning the same command after a failure resumes from the file it stopped at.
                 pr_number=pr_number,
             )
 
-        def publish(report: str) -> None:
-            if show_comment:
-                print(report)
-            if post_to_pr:
-                print("Posting to PR...", file=sys.stderr)
-                if not post_comment(report, args.pr_url, config):
-                    raise PostFailed()
-
         mode = f"since-{incremental_info['base_sha']}" if incremental_info else "full"
         thread = thread_id(owner, repo, pr_number, head_sha, mode, config.exclusions)
-        if not args.dry_run:
+        if not dry_run:
             try:
                 run_lock = lock_thread(thread)
             except ThreadBusy as e:
                 print(f"ERROR: {e}", file=sys.stderr)
                 return 1
         if checkpointer is None:
-            checkpointer = make_checkpointer(dry_run=args.dry_run)
+            checkpointer = make_checkpointer(dry_run=dry_run)
         graph = build_review_graph(checkpointer)
         run_config = {"configurable": {"thread_id": thread}}
-        if args.force_rerun:
+        if force_rerun:
             checkpointer.delete_thread(thread)
         state = graph.get_state(run_config)
         if state.values and state.values["files"] != [c.file_path for c in chunks]:
@@ -414,7 +452,7 @@ Rerunning the same command after a failure resumes from the file it stopped at.
         if state.values and not state.next:
             print(f"Already completed (thread {thread}): printing the stored report, posting nothing.\n"
                   "  Use --force-rerun to review this commit again.", file=sys.stderr)
-            if not args.no_output:
+            if not no_output:
                 print(state.values["report"])
             return 1 if any(r["incomplete"] for r in state.values["results"].values()) else 0
         if state.values:
@@ -427,7 +465,7 @@ Rerunning the same command after a failure resumes from the file it stopped at.
         else:
             print(f"Starting review (thread {thread})", file=sys.stderr)
             graph_input = initial_state(safe)
-        context = ReviewContext(session=session, diff=safe, pr_description=pr_desc,
+        context = ReviewContext(session=session, diff=safe, pr_description=pr_description,
                                 model=config.model, render=render, publish=publish)
         try:
             # sync: each node's checkpoint is saved before the next node starts, so a kill loses
@@ -445,7 +483,7 @@ Rerunning the same command after a failure resumes from the file it stopped at.
             state = graph.get_state(run_config)
             pending = next_file(state.values) if "review_next_file" in state.next else None
             current_step = pending or "overview pass"
-            if state.values.get("overview") and not args.dry_run:
+            if state.values.get("overview") and not dry_run:
                 kept = (f"  Completed work is kept: overview + {len(state.values['results'])} file(s). "
                         "Run the same command to resume (--model may name another model).\n")
             raise
