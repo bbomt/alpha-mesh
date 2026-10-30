@@ -18,7 +18,6 @@ import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
-from urllib.parse import unquote
 
 import httpx
 import pytest
@@ -79,7 +78,7 @@ class FakeGitHub:
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         url, method = request.url, request.method
-        path = unquote(url.path)
+        path = url.path  # httpx has already decoded it
         repo = f"/repos/{OWNER}/{REPO}"
         if url.host == "api.github.com":
             if method == "GET" and path == f"{repo}/pulls/{PR}":
