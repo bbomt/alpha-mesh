@@ -39,7 +39,8 @@ Commit the changed files in `eval/cases/` through a ticket branch and PR.
 ## What a rerun does
 
 The same PRs give the same cases. Labels set by the rules are recomputed. Labels set with `label` are
-kept. Nothing is ever deleted.
+kept. Nothing is ever deleted. A case that has not changed is not rewritten. A case's `label_date` changes only
+when its label or reason changes.
 
 ## The legacy cases
 
