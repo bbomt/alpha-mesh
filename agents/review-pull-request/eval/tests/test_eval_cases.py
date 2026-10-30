@@ -1,4 +1,4 @@
-"""Acceptance tests for the eval case miner (PMAT-300, PMAT-301, PMAT-307).
+"""Acceptance tests for the eval case miner (PMAT-300, PMAT-301, PMAT-307, PMAT-313).
 
 The canned reports are made by the review's own render_report, so the parser is tested
 against the exact text `mesh review-pull-request` prints and posts. gh and mesh are fakes
@@ -200,3 +200,28 @@ def test_the_parser_reads_each_findings_id_and_an_old_report_without_ids_as_befo
     old = eval_cases.parse_report(report(HEAD1, [MEDIUM]))
     assert old["findings"] == [{"file": "src/a.py", "line": 12, "severity": "medium", "summary": MEDIUM.comment,
                                 "fix": MEDIUM.suggestion, "failure_scenario": None, "model": MODEL, "id": None}]
+
+
+def test_a_rerun_leaves_unchanged_cases_untouched_and_redates_only_a_changed_label(tmp_path):  # PMAT-313
+    cited = Issue("src/a.py", 12, "high", "Index can go out of range.", "Check the length first.")
+    dismissed = Issue("src/b.py", 20, "medium", "The caller may pass None.", None)
+    comments = {7: [report(OLD1, [cited, dismissed], pr_number=7),
+                    "Dismissed review finding R7-eeeeeee-002: the caller never passes None."]}
+    commits = {7: [commit(FIX1, "fix[PMAT-1]: fixed review finding R7-eeeeeee-001")]}
+    gh = FakeGh([pr(7, BASE1, HEAD1)], comments=comments, commits=commits)
+    folder = tmp_path / "cases" / "repo"
+    later = date(2026, 11, 3)
+    mine(tmp_path, gh)
+    before = {p.name: p.read_bytes() for p in folder.glob("*.json")}
+
+    eval_cases.mine(REPO, limit=10, gh=gh, cases_dir=tmp_path / "cases", today=later)
+
+    assert {p.name: p.read_bytes() for p in folder.glob("*.json")} == before
+
+    comments[7].append("Dismissed review finding R7-eeeeeee-002: checked at src/x.py:40.")
+    eval_cases.mine(REPO, limit=10, gh=gh, cases_dir=tmp_path / "cases", today=later)
+
+    files = repo_cases(tmp_path)
+    assert (folder / "R7-eeeeeee-001.json").read_bytes() == before["R7-eeeeeee-001.json"]
+    changed = files["R7-eeeeeee-002.json"]
+    assert (changed["label_reason"], changed["label_date"]) == ("checked at src/x.py:40.", later.isoformat())
