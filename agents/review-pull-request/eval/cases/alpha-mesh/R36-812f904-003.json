@@ -20,5 +20,11 @@
   "label": "false_positive",
   "label_by": "rule",
   "label_date": "2026-10-28",
-  "label_reason": "only `status.save_queue` writes `queue.txt`, always as `KEY FOLDER` lines via a temp file and rename, so blank or space-less lines cannot occur."
+  "label_reason": "only `status.save_queue` writes `queue.txt`, always as `KEY FOLDER` lines via a temp file and rename, so blank or space-less lines cannot occur.",
+  "category": "mined",
+  "expected": {
+    "action": "skip_false_bug",
+    "flag_file": "agents/orchestrator/src/orchestrator/status.py"
+  },
+  "notes": ""
 }

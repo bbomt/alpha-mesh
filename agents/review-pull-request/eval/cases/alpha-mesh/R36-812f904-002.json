@@ -20,5 +20,12 @@
   "label": "real_issue",
   "label_by": "rule",
   "label_date": "2026-10-28",
-  "label_reason": "Commit d2309a5 in the PR cites finding R36-812f904-002."
+  "label_reason": "Commit d2309a5 in the PR cites finding R36-812f904-002.",
+  "category": "mined",
+  "expected": {
+    "action": "raise_true_bug",
+    "flag_file": "agents/orchestrator/src/orchestrator/cli.py",
+    "min_severity": "medium"
+  },
+  "notes": ""
 }

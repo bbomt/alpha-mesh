@@ -20,5 +20,11 @@
   "label": "false_positive",
   "label_by": "rule",
   "label_date": "2026-10-28",
-  "label_reason": "a missing `.env` stopping a real run is the behaviour PMAT-231 requires (\"Clear error if the `.env` file is missing\"), covered by `test_missing_file_exits_naming_the_path`; no caller or CI runs the agent without a `.env`."
+  "label_reason": "a missing `.env` stopping a real run is the behaviour PMAT-231 requires (\"Clear error if the `.env` file is missing\"), covered by `test_missing_file_exits_naming_the_path`; no caller or CI runs the agent without a `.env`.",
+  "category": "mined",
+  "expected": {
+    "action": "skip_false_bug",
+    "flag_file": "agents/review-pull-request/src/review_pull_request/config.py"
+  },
+  "notes": ""
 }
