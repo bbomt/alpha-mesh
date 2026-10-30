@@ -12,6 +12,7 @@ alpha-mesh/
 │   ├── dream                # End-of-session memory consolidation (delegates to agents/dream/)
 │   ├── review-pull-request # PR review agent (delegates to agents/review-pull-request/)
 │   ├── merge-pr             # The owner's merge: refuses a PR branch that lacks the latest base branch
+│   ├── sync-main            # Fast-forwards a main checkout and verifies it, or fails loudly
 │   ├── orchestrate          # One Claude worker per Jira ticket in tmux tabs (delegates to agents/orchestrator/)
 │   ├── bootstrap-memory     # One-time: extract from existing Claude Code logs
 │   ├── install              # One-time setup
@@ -206,6 +207,27 @@ mesh merge-pr https://github.com/org/repo/pull/123
 - **The branch moves between the check and the merge:** the merge fails (`--match-head-commit`), so untested
   commits are never merged.
 - Workers end their "ready to merge" Jira comment with this command, ready to copy.
+
+## Sync Main Checkout
+
+`mesh sync-main --repo-dir <main checkout>` fast-forwards a main checkout to `origin`'s default branch, then
+checks that the branch equals `origin`'s and `git status` is clean. Workers and people use it instead of
+`git pull` in the main checkout. `--repo-dir` is required, so it never acts on whatever folder you happen to be in.
+
+```bash
+mesh sync-main --repo-dir ~/environment/pmat/alpha-mesh
+```
+
+- **Run it outside the Claude Code sandbox.** The sandbox blocks writes to `settings.json` files and
+  `.git/config`. A fast-forward inside it writes every other file but leaves the branch and index behind. This
+  half-applied state looks like dozens of local changes (PMAT-315).
+- **Refuses before changing anything** when the checkout is not on its default branch, or is not clean.
+- **On failure** it exits non-zero with git's error, lists the files left changed, and prints the repair
+  (`git reset --hard origin/<default>`, outside the sandbox, after checking those files only come from the
+  incoming commits). It never resets on its own.
+- **A 0-byte, read-only `.git/config.lock`** in a main checkout is a sandbox artefact, not a real lock: the
+  sandbox mounts `/dev/null` over that path to block config writes, and sometimes leaves the placeholder file
+  behind. Delete it outside the sandbox, only when no git process is running.
 
 ## mesh orchestrate
 
