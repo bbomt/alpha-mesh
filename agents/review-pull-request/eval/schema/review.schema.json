@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "review.schema.json",
+  "title": "review-pull-request eval provider output",
+  "description": "One review of one commit, as the Promptfoo provider returns it (eval/README.md). Extra fields are allowed: later asserts add their own (PMAT-302).",
+  "type": "object",
+  "required": ["head_sha", "model", "files", "incomplete", "excluded", "findings"],
+  "properties": {
+    "head_sha": {"type": "string", "minLength": 1},
+    "model": {"type": "string"},
+    "files": {"type": "array", "items": {"type": "string"}},
+    "incomplete": {"type": "array", "items": {"type": "string"}},
+    "excluded": {"type": "array", "items": {"type": "string"}},
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["file", "line", "severity", "summary"],
+        "properties": {
+          "file": {"type": "string", "minLength": 1},
+          "line": {"type": ["integer", "null"]},
+          "severity": {"enum": ["high", "medium", "low"]},
+          "summary": {"type": "string"},
+          "suggestion": {"type": ["string", "null"]}
+        }
+      }
+    }
+  }
+}

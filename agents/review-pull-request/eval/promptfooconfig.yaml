@@ -1,0 +1,13 @@
+# review-pull-request evals (PMAT-304). Run with eval/scripts/run_eval.sh, not promptfoo directly:
+# it sets the Node version, the Python env, the run folder and k. See eval/README.md.
+description: review-pull-request evals
+prompts:
+  - "{{case_id}}"  # the provider ignores the prompt: each case's commit is the input
+providers:
+  - id: file://promptfoo/agent_provider.py
+    label: review-pull-request
+    config:
+      timeout: 7200000  # ms: one review of a large commit on a throttled free model takes many minutes
+tests: file://promptfoo/load_cases.py:create_tests
+evaluateOptions:
+  maxConcurrency: 2  # free models throttle; the cases of one commit queue on its lock anyway

@@ -1,34 +1,16 @@
 """Every case file matches eval/schema/case.schema.json, and no two cases contradict (PMAT-309)."""
 
 import json
-import re
 from pathlib import Path
 
 import jsonschema
 import pytest
 
 import eval_cases
+from case_rules import glob_regex
 
 SCHEMA = json.loads((Path(__file__).resolve().parent.parent / "schema" / "case.schema.json").read_text())
 CASES = eval_cases.case_files(eval_cases.CASES_DIR)
-
-
-def glob_regex(glob: str) -> re.Pattern:
-    """git / minimatch rules on a whole repo-relative path: * and ? stay within one folder, ** spans any depth.
-    (fnmatch lets * cross /, so it cannot be used.)"""
-    out, i = "", 0
-    while i < len(glob):
-        if glob.startswith("**/", i):
-            out, i = out + "(?:.*/)?", i + 3
-        elif glob.startswith("**", i):
-            out, i = out + ".*", i + 2
-        elif glob[i] == "*":
-            out, i = out + "[^/]*", i + 1
-        elif glob[i] == "?":
-            out, i = out + "[^/]", i + 1
-        else:
-            out, i = out + re.escape(glob[i]), i + 1
-    return re.compile(out + r"\Z")
 
 
 def contradictions(cases: list[dict]) -> list[tuple[str, str]]:
