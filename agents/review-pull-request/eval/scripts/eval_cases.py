@@ -225,7 +225,10 @@ def mine(repo: str, limit: int, *, prs: list[int] | None = None, gh=run_gh, case
         existing = json.loads(path.read_text()) if path.exists() else None
         if existing and existing["label_by"] != "rule":  # keep a judge's override
             case.update({k: existing[k] for k in ("label", "label_by", "label_date", "label_reason")})
-        write_case(path, case)
+        elif existing and (existing["label"], existing["label_reason"]) == (case["label"], case["label_reason"]):
+            case["label_date"] = existing["label_date"]  # the label did not change: no date churn
+        if case != existing:
+            write_case(path, case)
     return {"repo": repo, "run_date": today.isoformat(), "prs_mined": mined, "cases_written": len(found),
             "findings": counts}
 
