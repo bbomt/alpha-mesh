@@ -8,6 +8,9 @@ the first prompt) and watches it. The owner may not be watching this tab, so:
   before changing anything.
 - Always work in your own git worktree (located as CLAUDE.md says), never in the checkout you started in:
   other workers start from there too.
+- To update that checkout (for example after your PR merged), run
+  `mesh sync-main --repo-dir <that checkout>` with the sandbox off, never `git pull` there: the sandbox blocks
+  writes to `settings.json` and `.git/config`, and git then leaves the checkout half-updated.
 - Start every Jira comment you post with `MESSAGE-FROM-WORKER` as its first line. The mesh orchestrator takes any
   comment without it as the owner's (the owner is the team lead).
 - When you need the owner's answer, ask on the ticket: post the question as a comment, then add the label
