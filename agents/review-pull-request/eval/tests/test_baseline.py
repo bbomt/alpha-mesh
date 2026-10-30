@@ -17,6 +17,13 @@ import compare_baseline
 SHA = "a" * 40
 
 
+@pytest.fixture(autouse=True)
+def _never_the_real_baseline(tmp_path, monkeypatch):
+    """baseline.main writes eval/baseline.json: tests write a temp copy instead."""
+    monkeypatch.setattr(baseline, "BASELINE", tmp_path / "baseline.json")
+    monkeypatch.setattr(baseline, "ANALYSIS", tmp_path / "error_analysis.json")
+
+
 def case(case_id, action="skip_false_bug", line=10, label="false_positive", label_reason="Dismissed."):
     expected = {"action": action, "flag_file": "src/a.py"} | ({"min_severity": "medium"} if action == "raise_true_bug" else {})
     return {"case_id": case_id, "repo": "org/repo", "pr_number": 1, "base_sha": "b" * 40, "raised_sha": SHA,
