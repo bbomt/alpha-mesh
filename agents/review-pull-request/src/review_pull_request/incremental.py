@@ -3,7 +3,7 @@
 Provides helpers to:
 - Find the most recent AI review comment on a PR
 - Read the commit a review comment recorded, and list the commits added after it
-- Fetch the unified diff between two commit SHAs
+- Fetch the unified diff between two commit SHAs (also a full PR's diff: base...head)
 """
 
 import re
@@ -186,6 +186,31 @@ def get_commits_between(
     return commits
 
 
+def get_diff(owner: str, repo: str, base_sha: str, head_sha: str, token: str) -> str:
+    """Fetch the unified diff base_sha...head_sha (three-dot: from the merge base) via the GitHub compare API.
+
+    For a PR, baseRefOid...headRefOid gives the same bytes as `gh pr diff` (PMAT-314).
+
+    Raises:
+        RuntimeError: GitHub did not return the diff, or the diff reaches the compare API's
+            file limit (it may be cut short; `gh pr diff` refused such PRs too).
+    """
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github.v3.diff",
+        "User-Agent": "review-pull-request/1.0",
+    }
+    url = f"https://api.github.com/repos/{owner}/{repo}/compare/{base_sha}...{head_sha}"
+    resp = httpx.get(url, headers=headers, timeout=60.0)
+    if resp.status_code != 200:
+        raise RuntimeError(f"GitHub compare API returned {resp.status_code}")
+    files = sum(1 for line in resp.text.splitlines() if line.startswith("diff --git "))
+    if files >= COMPARE_MAX_FILES:
+        raise RuntimeError(f"the diff has {files} files, GitHub's {COMPARE_MAX_FILES}-file compare limit, "
+                           "so it may be incomplete")
+    return resp.text
+
+
 def build_incremental_diff(
     owner: str,
     repo: str,
@@ -201,23 +226,11 @@ def build_incremental_diff(
     Returns:
         Diff as a string, or empty string on failure.
     """
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/vnd.github.v3.diff",
-        "User-Agent": "review-pull-request/1.0",
-    }
-
-    url = f"https://api.github.com/repos/{owner}/{repo}/compare/{base_sha}...{head_sha}"
-
     try:
-        resp = httpx.get(url, headers=headers, timeout=60.0)
-        if resp.status_code != 200:
-            print(
-                f"WARNING: GitHub compare API returned {resp.status_code}",
-                file=sys.stderr,
-            )
-            return ""
-        return resp.text
+        return get_diff(owner, repo, base_sha, head_sha, token)
+    except RuntimeError as e:
+        print(f"WARNING: {e}", file=sys.stderr)
+        return ""
     except Exception as e:
         print(f"WARNING: failed to fetch incremental diff: {e}", file=sys.stderr)
         return ""

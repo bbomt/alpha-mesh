@@ -1,6 +1,5 @@
 """Git operations for review-pull-request.
 
-get_diff: run git diff against origin/base_branch
 get_pr_description: fetch PR body via GitHub REST API
 detect_repo_slug: parse owner/repo from git remote
 """
@@ -10,19 +9,6 @@ import re
 from urllib.parse import urlparse
 
 import httpx
-
-
-def get_diff(owner: str, repo: str, pr_number: int) -> str:
-    """Fetch the unified diff for a PR via gh pr diff."""
-    result = subprocess.run(
-        ["gh", "pr", "diff", str(pr_number), "--repo", f"{owner}/{repo}"],
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"gh pr diff failed: {result.stderr}")
-    return result.stdout
 
 
 def get_current_branch(repo_root: str) -> str:
@@ -74,12 +60,12 @@ def get_changed_files(owner: str, repo: str, pr_number: int) -> list[str]:
 
 
 def get_pr_info(owner: str, repo: str, pr_number: int) -> dict:
-    """Return PR info dict with headRefName and baseRefName via gh pr view."""
+    """Return PR info dict with headRefName, baseRefName and both SHAs via gh pr view."""
     result = subprocess.run(
         [
             "gh", "pr", "view", str(pr_number),
             "--repo", f"{owner}/{repo}",
-            "--json", "headRefName,baseRefName,headRefOid",
+            "--json", "headRefName,baseRefName,headRefOid,baseRefOid",
         ],
         capture_output=True,
         text=True,
