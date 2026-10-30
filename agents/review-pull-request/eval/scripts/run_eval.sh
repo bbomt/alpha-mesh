@@ -31,13 +31,22 @@ source "${NVM_DIR:-$HOME/.nvm}/nvm.sh" >/dev/null
 nvm use 24 >/dev/null
 
 COMMIT="$(git -C "$AGENT" rev-parse HEAD)"
-if [[ -f "$RUN_DIR/run.json" ]] && ! grep -q "\"model\": \"$MODEL\"" "$RUN_DIR/run.json"; then
-  echo "ERROR: $RUN_DIR holds another model's reviews; use a new --run" >&2; exit 1
+DIRTY=false
+if [[ -n "$(git -C "$AGENT" status --porcelain -- src eval/promptfoo eval/cases)" ]]; then
+  DIRTY=true
+  echo "WARNING: uncommitted changes in src/, eval/promptfoo/ or eval/cases/: this run cannot become the baseline" >&2
 fi
-printf '{"commit": "%s", "model": "%s", "date": "%s", "k": %s, "window": 3}\n' \
-  "$COMMIT" "$MODEL" "$(date +%Y-%m-%d)" "$K" > "$RUN_DIR/run.json"
-[[ -z "$(git -C "$AGENT" status --porcelain -- src eval/promptfoo)" ]] \
-  || echo "WARNING: uncommitted changes in src/ or eval/promptfoo/: run.json's commit $COMMIT is not the code that runs" >&2
+# run.json: what baseline.py records; a resumed run must keep its model (the checkpoint key has none).
+"$AGENT/.venv/bin/python" - "$RUN_DIR/run.json" "$COMMIT" "$MODEL" "$(date +%Y-%m-%d)" "$K" "$DIRTY" <<'PY'
+import json, sys
+from pathlib import Path
+path, commit, model, date, k, dirty = sys.argv[1:]
+path = Path(path)
+if path.exists() and json.loads(path.read_text())["model"] != model:
+    sys.exit(f"ERROR: {path.parent} holds another model's reviews; use a new --run")
+path.write_text(json.dumps({"commit": commit, "model": model, "date": date, "k": int(k), "window": 3,
+                            "dirty": dirty == "true"}) + "\n")
+PY
 
 echo "Run: $RUN_DIR (model $MODEL, k=$K, commit ${COMMIT:0:7})" >&2
 cd "$EVAL"

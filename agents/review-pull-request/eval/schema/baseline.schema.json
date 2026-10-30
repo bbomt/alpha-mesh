@@ -46,6 +46,10 @@
         "required": ["runs", "file_level_runs", "status", "failure_class", "reason", "category", "action"],
         "properties": {
           "runs": {"type": "array", "items": {"enum": ["pass", "fail", "error"]}, "minItems": 1},
+          "file_level_runs": {"type": "array", "items": {"enum": ["pass", "fail", "error"]}, "minItems": 1},
+          "reason": {"type": ["string", "null"]},
+          "category": {"type": "string"},
+          "action": {"enum": ["raise_true_bug", "skip_false_bug", "raise_nothing"]},
           "status": {"enum": ["pass", "flaky", "stable_failure", "harness_error"]},
           "failure_class": {"enum": [null, "model_failure", "label_error", "harness_error"]}
         },

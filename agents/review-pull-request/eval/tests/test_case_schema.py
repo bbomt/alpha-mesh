@@ -30,7 +30,8 @@ def contradictions(cases: list[dict]) -> list[tuple[str, str]]:
 
 
 def case(action, flag_file, **expected):
-    c = {"case_id": f"{action}-{flag_file}", "repo": "org/repo", "pr_number": 1, "raised_sha": "a" * 40,
+    c = {"case_id": f"{action}-{flag_file}", "repo": "org/repo", "pr_number": 1, "base_sha": "b" * 40,
+         "raised_sha": "a" * 40,
          "label": "real_issue", "category": "logic", "notes": "",
          "expected": {"action": action, "flag_file": flag_file, **expected}}
     if action != "raise_nothing":
@@ -69,10 +70,13 @@ def test_no_two_cases_in_the_dataset_contradict():
     lambda c: c["finding"].update(line=None),
     lambda c: c["finding"].update(line=0),
     lambda c: c.update(expected={"action": "skip_false_bug", "flag_file": "src/a.py"}, finding={"file": "src/a.py"}),
+    lambda c: c.update(raised_sha=None),
+    lambda c: c.update(base_sha=None),
 ], ids=["no expected", "no category", "no notes", "no action", "no flag_file", "unknown action", "unknown key",
         "bad severity", "true bug without min_severity", "glob on a true bug", "glob on a false bug",
         "min_severity on a false bug", "must_mention_any on raise_nothing",
-        "true bug without a finding", "true bug with no line", "true bug at line 0", "false bug with no line"])
+        "true bug without a finding", "true bug with no line", "true bug at line 0", "false bug with no line",
+        "true bug without raised_sha", "true bug without base_sha"])
 def test_the_schema_rejects_a_broken_case(broken):
     bad = case("raise_true_bug", "src/a.py", min_severity="medium")
     broken(bad)

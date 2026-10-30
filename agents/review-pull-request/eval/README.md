@@ -161,7 +161,7 @@ uv run python eval/scripts/baseline.py eval/runs/base1                          
 PROMPTFOO_CONFIG_DIR=eval/runs/base1/.promptfoo promptfoo view                        # browse (Node 24)
 ```
 
-`run_eval.sh` records the run's commit, model, date, k and window in `runs/<run>/run.json`. One run folder
+`run_eval.sh` records the run's commit, model, date, k, window and `dirty` (uncommitted changes in `src/`, `eval/promptfoo/` or `eval/cases/`: such a run never becomes the baseline) in `runs/<run>/run.json`. One run folder
 holds one model's reviews (the checkpoint key has no model), so a new model needs a new `--run`.
 
 ### Error analysis

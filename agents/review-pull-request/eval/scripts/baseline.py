@@ -69,8 +69,11 @@ def label_changes(since: str, cases_dir: Path, repo_root: Path) -> list[dict]:
         return subprocess.run(["git", "-C", str(repo_root), *args], capture_output=True, text=True)
 
     rel = Path(cases_dir).resolve().relative_to(Path(repo_root).resolve())
+    diff = git("diff", "--name-only", since, "--", str(rel))
+    if diff.returncode != 0:  # an unknown commit must not read as "no label changes"
+        raise RuntimeError(f"git diff {since} failed: {diff.stderr.strip()}")
     changes = []
-    for name in git("diff", "--name-only", since, "--", str(rel)).stdout.split():
+    for name in diff.stdout.split():
         before = git("show", f"{since}:{name}")
         if before.returncode != 0:  # a new case, not a label change
             continue
@@ -136,12 +139,16 @@ def main(argv=None) -> int:
     parser.add_argument("run_dir", type=Path, help="eval/runs/<run>, with results.json and run.json")
     args = parser.parse_args(argv)
 
+    meta = json.loads((args.run_dir / "run.json").read_text())
+    if meta.pop("dirty", False):
+        print("ERROR: this run was made with uncommitted changes (run.json \"dirty\"), so its commit is not the "
+              "code that ran. Commit, and run again.", file=sys.stderr)
+        return 1
     git = lambda *a: subprocess.run(["git", "-C", str(REPO_ROOT), *a], capture_output=True, text=True).stdout.strip()  # noqa: E731
     if git("status", "--porcelain", "--", str(case_rules.CASES_DIR)):
         print("ERROR: eval/cases has uncommitted changes. Commit each label fix on its own first:\n"
               "  fix[PMAT-XX]: fixed label error in eval case <ID> (<short reason>)", file=sys.stderr)
         return 1
-    meta = json.loads((args.run_dir / "run.json").read_text())
     results = json.loads((args.run_dir / "results.json").read_text())
     analysis = json.loads(ANALYSIS.read_text()) if ANALYSIS.exists() else {}
     changes = label_changes(meta["commit"], case_rules.CASES_DIR, REPO_ROOT)

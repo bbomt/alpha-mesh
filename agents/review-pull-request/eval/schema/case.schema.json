@@ -188,7 +188,7 @@
   },
   "allOf": [
     {
-      "$comment": "a true or false bug is matched by its line at raised_sha (within a window), so it must have one",
+      "$comment": "a true or false bug is reviewed at raised_sha (diff base_sha...raised_sha) and matched by its line there (within a window), so it must have all three",
       "if": {
         "properties": {
           "expected": {
@@ -205,9 +205,19 @@
       },
       "then": {
         "required": [
-          "finding"
+          "finding",
+          "base_sha",
+          "raised_sha"
         ],
         "properties": {
+          "base_sha": {
+            "type": "string",
+            "minLength": 7
+          },
+          "raised_sha": {
+            "type": "string",
+            "minLength": 7
+          },
           "finding": {
             "type": "object",
             "required": [

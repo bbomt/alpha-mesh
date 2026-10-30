@@ -109,8 +109,11 @@ def test_a_valid_baseline_passes_validation():
     lambda b: b["cases"]["B"].update(failure_class=None),
     lambda b: b["cases"]["B"].update(reason=""),
     lambda b: b["cases"]["B"].update(failure_class="measurement_error"),
+    lambda b: b["cases"]["B"].update(reason=7),
+    lambda b: b["cases"]["A"].update(file_level_runs=["maybe"]),
 ], ids=["label error without a reason", "label error with an empty reason", "label error without a case ID",
-        "failing case without a class", "failing case without a reason", "unknown class"])
+        "failing case without a class", "failing case without a reason", "unknown class",
+        "reason not text", "unknown file-level result"])
 def test_the_baseline_guard_rejects_an_unjustified_entry(broken):
     bad = valid_baseline()
     broken(bad)
@@ -152,3 +155,22 @@ def test_the_file_level_rule_is_kept_for_comparison():
     c = case("A", line=30)
     assert case_rules.check(c, review(10))[0] is True       # another finding elsewhere in the file
     assert case_rules.check_file_level(c, review(10)) is False  # the old rule (PMAT-309) failed it
+
+
+def test_label_changes_fail_loudly_on_an_unknown_commit(tmp_path):
+    root = tmp_path / "repo"
+    (root / "cases").mkdir(parents=True)
+    git(root, "init", "-q")
+    with pytest.raises(RuntimeError, match="git diff"):
+        baseline.label_changes("0" * 40, root / "cases", root)
+
+
+def test_a_run_made_with_uncommitted_changes_never_becomes_the_baseline(tmp_path, capsys):
+    run = tmp_path / "run"
+    run.mkdir()
+    (run / "run.json").write_text(json.dumps({"commit": SHA, "model": "m", "date": "2026-10-30", "k": 1,
+                                              "window": 3, "dirty": True}))
+    (run / "results.json").write_text(json.dumps(results()))
+
+    assert baseline.main([str(run)]) == 1
+    assert "uncommitted" in capsys.readouterr().err
