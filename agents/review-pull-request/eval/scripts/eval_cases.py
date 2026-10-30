@@ -155,11 +155,11 @@ def repo_dir(cases_dir: Path, repo: str) -> Path:
 
 
 def derive_expected(label: str, finding: dict) -> dict:
-    """What a good review of the case's code does, from its label. A false positive only forbids
-    raising it again; whether a new finding in the same file is "the same" is the judge's call."""
+    """What a good review of the case's code does, from its label. skip_false_bug forbids only this
+    finding; whether a new finding in the same file is the same one is the judge's call."""
     if label == "real_issue":
-        return {"must_flag": True, "flag_file": finding["file"], "min_severity": finding["severity"]}
-    return {"must_not_reraise": True, "flag_file": finding["file"]}
+        return {"action": "raise_true_bug", "flag_file": finding["file"], "min_severity": finding["severity"]}
+    return {"action": "skip_false_bug", "flag_file": finding["file"]}
 
 
 def write_case(path: Path, case: dict) -> None:

@@ -24,7 +24,7 @@
   "label_reason": "Raised in review and merged with the file unchanged.",
   "category": "mined",
   "expected": {
-    "must_not_reraise": true,
+    "action": "skip_false_bug",
     "flag_file": "test/test-model"
   },
   "notes": ""

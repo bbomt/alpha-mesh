@@ -23,7 +23,7 @@
   "label_reason": "a refused tab is almost always tmux itself, which fails every ticket alike; the one per-ticket cause (its repo folder deleted while queued) is shown in red every check, and skipping it would break the owner's command-line order.",
   "category": "mined",
   "expected": {
-    "must_not_reraise": true,
+    "action": "skip_false_bug",
     "flag_file": "agents/orchestrator/src/orchestrator/cli.py"
   },
   "notes": ""

@@ -72,22 +72,23 @@ Besides the finding and its label, every case has:
 - `category`: `mined` for mined cases. Hand-written cases (later) use `logic`, `security`, `style_only`,
   `refactor`, `concurrency`, `improvable` or `degenerate`.
 - `notes`: free text for people, saying why the case exists. The harness never reads it; the judge may.
-- `expected`: properties a good review of `raised_sha` has, never expected text. `mine` derives it from
-  the label:
+- `expected`: what a good review of `raised_sha` does, never expected text. Every case passes or fails.
+  `action` and `flag_file` are required:
 
-| Label | `expected` |
-| :-- | :-- |
-| `real_issue` | `{"must_flag": true, "flag_file": <file>, "min_severity": <severity>}` |
-| `false_positive` | `{"must_not_reraise": true, "flag_file": <file>}` |
+| `action` | The review must | Other keys | `mine` writes it for |
+| :-- | :-- | :-- | :-- |
+| `raise_true_bug` | raise this finding in `flag_file`, at `min_severity` or above | `min_severity` (required), `must_mention_any` (optional, added by hand: the finding mentions at least one of these strings) | `real_issue` |
+| `skip_false_bug` | not raise this finding (a hallucination); other findings are fine | none | `false_positive` |
+| `raise_nothing` | raise no finding in `flag_file`, which may be a glob (hand-written clean-code cases) | `min_severity` (optional: findings below it do not count; without it, any finding counts, low included) | never |
 
-| Key | Means |
-| :-- | :-- |
-| `must_flag` | `true`: the review must raise a finding in `flag_file`. `false` (hand-written traps): it must raise none there. |
-| `must_not_reraise` | the review must not raise this finding again; it may raise others. The check only looks at `flag_file`, so it is a weak signal: the judge decides whether a finding there is the same one. |
-| `flag_file` | the file the finding is in |
-| `min_severity` | the lowest severity (`high`, `medium`, `low`) that counts as flagging it |
-| `must_mention_any` | optional, added by hand: the finding must mention at least one of these strings |
-| `max_comments` | optional, hand-written cases: the most findings the review may raise |
+- `flag_file` is a repo-relative path. Only `raise_nothing` takes a glob, with git rules: `*` and `?` stay
+  within one folder, `**` spans any depth, and the glob matches the whole path (`src/*.py` matches
+  `src/a.py`, not `src/sub/a.py`; `agents/**/*.py` matches every `.py` under `agents/`).
+- **Known limit of `skip_false_bug`:** until the judge (step 4) decides whether a new finding is the same
+  claim, the check only sees "a finding in `flag_file`". When the same file at the same commit also holds
+  a `raise_true_bug` case (two such files today, `orchestrator/cli.py` at `812f904` and `d2309a5`), a
+  correct review fails the `skip_false_bug` case. Count those as measurement errors, not agent failures.
 
-`uv run pytest eval/tests` checks every case file against `schema/case.schema.json`, so a case without
-`expected` (or with an unknown key in it) fails the tests.
+`uv run pytest eval/tests` checks every case file against `schema/case.schema.json` (a missing or unknown
+key, or a glob outside `raise_nothing`, fails), and rejects a `raise_nothing` case whose `flag_file` matches
+another case's file at the same repo and `raised_sha`: a file cannot be both clean and hold a finding.

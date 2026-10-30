@@ -241,8 +241,8 @@ def test_mined_cases_get_category_notes_and_an_expected_block_derived_from_the_l
     files = repo_cases(tmp_path)
     real, false = files["R7-eeeeeee-001.json"], files["R7-eeeeeee-002.json"]
     assert (real["category"], real["notes"]) == (false["category"], false["notes"]) == ("mined", "")
-    assert real["expected"] == {"must_flag": True, "flag_file": "src/a.py", "min_severity": "high"}
-    assert false["expected"] == {"must_not_reraise": True, "flag_file": "src/b.py"}
+    assert real["expected"] == {"action": "raise_true_bug", "flag_file": "src/a.py", "min_severity": "high"}
+    assert false["expected"] == {"action": "skip_false_bug", "flag_file": "src/b.py"}
 
 
 def test_a_rerun_keeps_a_hand_edited_expected_and_notes_and_label_recomputes_expected(tmp_path):  # PMAT-309 (c)
@@ -252,7 +252,7 @@ def test_a_rerun_keeps_a_hand_edited_expected_and_notes_and_label_recomputes_exp
     mine(tmp_path, gh)
     path = tmp_path / "cases" / "repo" / "R7-bbbbbbb-001.json"
     case = json.loads(path.read_text())
-    hand = {"must_not_reraise": True, "flag_file": "src/a.py", "max_comments": 2}
+    hand = {"action": "raise_nothing", "flag_file": "src/*.py", "min_severity": "medium"}
     case.update(expected=hand, notes="The caller checks the length at src/x.py:40.")
     path.write_text(json.dumps(case, indent=2) + "\n")
 
@@ -265,5 +265,5 @@ def test_a_rerun_keeps_a_hand_edited_expected_and_notes_and_label_recomputes_exp
                      cases_dir=tmp_path / "cases", today=TODAY)
 
     relabelled = json.loads(path.read_text())
-    assert relabelled["expected"] == {"must_flag": True, "flag_file": "src/a.py", "min_severity": "medium"}
+    assert relabelled["expected"] == {"action": "raise_true_bug", "flag_file": "src/a.py", "min_severity": "medium"}
     assert relabelled["notes"] == "The caller checks the length at src/x.py:40."

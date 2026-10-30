@@ -23,7 +23,7 @@
   "label_reason": "Commit d2309a5 in the PR cites finding R36-812f904-002.",
   "category": "mined",
   "expected": {
-    "must_flag": true,
+    "action": "raise_true_bug",
     "flag_file": "agents/orchestrator/src/orchestrator/cli.py",
     "min_severity": "medium"
   },
