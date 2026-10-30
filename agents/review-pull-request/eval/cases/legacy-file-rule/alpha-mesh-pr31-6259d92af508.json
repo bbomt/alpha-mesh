@@ -1,0 +1,25 @@
+{
+  "case_id": "6259d92af508",
+  "repo": "bbomt/alpha-mesh",
+  "pr_number": 31,
+  "base_sha": "061c01fda54c9a0cf763cc34b086d2faabf7f373",
+  "head_sha": "fc598741bff6130017e3176fded4eb3cb08487be",
+  "raised_sha": "1d72b017005a25debb604db7f57cd1d605385298",
+  "fix_sha": null,
+  "source": "pr_comment",
+  "model": "nvidia/nemotron-3.5-super-vl:free",
+  "finding": {
+    "file": "agents/review-pull-request/eval/cases/alpha-mesh-pr20-e3326ed24460.json",
+    "line": 7,
+    "severity": "medium",
+    "summary": "The `raised_sha` value `50ba26d3b307360dbba91115a42af1f1f66ba28dc` is 41 hexadecimal characters long. Git commit SHA-1 hashes are exactly 40 characters. This invalid identifier will cause any lookup or API call using this field to fail when the evaluation harness tries to resolve the commit the comment was raised on.",
+    "fix": "Correct the `raised_sha` to a valid 40-character SHA-1 hash (remove the extra trailing character or replace with the correct commit SHA).",
+    "failure_scenario": null,
+    "id": null
+  },
+  "times_raised": 1,
+  "label": "false_positive",
+  "label_by": "file_rule",
+  "label_date": "2026-10-27",
+  "label_reason": "Raised in review and merged with the file unchanged."
+}

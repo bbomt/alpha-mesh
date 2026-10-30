@@ -1,0 +1,24 @@
+{
+  "case_id": "R36-812f904-002",
+  "repo": "bbomt/alpha-mesh",
+  "pr_number": 36,
+  "base_sha": "0b7f57b7b21329d19ca70ab1809e09518b5b74f2",
+  "head_sha": "d1fe42573e928459e1c1d77e375f0ed2bdffbf5d",
+  "raised_sha": "812f9049b4bcdf5d95b657c9eb758f6770865674",
+  "fix_sha": "d2309a5dbba6823ae5fcb1abf9358cf8410eb1bb",
+  "source": "pr_comment",
+  "model": "nvidia/nemotron-3.5-super-vl:free",
+  "finding": {
+    "file": "agents/orchestrator/src/orchestrator/cli.py",
+    "line": 140,
+    "severity": "medium",
+    "summary": "The initial start_queued() call before the while True loop is not wrapped in try/except. If it fails, the orchestrator crashes before entering the main event loop, leaving no workers watched. Subsequent calls inside the loop are wrapped, but the first is not.",
+    "fix": "Wrap the initial start_queued() call in a try/except block consistent with the one inside the while loop, logging the failure and continuing so existing workers are still monitored.",
+    "failure_scenario": null,
+    "id": "R36-812f904-002"
+  },
+  "label": "real_issue",
+  "label_by": "rule",
+  "label_date": "2026-10-28",
+  "label_reason": "Commit d2309a5 in the PR cites finding R36-812f904-002."
+}

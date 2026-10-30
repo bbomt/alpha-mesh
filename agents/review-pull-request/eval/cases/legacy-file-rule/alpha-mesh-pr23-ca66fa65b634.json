@@ -1,0 +1,25 @@
+{
+  "case_id": "ca66fa65b634",
+  "repo": "bbomt/alpha-mesh",
+  "pr_number": 23,
+  "base_sha": "8b1a558cb7b4da12f02bc47e3a9fc70f1f6efae8",
+  "head_sha": "b8e32a343e643368ee5cb11eb51f75cfcd7f260a",
+  "raised_sha": "b0e94696a8196b20dcea6bed184c8481e22407d4",
+  "fix_sha": null,
+  "source": "pr_comment",
+  "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
+  "finding": {
+    "file": "bin/orchestrate",
+    "line": 8,
+    "severity": "medium",
+    "summary": "`readlink -f` is not available on macOS by default (requires GNU coreutils). This will cause the script to fail on macOS systems without coreutils installed.",
+    "fix": "Use a portable method to resolve the real path, such as a fallback using `realpath` or a pure bash implementation. For example: `SCRIPT_REALPATH=\"$(cd \"$(dirname \"${BASH_SOURCE[0]}\")\" && pwd -P)/$(basename \"${BASH_SOURCE[0]}\")\"` or check for `realpath`/`readlink -f` availability.",
+    "failure_scenario": null,
+    "id": null
+  },
+  "times_raised": 1,
+  "label": "false_positive",
+  "label_by": "file_rule",
+  "label_date": "2026-10-27",
+  "label_reason": "Raised in review and merged with the file unchanged."
+}

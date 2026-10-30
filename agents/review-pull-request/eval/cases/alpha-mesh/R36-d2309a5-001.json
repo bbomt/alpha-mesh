@@ -1,0 +1,24 @@
+{
+  "case_id": "R36-d2309a5-001",
+  "repo": "bbomt/alpha-mesh",
+  "pr_number": 36,
+  "base_sha": "0b7f57b7b21329d19ca70ab1809e09518b5b74f2",
+  "head_sha": "d1fe42573e928459e1c1d77e375f0ed2bdffbf5d",
+  "raised_sha": "d2309a5dbba6823ae5fcb1abf9358cf8410eb1bb",
+  "fix_sha": "c3e9e579aecfef2a75018f1f707c64ce62ee86e8",
+  "source": "pr_comment",
+  "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
+  "finding": {
+    "file": "agents/orchestrator/src/orchestrator/cli.py",
+    "line": 151,
+    "severity": "high",
+    "summary": "When loop.start() fails (e.g., tmux refuses the tab), the ticket has already been removed from the queue (saved at line 150) and marked as active in status (via status.update in loop.start), but no tmux window was created. The function returns early, leaving the ticket in a zombie state: active in status but not actually running, and not in the queue to be retried. The ticket is effectively lost.",
+    "fix": "Move status.save_queue(queue) to after the successful loop.start() call. Since loop.start() marks the ticket as active (with launch_dir) before creating the tmux window, a crash after start but before queue save would leave the ticket active but still in the queue. On restart, add a reconciliation step in start_queued() to skip tickets that are already active (check status.active() before starting). This prevents both double-start and ticket loss.",
+    "failure_scenario": null,
+    "id": "R36-d2309a5-001"
+  },
+  "label": "real_issue",
+  "label_by": "rule",
+  "label_date": "2026-10-28",
+  "label_reason": "Commit c3e9e57 in the PR cites finding R36-d2309a5-001."
+}

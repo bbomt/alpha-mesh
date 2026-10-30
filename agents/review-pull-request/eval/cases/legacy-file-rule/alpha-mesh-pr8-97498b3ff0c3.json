@@ -1,0 +1,25 @@
+{
+  "case_id": "97498b3ff0c3",
+  "repo": "bbomt/alpha-mesh",
+  "pr_number": 8,
+  "base_sha": "f1258825136568722de30a491201abac76c8c220",
+  "head_sha": "2567885bf1932d3dad9041c345d709e857309ec6",
+  "raised_sha": "2567885bf1932d3dad9041c345d709e857309ec6",
+  "fix_sha": null,
+  "source": "pr_comment",
+  "model": null,
+  "finding": {
+    "file": "agents/review-pull-request/src/review_pull_request/stage2.py",
+    "line": 181,
+    "severity": "medium",
+    "summary": "The tool-call loop only handles tc.name == \"read_file\"; any other tool name the model emits (hallucinated calls happen with tool_choice auto) produces no tool-role message for that tool_call_id. The next chat() request then contains an assistant message with tool_calls that is not followed by a matching tool result, which OpenAI-compatible APIs reject with a non-retryable 400. That LLMError aborts the entire PR review (nothing posted), and tool_calls_made is not incremented for unknown names so the run cannot even reach the read-limit fallback.",
+    "fix": "Add an else branch inside the tool-call loop that appends a tool message for unrecognized calls, e.g. {\"role\": \"tool\", \"tool_call_id\": tc.id, \"content\": \"Error: unknown tool '<name>'. Only read_file is available.\"}, and increment tool_calls_made so the read-limit machinery still applies.",
+    "failure_scenario": null,
+    "id": null
+  },
+  "times_raised": 1,
+  "label": "false_positive",
+  "label_by": "file_rule",
+  "label_date": "2026-10-27",
+  "label_reason": "Raised in review and merged with the file unchanged."
+}

@@ -1,0 +1,25 @@
+{
+  "case_id": "fad6e3371bb2",
+  "repo": "bbomt/alpha-mesh",
+  "pr_number": 10,
+  "base_sha": "ca01c0891f0c1b602e628cdd45e11b229ae8c027",
+  "head_sha": "bcfb51a72ef7d829871dd842cc2440bea0140fa7",
+  "raised_sha": "bcfb51a72ef7d829871dd842cc2440bea0140fa7",
+  "fix_sha": null,
+  "source": "pr_comment",
+  "model": "z-ai/glm-5.3-flash",
+  "finding": {
+    "file": "test/test-model",
+    "line": 22,
+    "severity": "medium",
+    "summary": "Moving `FAKE_HOME=\"$(mktemp -d)\"` below the checksum baseline creates a reachable state where the EXIT-trap guard runs before FAKE_HOME is assigned. If the real settings/backup exists but is unreadable (or mktemp itself fails), `set -e` aborts at `settings_before=$(checksum ...)` and the trap fires with FAKE_HOME unset; guard() then executes `rm -rf \"$FAKE_HOME\"`, which under `set -u` is a fatal 'FAKE_HOME: unbound variable' error. The guard aborts at that line, so its checksum verification never runs, the intended clean 'stop before anything needs cleaning up' behavior instead dies with a misleading expansion error, and the final exit status comes from the expansion failure rather than `exit \"$status\"`. (In the old ordering FAKE_HOME was always set before any abort, so this path is newly introduced by this change.) No data-loss risk on this path since nothing has been mutated yet, but the safety net this PR is about crashes on one of its own designed early-exit paths.",
+    "fix": "Harden guard() against the pre-mktemp abort: either initialize `FAKE_HOME=\"\"` before the baseline checksums and guard the cleanup (`[[ -n \"$FAKE_HOME\" ]] && rm -rf \"$FAKE_HOME\"`), or change the rm line to `rm -rf \"${FAKE_HOME:-}\"` (GNU rm -f treats the empty operand as a silent no-op). Optionally print an explicit 'baseline checksum of real settings failed' diagnostic before relying on the trap, so the early abort reports the real cause instead of an unbound-variable error.",
+    "failure_scenario": null,
+    "id": null
+  },
+  "times_raised": 1,
+  "label": "false_positive",
+  "label_by": "file_rule",
+  "label_date": "2026-10-27",
+  "label_reason": "Raised in review and merged with the file unchanged."
+}

@@ -1,0 +1,24 @@
+{
+  "case_id": "R36-d2309a5-002",
+  "repo": "bbomt/alpha-mesh",
+  "pr_number": 36,
+  "base_sha": "0b7f57b7b21329d19ca70ab1809e09518b5b74f2",
+  "head_sha": "d1fe42573e928459e1c1d77e375f0ed2bdffbf5d",
+  "raised_sha": "d2309a5dbba6823ae5fcb1abf9358cf8410eb1bb",
+  "fix_sha": null,
+  "source": "pr_comment",
+  "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
+  "finding": {
+    "file": "agents/orchestrator/src/orchestrator/cli.py",
+    "line": 155,
+    "severity": "medium",
+    "summary": "The early return on exception stops processing the rest of the queue for this iteration. If multiple tickets are queued and the first fails to start, subsequent tickets that could start successfully are not attempted until the next loop iteration. This reduces throughput under partial failure conditions.",
+    "fix": "Instead of returning, log the error and continue to the next ticket in the queue. Wrap the individual ticket start in a try/except inside the while loop, not the whole function.",
+    "failure_scenario": null,
+    "id": "R36-d2309a5-002"
+  },
+  "label": "false_positive",
+  "label_by": "rule",
+  "label_date": "2026-10-28",
+  "label_reason": "the failed ticket goes back to the front of the queue, so continuing in the same pass would retry it at once in a loop while tmux refuses; stopping until the next check is intended."
+}
