@@ -448,11 +448,13 @@ and the report names both models. Output goes to `~/environment/logs/ai/claude/s
 scripts/smoke-resume.sh https://github.com/org/repo/pull/123 z-ai/glm-5.3-flash nvidia/nemotron-3.5-lightning:free
 ```
 
-## Eval cases
+## Eval cases and evals
 
 `eval/` mines eval cases from merged PRs, with no model calls: a high or medium finding whose ID a PR
 commit cites is a real issue, and one a PR comment dismisses by ID is a false positive (PMAT-307). It does not change
 the review code; see [eval/README.md](eval/README.md).
+`eval/scripts/run_eval.sh` runs the agent on every case's commit with Promptfoo (PMAT-304), through the same
+review core, and `eval/baseline.json` records the result; see [eval/README.md](eval/README.md#running-the-evals).
 Its tests (`eval/tests/`) run with the suite above.
 
 ## Checkpoint infrastructure (AWS CDK)
