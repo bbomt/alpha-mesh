@@ -40,7 +40,8 @@ def contradictions(cases: list[dict]) -> list[tuple[str, str]]:
             continue
         pattern = glob_regex(clean["expected"]["flag_file"])
         for other in cases:
-            if (other is not clean and (other["repo"], other.get("raised_sha")) == (clean["repo"], clean.get("raised_sha"))
+            if (other["expected"]["action"] != "raise_nothing"  # two clean cases agree
+                    and (other["repo"], other.get("raised_sha")) == (clean["repo"], clean.get("raised_sha"))
                     and pattern.match(other["expected"]["flag_file"])):
                 found.append((clean["case_id"], other["case_id"]))
     return found
@@ -118,5 +119,6 @@ def test_a_clean_glob_over_another_cases_file_at_the_same_commit_is_a_contradict
     bug = case("raise_true_bug", "src/sub/a.py", min_severity="medium")
     elsewhere = case("skip_false_bug", "lib/b.py")
     other_commit = case("raise_true_bug", "src/a.py", min_severity="high") | {"raised_sha": "b" * 40}
+    also_clean = case("raise_nothing", "src/c.py")  # two clean cases agree
 
-    assert contradictions([clean, bug, elsewhere, other_commit]) == [(clean["case_id"], bug["case_id"])]
+    assert contradictions([clean, bug, elsewhere, other_commit, also_clean]) == [(clean["case_id"], bug["case_id"])]
