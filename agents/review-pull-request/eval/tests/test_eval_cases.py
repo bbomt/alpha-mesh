@@ -114,7 +114,7 @@ def test_each_finding_id_is_labelled_by_what_happened_to_it(tmp_path):  # PMAT-3
         "label_by": "rule", "label_reason": "the caller never passes None (src/x.py:40)."}
     assert summary["cases_written"] == 2
     assert summary["findings"] == {"cited": 1, "dismissed": 1, "duplicate": 1, "unresolved": 1, "conflict": 1,
-                                   "no_id": 0}
+                                   "no_id": 0, "no_line": 0}
     assert legacy.read_bytes() == legacy_before
     write_flags = {"-X", "--method", "-f", "-F", "--field", "--raw-field", "--input"}
     for args in gh.calls:
@@ -134,7 +134,21 @@ def test_a_finding_without_an_id_and_another_prs_dismissal_give_no_case(tmp_path
 
     assert repo_cases(tmp_path) == {}
     assert summary["findings"] == {"cited": 0, "dismissed": 0, "duplicate": 0, "unresolved": 1, "conflict": 0,
-                                   "no_id": 1}
+                                   "no_id": 1, "no_line": 0}
+
+
+def test_a_finding_without_a_line_gives_no_case(tmp_path):
+    """A case is matched by its line at raised_sha (PMAT-304), so a finding without one cannot be a case."""
+    no_line = Issue("src/a.py", None, "medium", "Index can go out of range.", None)
+    gh = FakeGh([pr(7, BASE1, HEAD1)],
+                comments={7: [report(HEAD1, [no_line], pr_number=7),
+                              "Dismissed review finding R7-bbbbbbb-001: not a bug."]})
+
+    summary = mine(tmp_path, gh)
+
+    assert repo_cases(tmp_path) == {}
+    assert summary["findings"] == {"cited": 0, "dismissed": 0, "duplicate": 0, "unresolved": 0, "conflict": 0,
+                                   "no_id": 0, "no_line": 1}
 
 
 def test_a_later_dismissal_of_the_same_id_corrects_the_earlier_one(tmp_path):

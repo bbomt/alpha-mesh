@@ -11,7 +11,7 @@ High and medium review findings from merged PRs, each labelled by what happened 
   line wins, so a wrong dismissal is corrected by posting a new line.
 
 Everything else is not a case: duplicates (a dismissal reason starting `duplicate of <ID>`), conflicts
-(both cited and dismissed), unresolved findings (neither), findings without an ID, and low findings.
+(both cited and dismissed), unresolved findings (neither), findings without an ID or a line, and low findings.
 Running the agent against the dataset (scoring) is PMAT-304.
 
 ## How to run it
@@ -26,7 +26,7 @@ python3 $S mine --repo bbomt/alpha-mesh --prs 36,37           # only some PRs
 python3 $S label R31-e0c98f3-004 real_issue --reason "The caller never checks the length (src/x.py:40)."
 ```
 
-`mine` prints a summary: `cited`, `dismissed`, `duplicate`, `conflict`, `unresolved`, `no_id`.
+`mine` prints a summary: `cited`, `dismissed`, `duplicate`, `conflict`, `unresolved`, `no_id`, `no_line`.
 
 ## When to run it
 

@@ -185,5 +185,43 @@
     "notes": {
       "type": "string"
     }
-  }
+  },
+  "allOf": [
+    {
+      "$comment": "a true or false bug is matched by its line at raised_sha (within a window), so it must have one",
+      "if": {
+        "properties": {
+          "expected": {
+            "properties": {
+              "action": {
+                "enum": [
+                  "raise_true_bug",
+                  "skip_false_bug"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "finding"
+        ],
+        "properties": {
+          "finding": {
+            "type": "object",
+            "required": [
+              "line"
+            ],
+            "properties": {
+              "line": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
 }

@@ -48,9 +48,12 @@ def contradictions(cases: list[dict]) -> list[tuple[str, str]]:
 
 
 def case(action, flag_file, **expected):
-    return {"case_id": f"{action}-{flag_file}", "repo": "org/repo", "pr_number": 1, "raised_sha": "a" * 40,
-            "label": "real_issue", "category": "logic", "notes": "",
-            "expected": {"action": action, "flag_file": flag_file, **expected}}
+    c = {"case_id": f"{action}-{flag_file}", "repo": "org/repo", "pr_number": 1, "raised_sha": "a" * 40,
+         "label": "real_issue", "category": "logic", "notes": "",
+         "expected": {"action": action, "flag_file": flag_file, **expected}}
+    if action != "raise_nothing":
+        c["finding"] = {"file": flag_file, "line": 10}
+    return c
 
 
 def test_the_dataset_is_not_empty():
@@ -80,9 +83,14 @@ def test_no_two_cases_in_the_dataset_contradict():
     lambda c: c.update(expected={"action": "skip_false_bug", "flag_file": "src/**/a.py"}),
     lambda c: c.update(expected={"action": "skip_false_bug", "flag_file": "src/a.py", "min_severity": "high"}),
     lambda c: c.update(expected={"action": "raise_nothing", "flag_file": "src/*.py", "must_mention_any": ["x"]}),
+    lambda c: c.pop("finding"),
+    lambda c: c["finding"].update(line=None),
+    lambda c: c["finding"].update(line=0),
+    lambda c: c.update(expected={"action": "skip_false_bug", "flag_file": "src/a.py"}, finding={"file": "src/a.py"}),
 ], ids=["no expected", "no category", "no notes", "no action", "no flag_file", "unknown action", "unknown key",
         "bad severity", "true bug without min_severity", "glob on a true bug", "glob on a false bug",
-        "min_severity on a false bug", "must_mention_any on raise_nothing"])
+        "min_severity on a false bug", "must_mention_any on raise_nothing",
+        "true bug without a finding", "true bug with no line", "true bug at line 0", "false bug with no line"])
 def test_the_schema_rejects_a_broken_case(broken):
     bad = case("raise_true_bug", "src/a.py", min_severity="medium")
     broken(bad)
