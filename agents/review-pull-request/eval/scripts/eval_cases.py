@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Eval cases for review-pull-request (PMAT-300, PMAT-301, PMAT-307).
+"""Eval cases for review-pull-request (PMAT-300, PMAT-301, PMAT-307, PMAT-309).
 
 A standalone tool next to the review agent: it never imports or changes the review code, and
 never writes to GitHub (gh is only used to read PRs, their comments and their commits).
@@ -12,6 +12,9 @@ never writes to GitHub (gh is only used to read PRs, their comments and their co
             no case: the original is the case);
           - no case if both happened (conflict), neither happened (unresolved) or it has no ID.
   label   Override a case's label (false_positive / real_issue) with a reason.
+
+Each case also gets an `expected` block derived from its label (PMAT-309): the properties a good
+review has, for the harness to check. A hand-edited `expected` or `notes` survives a rerun.
 
 Cases: eval/cases/<repo name>/<ID>.json (committed); eval/cases/legacy-file-rule/ holds the frozen
 cases of PMAT-300's file rule, which mine never reads or writes.
@@ -151,6 +154,14 @@ def repo_dir(cases_dir: Path, repo: str) -> Path:
     return Path(cases_dir) / repo.split("/")[-1]
 
 
+def derive_expected(label: str, finding: dict) -> dict:
+    """What a good review of the case's code does, from its label. A false positive only forbids
+    raising it again; whether a new finding in the same file is "the same" is the judge's call."""
+    if label == "real_issue":
+        return {"must_flag": True, "flag_file": finding["file"], "min_severity": finding["severity"]}
+    return {"must_not_reraise": True, "flag_file": finding["file"]}
+
+
 def write_case(path: Path, case: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(case, indent=2, ensure_ascii=False) + "\n")
@@ -227,6 +238,12 @@ def mine(repo: str, limit: int, *, prs: list[int] | None = None, gh=run_gh, case
             case.update({k: existing[k] for k in ("label", "label_by", "label_date", "label_reason")})
         elif existing and (existing["label"], existing["label_reason"]) == (case["label"], case["label_reason"]):
             case["label_date"] = existing["label_date"]  # the label did not change: no date churn
+        case["category"] = "mined"
+        case["expected"] = derive_expected(case["label"], case["finding"])
+        if existing and "expected" in existing and existing["expected"] != derive_expected(existing["label"],
+                                                                                            existing["finding"]):
+            case["expected"] = existing["expected"]  # differs from what the rule gives: edited by hand
+        case["notes"] = existing.get("notes", "") if existing else ""
         if case != existing:
             write_case(path, case)
     return {"repo": repo, "run_date": today.isoformat(), "prs_mined": mined, "cases_written": len(found),
@@ -243,7 +260,8 @@ def label(case_id: str, value: str, reason: str, *, cases_dir: Path = CASES_DIR,
     if len(matches) > 1:
         raise ValueError(f"case {case_id} is in several folders: {', '.join(str(p) for p, _ in matches)}")
     [(path, case)] = matches
-    case.update(label=value, label_by=by, label_date=(today or date.today()).isoformat(), label_reason=reason)
+    case.update(label=value, label_by=by, label_date=(today or date.today()).isoformat(), label_reason=reason,
+                expected=derive_expected(value, case["finding"]))  # a new label makes a hand edit stale
     write_case(path, case)
     return case
 

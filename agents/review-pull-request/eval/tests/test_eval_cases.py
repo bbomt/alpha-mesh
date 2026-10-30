@@ -1,4 +1,4 @@
-"""Acceptance tests for the eval case miner (PMAT-300, PMAT-301, PMAT-307, PMAT-313).
+"""Acceptance tests for the eval case miner (PMAT-300, PMAT-301, PMAT-307, PMAT-313, PMAT-309).
 
 The canned reports are made by the review's own render_report, so the parser is tested
 against the exact text `mesh review-pull-request` prints and posts. gh and mesh are fakes
@@ -69,7 +69,8 @@ def repo_cases(tmp_path):
 FIX1 = "1" * 40
 MEDIUM = Issue("src/a.py", 12, "medium", "Index can go out of range.", "Check the length first.")
 LOW = Issue("src/b.py", 3, "low", "The name is unclear.", None)
-LEGACY = {"case_id": "fad6e3371bb2", "repo": REPO, "pr_number": 1, "label": "false_positive",
+LEGACY = {"case_id": "fad6e3371bb2", "repo": REPO, "pr_number": 1,
+          "finding": {"file": "src/a.py", "line": 12, "severity": "medium", "id": None}, "label": "false_positive",
           "label_by": "file_rule", "label_date": "2026-10-27", "label_reason": "Raised in review and merged with the file unchanged."}
 
 
@@ -225,3 +226,44 @@ def test_a_rerun_leaves_unchanged_cases_untouched_and_redates_only_a_changed_lab
     assert (folder / "R7-eeeeeee-001.json").read_bytes() == before["R7-eeeeeee-001.json"]
     changed = files["R7-eeeeeee-002.json"]
     assert (changed["label_reason"], changed["label_date"]) == ("checked at src/x.py:40.", later.isoformat())
+
+
+def test_mined_cases_get_category_notes_and_an_expected_block_derived_from_the_label(tmp_path):  # PMAT-309 (a)
+    cited = Issue("src/a.py", 12, "high", "Index can go out of range.", "Check the length first.")
+    dismissed = Issue("src/b.py", 20, "medium", "The caller may pass None.", None)
+    gh = FakeGh([pr(7, BASE1, HEAD1)],
+                comments={7: [report(OLD1, [cited, dismissed], pr_number=7),
+                              "Dismissed review finding R7-eeeeeee-002: the caller never passes None."]},
+                commits={7: [commit(FIX1, "fix[PMAT-1]: fixed review finding R7-eeeeeee-001")]})
+
+    mine(tmp_path, gh)
+
+    files = repo_cases(tmp_path)
+    real, false = files["R7-eeeeeee-001.json"], files["R7-eeeeeee-002.json"]
+    assert (real["category"], real["notes"]) == (false["category"], false["notes"]) == ("mined", "")
+    assert real["expected"] == {"must_flag": True, "flag_file": "src/a.py", "min_severity": "high"}
+    assert false["expected"] == {"must_not_reraise": True, "flag_file": "src/b.py"}
+
+
+def test_a_rerun_keeps_a_hand_edited_expected_and_notes_and_label_recomputes_expected(tmp_path):  # PMAT-309 (c)
+    gh = FakeGh([pr(7, BASE1, HEAD1)],
+                comments={7: [report(HEAD1, [MEDIUM], pr_number=7),
+                              "Dismissed review finding R7-bbbbbbb-001: checked by the caller."]})
+    mine(tmp_path, gh)
+    path = tmp_path / "cases" / "repo" / "R7-bbbbbbb-001.json"
+    case = json.loads(path.read_text())
+    hand = {"must_not_reraise": True, "flag_file": "src/a.py", "max_comments": 2}
+    case.update(expected=hand, notes="The caller checks the length at src/x.py:40.")
+    path.write_text(json.dumps(case, indent=2) + "\n")
+
+    mine(tmp_path, gh)
+
+    kept = json.loads(path.read_text())
+    assert (kept["expected"], kept["notes"]) == (hand, "The caller checks the length at src/x.py:40.")
+
+    eval_cases.label("R7-bbbbbbb-001", "real_issue", "The caller never checks the length.",
+                     cases_dir=tmp_path / "cases", today=TODAY)
+
+    relabelled = json.loads(path.read_text())
+    assert relabelled["expected"] == {"must_flag": True, "flag_file": "src/a.py", "min_severity": "medium"}
+    assert relabelled["notes"] == "The caller checks the length at src/x.py:40."

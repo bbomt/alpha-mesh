@@ -42,6 +42,10 @@ The same PRs give the same cases. Labels set by the rules are recomputed. Labels
 kept. Nothing is ever deleted. A case that has not changed is not rewritten. A case's `label_date` changes only
 when its label or reason changes.
 
+`expected` is recomputed from the label, unless it differs from what the rules give for the case's
+current label: then it was edited by hand and is kept. `notes` is always kept. `label` recomputes
+`expected` from the new label (a hand edit made for the old label is stale) and keeps `notes`.
+
 ## The legacy cases
 
 The 49 cases in `cases/legacy-file-rule/` came from the old file rule (PMAT-300): a finding whose file
@@ -55,7 +59,35 @@ ID). `label` can still relabel them. They are deleted by hand once enough ID-bas
 | `cases/<repo>/<ID>.json` | one case per finding ID (an ID is unique only within its repo) |
 | `cases/legacy-file-rule/` | the frozen legacy cases |
 | `scripts/eval_cases.py` | the tool (stdlib only) |
+| `schema/case.schema.json` | the JSON Schema every case file must match |
 | `tests/` | acceptance tests with a fake `gh` |
 
 A case applies to `raised_sha`, the commit the review saw. `head_sha` is the PR's final commit, kept
 for reference.
+
+## What a case expects
+
+Besides the finding and its label, every case has:
+
+- `category`: `mined` for mined cases. Hand-written cases (later) use `logic`, `security`, `style_only`,
+  `refactor`, `concurrency`, `improvable` or `degenerate`.
+- `notes`: free text for people, saying why the case exists. The harness never reads it; the judge may.
+- `expected`: properties a good review of `raised_sha` has, never expected text. `mine` derives it from
+  the label:
+
+| Label | `expected` |
+| :-- | :-- |
+| `real_issue` | `{"must_flag": true, "flag_file": <file>, "min_severity": <severity>}` |
+| `false_positive` | `{"must_not_reraise": true, "flag_file": <file>}` |
+
+| Key | Means |
+| :-- | :-- |
+| `must_flag` | `true`: the review must raise a finding in `flag_file`. `false` (hand-written traps): it must raise none there. |
+| `must_not_reraise` | the review must not raise this finding again; it may raise others. The check only looks at `flag_file`, so it is a weak signal: the judge decides whether a finding there is the same one. |
+| `flag_file` | the file the finding is in |
+| `min_severity` | the lowest severity (`high`, `medium`, `low`) that counts as flagging it |
+| `must_mention_any` | optional, added by hand: the finding must mention at least one of these strings |
+| `max_comments` | optional, hand-written cases: the most findings the review may raise |
+
+`uv run pytest eval/tests` checks every case file against `schema/case.schema.json`, so a case without
+`expected` (or with an unknown key in it) fails the tests.

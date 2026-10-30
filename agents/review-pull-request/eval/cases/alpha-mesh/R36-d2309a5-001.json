@@ -20,5 +20,12 @@
   "label": "real_issue",
   "label_by": "rule",
   "label_date": "2026-10-28",
-  "label_reason": "Commit c3e9e57 in the PR cites finding R36-d2309a5-001."
+  "label_reason": "Commit c3e9e57 in the PR cites finding R36-d2309a5-001.",
+  "category": "mined",
+  "expected": {
+    "must_flag": true,
+    "flag_file": "agents/orchestrator/src/orchestrator/cli.py",
+    "min_severity": "high"
+  },
+  "notes": ""
 }
