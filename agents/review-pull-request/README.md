@@ -450,8 +450,8 @@ scripts/smoke-resume.sh https://github.com/org/repo/pull/123 z-ai/glm-5.3-flash 
 
 ## Eval cases
 
-`eval/` mines false-positive eval cases from the review comments on merged PRs, with no model calls: a
-high or medium finding on a file that did not change before the merge (PMAT-300). It does not change
+`eval/` mines eval cases from merged PRs, with no model calls: a high or medium finding whose ID a PR
+commit cites is a real issue, and one a PR comment dismisses by ID is a false positive (PMAT-307). It does not change
 the review code; see [eval/README.md](eval/README.md).
 Its tests (`eval/tests/`) run with the suite above.
 

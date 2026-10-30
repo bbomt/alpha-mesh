@@ -1,0 +1,25 @@
+{
+  "case_id": "bba4677b9a51",
+  "repo": "bbomt/alpha-mesh",
+  "pr_number": 8,
+  "base_sha": "f1258825136568722de30a491201abac76c8c220",
+  "head_sha": "2567885bf1932d3dad9041c345d709e857309ec6",
+  "raised_sha": "2567885bf1932d3dad9041c345d709e857309ec6",
+  "fix_sha": null,
+  "source": "pr_comment",
+  "model": null,
+  "finding": {
+    "file": ".pr-review-ignore",
+    "line": 5,
+    "severity": "medium",
+    "summary": "The token-bearing exclusions use a single trailing '*' ('**/.claude/*', '**/.mesh/*'). In gitignore-style globbing, '*' does not cross '/' boundaries, so these patterns match only direct children of the directory. Nested files such as '.claude/settings/local.json' or '.mesh/cache/credentials.json' are excluded only if PathPolicy additionally implements gitignore's implicit rule that excluding a directory excludes everything beneath it. For a per-path matcher that tests each file independently, nested secrets would silently pass through to the LLM, violating the file's own 'never send these to the LLM' guarantee. The same nesting concern applies to line 6.",
+    "fix": "Use a double-glob for directory-style exclusions so safety does not depend on directory-propagation semantics: '**/.claude/**' and '**/.mesh/**' (or the directory forms '**/.claude/' and '**/.mesh/'). Add a canary test with a nested path (e.g. '.claude/settings/local.json') to pin that nested files under excluded directories never reach the model.",
+    "failure_scenario": null,
+    "id": null
+  },
+  "times_raised": 1,
+  "label": "false_positive",
+  "label_by": "file_rule",
+  "label_date": "2026-10-27",
+  "label_reason": "Raised in review and merged with the file unchanged."
+}

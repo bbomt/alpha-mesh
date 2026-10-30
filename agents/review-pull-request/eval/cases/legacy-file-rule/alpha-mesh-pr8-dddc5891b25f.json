@@ -1,0 +1,25 @@
+{
+  "case_id": "dddc5891b25f",
+  "repo": "bbomt/alpha-mesh",
+  "pr_number": 8,
+  "base_sha": "f1258825136568722de30a491201abac76c8c220",
+  "head_sha": "2567885bf1932d3dad9041c345d709e857309ec6",
+  "raised_sha": "2567885bf1932d3dad9041c345d709e857309ec6",
+  "fix_sha": null,
+  "source": "pr_comment",
+  "model": null,
+  "finding": {
+    "file": "agents/review-pull-request/src/review_pull_request/github.py",
+    "line": 33,
+    "severity": "medium",
+    "summary": "Truncation cuts the report from the end, but render_report places the '## ⚠️ Not fully reviewed' and '## Excluded from review' disclosures at the tail, while the REVIEW_SIGNATURE and 'Reviewed commit: <sha>' header sit at the top. On a large report (>65,000 chars, plausible on big PRs with many findings), truncation silently deletes exactly the incomplete/excluded disclosures this PR promises to always surface, while the surviving header still carries the signature and head SHA — so the truncated comment becomes the --since-last-review baseline and implies full coverage of files that were never reviewed or were excluded.",
+    "fix": "Make the disclosure block truncation-proof: either render the signature, reviewed-SHA, and incomplete/excluded sections into a fixed trailer that is appended after truncation (truncating only the overview/issues middle), or cap the number of rendered issues in render_report so the assembled report can never exceed MAX_COMMENT_CHARS, or at minimum append a '… disclosures omitted by truncation' marker whenever truncation occurs so readers know coverage claims are incomplete.",
+    "failure_scenario": null,
+    "id": null
+  },
+  "times_raised": 1,
+  "label": "false_positive",
+  "label_by": "file_rule",
+  "label_date": "2026-10-27",
+  "label_reason": "Raised in review and merged with the file unchanged."
+}

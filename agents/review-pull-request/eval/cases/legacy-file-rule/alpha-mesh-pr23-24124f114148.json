@@ -1,0 +1,25 @@
+{
+  "case_id": "24124f114148",
+  "repo": "bbomt/alpha-mesh",
+  "pr_number": 23,
+  "base_sha": "8b1a558cb7b4da12f02bc47e3a9fc70f1f6efae8",
+  "head_sha": "b8e32a343e643368ee5cb11eb51f75cfcd7f260a",
+  "raised_sha": "d032b8dba52e62c3dbb490edbac0e9c634fb7b8e",
+  "fix_sha": null,
+  "source": "pr_comment",
+  "model": "nvidia/nemotron-3.5-super-vl:free",
+  "finding": {
+    "file": "agents/orchestrator/tests/claude-stub",
+    "line": 15,
+    "severity": "medium",
+    "summary": "When `--session-id` or `--resume` is the final argument with no following value, `args[$((i + 1))]` accesses an out-of-bounds index and silently sets `session` to an empty string, losing the session ID without erroring.",
+    "fix": "Add a bounds check before accessing the next argument, e.g. `if (( i + 1 < ${#args[@]} )); then session=\"${args[$((i + 1))]}\"; else echo \"missing value for ${args[$i]}\" >&2; exit 1; fi` for both `--session-id` and `--resume`.",
+    "failure_scenario": null,
+    "id": null
+  },
+  "times_raised": 1,
+  "label": "false_positive",
+  "label_by": "file_rule",
+  "label_date": "2026-10-27",
+  "label_reason": "Raised in review and merged with the file unchanged."
+}

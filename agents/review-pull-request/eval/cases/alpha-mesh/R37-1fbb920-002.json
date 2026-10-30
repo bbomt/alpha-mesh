@@ -1,0 +1,24 @@
+{
+  "case_id": "R37-1fbb920-002",
+  "repo": "bbomt/alpha-mesh",
+  "pr_number": 37,
+  "base_sha": "56d1b3de907557b6a9b1dae57ad6acd2e8c95fbc",
+  "head_sha": "1fbb9209c7a351c34c9be5ba7264649771c6f852",
+  "raised_sha": "1fbb9209c7a351c34c9be5ba7264649771c6f852",
+  "fix_sha": null,
+  "source": "pr_comment",
+  "model": "nvidia/nemotron-3.5-super-vl:free",
+  "finding": {
+    "file": "agents/review-pull-request/src/review_pull_request/config.py",
+    "line": 25,
+    "severity": "medium",
+    "summary": "ENV_FILE uses Path(__file__).resolve().parents[4] to locate .env, which is brittle and depends on the exact file nesting depth. If config.py is moved or the package is installed outside the source tree (e.g., via pip into site-packages), parents[4] resolves to the wrong directory and .env will not be found. The same pattern is used for IGNORE_FILE on line 23.",
+    "fix": "Replace the hardcoded parents[4] with a more robust project-root discovery, such as searching upward for a marker file (pyproject.toml, .git, or review_config.toml) or allowing an environment variable override for the config root.",
+    "failure_scenario": null,
+    "id": "R37-1fbb920-002"
+  },
+  "label": "false_positive",
+  "label_by": "rule",
+  "label_date": "2026-10-28",
+  "label_reason": "`Path(__file__).resolve().parents[4]` is the explicit computation PMAT-231 specifies, the same as `IGNORE_FILE` on the line above; the agent only runs from the source tree via `uv`, and `test_env_file_default_is_alpha_mesh_root` fails if the depth changes."
+}

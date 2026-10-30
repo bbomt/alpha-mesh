@@ -1,0 +1,24 @@
+{
+  "case_id": "R36-c3e9e57-001",
+  "repo": "bbomt/alpha-mesh",
+  "pr_number": 36,
+  "base_sha": "0b7f57b7b21329d19ca70ab1809e09518b5b74f2",
+  "head_sha": "d1fe42573e928459e1c1d77e375f0ed2bdffbf5d",
+  "raised_sha": "c3e9e579aecfef2a75018f1f707c64ce62ee86e8",
+  "fix_sha": null,
+  "source": "pr_comment",
+  "model": "nvidia/nemotron-3.5-super-vl:free",
+  "finding": {
+    "file": "agents/orchestrator/src/orchestrator/cli.py",
+    "line": 159,
+    "severity": "high",
+    "summary": "start_queued returns after the first exception from loop.start, so a ticket that consistently fails to start (e.g. bad folder, tmux unavailable) blocks all subsequent queued tickets indefinitely — the queue starves.",
+    "fix": "Instead of returning, continue to the next queued ticket, or implement a retry limit/backoff so one failing ticket cannot starve the queue. Consider skipping the failed ticket and trying the next one, then retrying failed tickets on subsequent ticks.",
+    "failure_scenario": null,
+    "id": "R36-c3e9e57-001"
+  },
+  "label": "false_positive",
+  "label_by": "rule",
+  "label_date": "2026-10-28",
+  "label_reason": "a refused tab is almost always tmux itself, which fails every ticket alike; the one per-ticket cause (its repo folder deleted while queued) is shown in red every check, and skipping it would break the owner's command-line order."
+}
