@@ -91,7 +91,26 @@ def test_compare_reports_new_failures_new_passes_and_label_changes(tmp_path):
     assert "src/a.py:40" in report["label_changes"][0]["reason"]
 
 
-# (d) ────────────────────────────────────────────────────────────────────────────────────────────
+def test_moving_a_case_line_is_a_label_change(tmp_path):
+    """Matching is by location, so a corrected finding.line changes what the case expects."""
+    root = tmp_path / "repo"
+    root.mkdir()
+    git(root, "init", "-q")
+    git(root, "config", "user.email", "t@t")
+    git(root, "config", "user.name", "t")
+    write(root, case("A", line=10))
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", "cases")
+    base_commit = git(root, "rev-parse", "HEAD")
+    write(root, case("A", line=23) | {"notes": "the code the finding describes is at line 23 at raised_sha"})
+
+    changes = baseline.label_changes(base_commit, root / "cases", root)
+
+    assert [(c["case_id"], c["old_line"], c["new_line"]) for c in changes] == [("A", 10, 23)]
+    assert "line 23" in changes[0]["reason"]
+
+
+# (d)────────────────────────────────────────────────────────────────────────────────────────────
 
 def valid_baseline():
     return {"commit": SHA, "cases_commit": SHA, "model": "m", "date": "2026-10-30", "k": 2, "window": 3,

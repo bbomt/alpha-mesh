@@ -64,7 +64,8 @@ def status(case_runs: list[dict]) -> str:
 
 
 def label_changes(since: str, cases_dir: Path, repo_root: Path) -> list[dict]:
-    """Every case whose label or expected block changed since the commit `since` (committed or not)."""
+    """Every case whose label, expected block or finding line (the location it is matched at) changed since the
+    commit `since` (committed or not)."""
     def git(*args):
         return subprocess.run(["git", "-C", str(repo_root), *args], capture_output=True, text=True)
 
@@ -80,14 +81,17 @@ def label_changes(since: str, cases_dir: Path, repo_root: Path) -> list[dict]:
         old = json.loads(before.stdout)
         path = Path(repo_root) / name
         new = json.loads(path.read_text()) if path.exists() else None
+        line = lambda c: (c.get("finding") or {}).get("line")  # noqa: E731
         if new is None:
             changes.append({"case_id": old["case_id"], "path": name, "old_label": old["label"], "new_label": None,
-                            "old_expected": old.get("expected"), "new_expected": None, "reason": "case deleted"})
-        elif (old["label"], old.get("expected")) != (new["label"], new.get("expected")):
+                            "old_expected": old.get("expected"), "new_expected": None, "old_line": line(old),
+                            "new_line": None, "reason": "case deleted"})
+        elif (old["label"], old.get("expected"), line(old)) != (new["label"], new.get("expected"), line(new)):
             reason = new.get("label_reason") if new["label"] != old["label"] else new.get("notes")
             changes.append({"case_id": new["case_id"], "path": name, "old_label": old["label"],
                             "new_label": new["label"], "old_expected": old.get("expected"),
-                            "new_expected": new.get("expected"), "reason": reason or ""})
+                            "new_expected": new.get("expected"), "old_line": line(old), "new_line": line(new),
+                            "reason": reason or ""})
     return changes
 
 
