@@ -139,7 +139,8 @@ comment is rendered from, so nothing parses markdown. The provider (`promptfoo/a
 them as JSON (`schema/review.schema.json`; extra fields are allowed, for later asserts).
 
 - **One review per commit and repeat.** Several cases share a commit. Within one repeat they share one review
-  (they queue on a lock per commit); each repeat is a fresh review, so pass^k measures something.
+  (they queue on a lock per commit, which also runs the repeats of a commit one after another); each repeat
+  is a fresh review, so pass^k measures something.
 - **Checkpoints** go to `runs/<run>/checkpoints-repeat-<n>.sqlite` (LangGraph's SqliteSaver), never to the
   production DynamoDB store, so a run never touches the checkpoint of a real PR review. Rerunning the same
   `--run` reuses finished reviews and resumes a stopped one from its last finished file (free models throttle).
@@ -170,15 +171,16 @@ After a run, read every failing case (`compare_baseline.py` lists the new ones; 
 write until each failing case is classed) and record why it failed in `error_analysis.json`:
 
 ```json
-{"R36-812f904-001": {"failure_class": "model_failure", "reason": "Re-raises the dismissed save_queue ordering claim at cli.py:135."}}
+{"R36-812f904-001": {"failure_class": "model_failure", "reason": "Re-raises the dismissed save_queue ordering claim at cli.py:148."}}
 ```
 
 - `model_failure`: the agent got it wrong (re-raised the false finding, missed the real one). Leave it
   failing: this is what the eval measures. **When in doubt, it stays a `model_failure`**; a disputed case
   stays failing and is listed for the owner to decide.
 - `label_error`: the ground truth is wrong, not the agent. Fix the case: a wrong label with
-  `eval_cases.py label <ID> real_issue --reason "..."`, or a wrong `expected` by hand, with the reason in
-  `notes`.
+  `eval_cases.py label <ID> real_issue --reason "..."`, or a wrong `expected` or `finding.line` by hand,
+  with the reason in `notes`. A mined line is the one the review cited, which can be off: the case is
+  matched at the line where the described code is at `raised_sha`.
 - `harness_error`: the pipeline failed (crash, no result, findings misread). Classed automatically; open a
   ticket. Left out of the pass rate and listed separately.
 - Never quietly delete a failing case.
@@ -209,3 +211,8 @@ without reviewing again. It also records each case's result under the old file-o
 - **49 of the cases are legacy** (`legacy-file-rule/`): all `false_positive`, labelled by the weaker file
   rule. They are scored with the rest; their `category`/folder tells them apart.
 - **No hold-out set yet** (PMAT-310, when synthetic cases arrive).
+- **Long reviews can time out in Promptfoo.** The repeats of one commit queue on its lock, so the last
+  repeat of a large review (86 files: about an hour each) can wait past the provider's 2-hour timeout and
+  become a `harness_error`. Rerunning the same `--run` finishes it from the checkpoints.
+- **The free models' daily quota** (OpenRouter `429 free-models-per-day`) does not cover a k=3 baseline in
+  one day: rerun the same `--run` after it resets (00:00 UTC).
