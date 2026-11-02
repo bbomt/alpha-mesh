@@ -10,7 +10,7 @@
   "model": "nvidia/nemotron-3.5-super-vl:free",
   "finding": {
     "file": "agents/orchestrator/src/orchestrator/cli.py",
-    "line": 135,
+    "line": 148,
     "severity": "medium",
     "summary": "In start_queued(), status.save_queue(queue) is called before loop.start(key, folder, OPS). If loop.start() raises (e.g. tmux refuses the tab), the ticket has already been removed from the persistent queue but never started, causing permanent ticket loss.",
     "fix": "Only save the queue after loop.start() succeeds, or re-add the ticket to the front of the queue and re-save if start fails before propagating the exception.",
@@ -26,5 +26,5 @@
     "action": "skip_false_bug",
     "flag_file": "agents/orchestrator/src/orchestrator/cli.py"
   },
-  "notes": ""
+  "notes": "finding.line moved 135 -> 148: at raised_sha 812f904 the status.save_queue(queue) before loop.start() that the finding describes is at cli.py:148 (135 is the active() check); the review cited the wrong line."
 }
