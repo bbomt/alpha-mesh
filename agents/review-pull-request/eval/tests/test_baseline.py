@@ -128,6 +128,13 @@ def test_a_valid_baseline_passes_validation():
     jsonschema.validate(valid_baseline(), baseline.SCHEMA)
 
 
+def test_the_committed_baseline_passes_its_guard():
+    """eval/baseline.json is what compare_baseline.py compares against: it must stay valid and analysed."""
+    committed = json.loads((case_rules.EVAL / "baseline.json").read_text())
+    jsonschema.validate(committed, baseline.SCHEMA)
+    assert set(committed["cases"]) == {c["case_id"] for c in case_rules.load_cases()}
+
+
 @pytest.mark.parametrize("broken", [
     lambda b: b["label_errors_fixed"][0].pop("reason"),
     lambda b: b["label_errors_fixed"][0].update(reason=""),

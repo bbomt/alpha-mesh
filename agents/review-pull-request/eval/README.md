@@ -111,6 +111,24 @@ another case's file at the same repo and `raised_sha`: a file cannot be both cle
 ### Baseline
 
 <!-- BASELINE-HEADLINE -->
+`baseline.json`: run `base1`, agent `929b5da`, `nvidia/nemotron-3.5-super-vl:free`, k=3, window ±3 lines,
+57 cases on 20 commits (60 reviews, 2026-10-30 to 2026-11-03), all scored (no harness errors left).
+
+| | Pass rate (per run) | pass^3 (per case) |
+| :-- | --: | --: |
+| **All 57 cases** | **71%** | **54%** |
+| Legacy cases (49, `false_positive`) | 73% | 59% |
+| ID-based cases (8) | 54% | 25% |
+| `skip_false_bug` (55, precision traps) | 72% | |
+| `raise_true_bug` (2, recall) | 33% | 0% |
+| Old file-only rule, for comparison | 43% | |
+
+- **Failure taxonomy:** 26 `model_failure` (7 stable, 19 flaky), 0 `harness_error`, **2 `label_error`s fixed**
+  (`label_errors_fixed`: `R36-812f904-001` and `-002`, whose mined lines were 13 off at `raised_sha`).
+- Of the 26, 18 re-raise the dismissed claim, 5 are the line-matching limit only (a *different* claim inside the
+  window: `353ced23f55e`, `4f838bf0a2d6`, `aeb554baee1a`, `b7167609ac34`, `ff0bb8f41a32`), and 3 are mixed.
+  Each reason is in `error_analysis.json`. The judge (PMAT-311) is what separates the two.
+- Each of the two real bugs is raised in 1 of 3 runs only: recall is the weakest point, on a tiny sample.
 
 ### Terms
 
@@ -163,7 +181,9 @@ PROMPTFOO_CONFIG_DIR=eval/runs/base1/.promptfoo promptfoo view                  
 ```
 
 `run_eval.sh` records the run's commit, model, date, k, window and `dirty` (uncommitted changes in `src/`, `eval/promptfoo/` or `eval/cases/`: such a run never becomes the baseline) in `runs/<run>/run.json`. One run folder
-holds one model's reviews (the checkpoint key has no model), so a new model needs a new `--run`.
+holds one model's reviews (the checkpoint key has no model), so a new model needs a new `--run`. A resumed run
+keeps the commit and date it started at (so label fixes made between passes are counted), and is refused if
+the agent changed since, or with another model or k (`scripts/run_meta.py`).
 
 ### Error analysis
 

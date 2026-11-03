@@ -24,5 +24,5 @@
   "cc0ef46b14bd": {"failure_class": "model_failure", "reason": "Re-raises the dismissed claim (the stub builds JSON with printf and unescaped variables) at line 18."},
   "ceb5ec589c50": {"failure_class": "model_failure", "reason": "Re-raises the dismissed claim (a non-string tool path reaches normalise() unchecked) at line 189."},
   "eeb27e040fce": {"failure_class": "model_failure", "reason": "Repeat 1 re-raises the dismissed claim (q[\"code\"][0] without a check) at line 64; repeat 0 raises a different claim (comment keys) on the same line."},
-  "ff0bb8f41a32": {"failure_class": "model_failure", "reason": "Matcher limit: repeat 0 raises different claims (ps has no timeout, split may not unpack) at lines 16-17, not the dismissed list-panes -s claim."}
+  "ff0bb8f41a32": {"failure_class": "model_failure", "reason": "Matcher limit: every repeat raises a different claim inside the window (ps has no timeout, split may not unpack, a tab in a window name), not the dismissed list-panes -s claim."}
 }
