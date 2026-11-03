@@ -148,7 +148,12 @@ def main(argv=None) -> int:
         print("ERROR: this run was made with uncommitted changes (run.json \"dirty\"), so its commit is not the "
               "code that ran. Commit, and run again.", file=sys.stderr)
         return 1
-    git = lambda *a: subprocess.run(["git", "-C", str(REPO_ROOT), *a], capture_output=True, text=True).stdout.strip()  # noqa: E731
+    def git(*a):
+        done = subprocess.run(["git", "-C", str(REPO_ROOT), *a], capture_output=True, text=True)
+        if done.returncode != 0:  # a failing git status must not read as "no uncommitted cases"
+            raise RuntimeError(f"git {a[0]} failed: {done.stderr.strip()}")
+        return done.stdout.strip()
+
     if git("status", "--porcelain", "--", str(case_rules.CASES_DIR)):
         print("ERROR: eval/cases has uncommitted changes. Commit each label fix on its own first:\n"
               "  fix[PMAT-XX]: fixed label error in eval case <ID> (<short reason>)", file=sys.stderr)

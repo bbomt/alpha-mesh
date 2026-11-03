@@ -207,3 +207,16 @@ def test_a_run_made_with_uncommitted_changes_never_becomes_the_baseline(tmp_path
 
     assert baseline.main([str(run)]) == 1
     assert "uncommitted" in capsys.readouterr().err
+
+
+def test_a_failing_git_stops_the_baseline_instead_of_reading_as_clean(tmp_path, monkeypatch):
+    """git status failing (not a repository) must not pass the uncommitted-cases guard."""
+    run = tmp_path / "run"
+    run.mkdir()
+    (run / "run.json").write_text(json.dumps({"commit": SHA, "model": "m", "date": "2026-10-30", "k": 1,
+                                              "window": 3, "dirty": False}))
+    (run / "results.json").write_text(json.dumps(results()))
+    monkeypatch.setattr(baseline, "REPO_ROOT", tmp_path / "not-a-repo")
+
+    with pytest.raises(RuntimeError, match="git status"):
+        baseline.main([str(run)])
