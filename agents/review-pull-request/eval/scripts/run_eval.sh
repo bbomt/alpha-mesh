@@ -36,17 +36,8 @@ if [[ -n "$(git -C "$AGENT" status --porcelain -- src eval/promptfoo eval/cases)
   DIRTY=true
   echo "WARNING: uncommitted changes in src/, eval/promptfoo/ or eval/cases/: this run cannot become the baseline" >&2
 fi
-# run.json: what baseline.py records; a resumed run must keep its model (the checkpoint key has none).
-"$AGENT/.venv/bin/python" - "$RUN_DIR/run.json" "$COMMIT" "$MODEL" "$(date +%Y-%m-%d)" "$K" "$DIRTY" <<'PY'
-import json, sys
-from pathlib import Path
-path, commit, model, date, k, dirty = sys.argv[1:]
-path = Path(path)
-if path.exists() and json.loads(path.read_text())["model"] != model:
-    sys.exit(f"ERROR: {path.parent} holds another model's reviews; use a new --run")
-path.write_text(json.dumps({"commit": commit, "model": model, "date": date, "k": int(k), "window": 3,
-                            "dirty": dirty == "true"}) + "\n")
-PY
+# run.json: what baseline.py records; a resumed run keeps its commit, model and k (run_meta.py).
+"$AGENT/.venv/bin/python" "$EVAL/scripts/run_meta.py" "$RUN_DIR/run.json" "$COMMIT" "$MODEL" "$(date +%Y-%m-%d)" "$K" "$DIRTY"
 
 echo "Run: $RUN_DIR (model $MODEL, k=$K, commit ${COMMIT:0:7})" >&2
 cd "$EVAL"
