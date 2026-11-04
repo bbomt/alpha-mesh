@@ -1,0 +1,31 @@
+{
+  "case_id": "R45-fee8a9a-015",
+  "repo": "bbomt/alpha-mesh",
+  "pr_number": 45,
+  "base_sha": "c1a5c5c266f395716780a7b31b2c1107720f233f",
+  "head_sha": "d086e454c4090e04108b326a890d8e8252dfc0ce",
+  "raised_sha": "fee8a9a20f146844e8ad296d2531832969ec406b",
+  "fix_sha": "02d37e7201b8666d82a618177690d1ac4ab6fccb",
+  "source": "pr_comment",
+  "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
+  "finding": {
+    "file": "agents/review-pull-request/eval/scripts/run_eval.sh",
+    "line": 31,
+    "severity": "medium",
+    "summary": "Uncommitted changes in src/ or eval/promptfoo/ only produce a warning but allow the run to proceed. This creates a mismatch between the commit hash recorded in run.json and the actual code executing, violating test–production parity.",
+    "fix": "Either exit with an error on uncommitted changes (recommended for reproducibility), or add a --force flag to override. Example: [[ -n \"$(git -C \"$AGENT\" status --porcelain -- src eval/promptfoo)\" ]] && { echo \"ERROR: uncommitted changes...\" >&2; exit 1; }",
+    "failure_scenario": null,
+    "id": "R45-fee8a9a-015"
+  },
+  "label": "real_issue",
+  "label_by": "rule",
+  "label_date": "2026-11-04",
+  "label_reason": "Commit 02d37e7 in the PR cites finding R45-fee8a9a-015.",
+  "category": "mined",
+  "expected": {
+    "action": "raise_true_bug",
+    "flag_file": "agents/review-pull-request/eval/scripts/run_eval.sh",
+    "min_severity": "medium"
+  },
+  "notes": ""
+}

@@ -1,0 +1,31 @@
+{
+  "case_id": "R41-72f59a5-001",
+  "repo": "bbomt/alpha-mesh",
+  "pr_number": 41,
+  "base_sha": "9113a15406e9df35d03536939c426e0910377d1a",
+  "head_sha": "ac0feafd3c1884356d07d635f008a710252c498f",
+  "raised_sha": "72f59a5d41be6a24d0259c56b11423ff518a9ed7",
+  "fix_sha": "8e72d7b585b427ff9bcf1fd6987d8dd31a63d8c4",
+  "source": "pr_comment",
+  "model": "nvidia/nemotron-3.5-super-vl:free",
+  "finding": {
+    "file": "agents/review-pull-request/scripts/parity/diff_parity.sh",
+    "line": 10,
+    "severity": "medium",
+    "summary": "The `gh pr view`, `gh pr diff`, and `gh api` calls are not checked for failure. If any `gh` command fails (network error, missing PR, auth issue), it writes an empty stdout to the diff file while the error goes to stderr. Two empty files compare as equal with `cmp -s`, producing a false \"SAME\" result and invalidating the parity check.",
+    "fix": "Add `set -e` or explicitly check the exit status of each `gh` command and abort with a non-zero exit code on failure. Also validate that `base` and `head` are non-empty before constructing the compare API URL.",
+    "failure_scenario": null,
+    "id": "R41-72f59a5-001"
+  },
+  "label": "real_issue",
+  "label_by": "rule",
+  "label_date": "2026-11-04",
+  "label_reason": "Commit 8e72d7b in the PR cites finding R41-72f59a5-001.",
+  "category": "mined",
+  "expected": {
+    "action": "raise_true_bug",
+    "flag_file": "agents/review-pull-request/scripts/parity/diff_parity.sh",
+    "min_severity": "medium"
+  },
+  "notes": ""
+}

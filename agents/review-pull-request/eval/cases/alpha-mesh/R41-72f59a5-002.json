@@ -1,0 +1,30 @@
+{
+  "case_id": "R41-72f59a5-002",
+  "repo": "bbomt/alpha-mesh",
+  "pr_number": 41,
+  "base_sha": "9113a15406e9df35d03536939c426e0910377d1a",
+  "head_sha": "ac0feafd3c1884356d07d635f008a710252c498f",
+  "raised_sha": "72f59a5d41be6a24d0259c56b11423ff518a9ed7",
+  "fix_sha": null,
+  "source": "pr_comment",
+  "model": "nvidia/nemotron-3.5-super-vl:free",
+  "finding": {
+    "file": "agents/review-pull-request/src/review_pull_request/review.py",
+    "line": 183,
+    "severity": "medium",
+    "summary": "base_sha is extracted from pr_info.get(\"baseRefOid\", \"\") but never validated for emptiness before being passed to get_diff. If baseRefOid is missing from the gh pr view response, get_diff would be called with an empty base SHA, producing a malformed compare API URL and a confusing error (e.g. \"GitHub compare API returned 404\"). head_sha is validated but base_sha is not, creating an asymmetric gap in input validation.",
+    "fix": "Add a validation check for base_sha immediately after the head_sha check, e.g.: if not base_sha: print(\"ERROR: could not determine PR base SHA from GitHub API response.\", file=sys.stderr); return 1",
+    "failure_scenario": null,
+    "id": "R41-72f59a5-002"
+  },
+  "label": "false_positive",
+  "label_by": "rule",
+  "label_date": "2026-11-04",
+  "label_reason": "not a bug. A missing baseRefOid already fails loudly: compare `...head` returns 404, so the review prints \"ERROR: failed to get diff\" and exits 1 without posting. gh always returns baseRefOid, and an upfront check would mean editing about 15 existing tests whose get_pr_info mocks omit it (PMAT-314 keeps existing tests unedited).",
+  "category": "mined",
+  "expected": {
+    "action": "skip_false_bug",
+    "flag_file": "agents/review-pull-request/src/review_pull_request/review.py"
+  },
+  "notes": ""
+}

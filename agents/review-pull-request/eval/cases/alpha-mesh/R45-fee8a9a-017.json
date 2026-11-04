@@ -1,0 +1,30 @@
+{
+  "case_id": "R45-fee8a9a-017",
+  "repo": "bbomt/alpha-mesh",
+  "pr_number": 45,
+  "base_sha": "c1a5c5c266f395716780a7b31b2c1107720f233f",
+  "head_sha": "d086e454c4090e04108b326a890d8e8252dfc0ce",
+  "raised_sha": "fee8a9a20f146844e8ad296d2531832969ec406b",
+  "fix_sha": null,
+  "source": "pr_comment",
+  "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
+  "finding": {
+    "file": "agents/review-pull-request/eval/promptfoo/agent_provider.py",
+    "line": 27,
+    "severity": "low",
+    "summary": "The _saver function's cache initialization (if path not in _savers) is not thread-safe. Two threads could simultaneously create connections for the same path.",
+    "fix": "Add a threading.Lock to protect the cache initialization, or use functools.lru_cache on a function that creates the saver.",
+    "failure_scenario": null,
+    "id": "R45-fee8a9a-017"
+  },
+  "label": "false_positive",
+  "label_by": "rule",
+  "label_date": "2026-11-04",
+  "label_reason": "a duplicate SqliteSaver for one path would be harmless (sqlite handles several connections, timeout 60 s); the cache is only an optimisation.",
+  "category": "mined",
+  "expected": {
+    "action": "skip_false_bug",
+    "flag_file": "agents/review-pull-request/eval/promptfoo/agent_provider.py"
+  },
+  "notes": ""
+}

@@ -1,0 +1,31 @@
+{
+  "case_id": "R45-fee8a9a-004",
+  "repo": "bbomt/alpha-mesh",
+  "pr_number": 45,
+  "base_sha": "c1a5c5c266f395716780a7b31b2c1107720f233f",
+  "head_sha": "d086e454c4090e04108b326a890d8e8252dfc0ce",
+  "raised_sha": "fee8a9a20f146844e8ad296d2531832969ec406b",
+  "fix_sha": "02d37e7201b8666d82a618177690d1ac4ab6fccb",
+  "source": "pr_comment",
+  "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
+  "finding": {
+    "file": "agents/review-pull-request/eval/schema/baseline.schema.json",
+    "line": 55,
+    "severity": "high",
+    "summary": "Required fields 'file_level_runs', 'reason', 'category', 'action' are listed in the required array but have no corresponding property definitions in the properties object. This means they are required but completely unconstrained (any value/type allowed), defeating validation.",
+    "fix": "Add property definitions for all required fields. For example: 'file_level_runs': {'type': 'array', 'items': {'enum': ['pass', 'fail', 'error']}, 'minItems': 1}, 'reason': {'type': 'string', 'minLength': 1}, 'category': {'type': 'string', 'minLength': 1}, 'action': {'type': 'string', 'minLength': 1}",
+    "failure_scenario": null,
+    "id": "R45-fee8a9a-004"
+  },
+  "label": "real_issue",
+  "label_by": "rule",
+  "label_date": "2026-11-04",
+  "label_reason": "Commit 02d37e7 in the PR cites finding R45-fee8a9a-004.",
+  "category": "mined",
+  "expected": {
+    "action": "raise_true_bug",
+    "flag_file": "agents/review-pull-request/eval/schema/baseline.schema.json",
+    "min_severity": "high"
+  },
+  "notes": ""
+}

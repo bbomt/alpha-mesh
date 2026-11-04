@@ -1,0 +1,30 @@
+{
+  "case_id": "R45-fee8a9a-005",
+  "repo": "bbomt/alpha-mesh",
+  "pr_number": 45,
+  "base_sha": "c1a5c5c266f395716780a7b31b2c1107720f233f",
+  "head_sha": "d086e454c4090e04108b326a890d8e8252dfc0ce",
+  "raised_sha": "fee8a9a20f146844e8ad296d2531832969ec406b",
+  "fix_sha": null,
+  "source": "pr_comment",
+  "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
+  "finding": {
+    "file": "agents/review-pull-request/eval/scripts/baseline.py",
+    "line": 102,
+    "severity": "high",
+    "summary": "The `reason` field in label_changes can be empty string when neither 'label_reason' nor 'notes' exists in the case file. The baseline schema requires label_errors_fixed[i].reason to have minLength: 1, so this will cause schema validation to fail.",
+    "fix": "Provide a default reason when both fields are missing, e.g., `reason = new.get('label_reason') or new.get('notes') or 'label or expected block changed'`",
+    "failure_scenario": null,
+    "id": "R45-fee8a9a-005"
+  },
+  "label": "false_positive",
+  "label_by": "rule",
+  "label_date": "2026-11-04",
+  "label_reason": "intended: a label fix without evidence must fail the baseline guard (ticket scope 5); baseline.py prints the schema error naming the entry instead of writing the baseline.",
+  "category": "mined",
+  "expected": {
+    "action": "skip_false_bug",
+    "flag_file": "agents/review-pull-request/eval/scripts/baseline.py"
+  },
+  "notes": ""
+}
