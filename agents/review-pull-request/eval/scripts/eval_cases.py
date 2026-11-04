@@ -36,9 +36,10 @@ LABELS = ("false_positive", "real_issue")
 
 _TITLES = ("# AI Code Review", "# Partial pull request review")
 _COMMIT = re.compile(r"^> \*\*Reviewed commit:\*\* `([0-9a-f]{40})`")
-_MODEL = re.compile(r"^> \*\*Model:\*\* (`+) ?(.+?) ?\1$")
+# (`++) never gives backticks back: with (`+), a PR comment line of thousands of them takes cubic time.
+_MODEL = re.compile(r"^> \*\*Model:\*\* (`++) ?(.+?) ?\1$")
 _SECTION = re.compile(r"^### \S+ (High|Medium|Low)$")
-_FINDING = re.compile(r"^#### (?:(R\d+-[0-9a-f]{7}-\d{3}) · )?(`+) ?(.+?) ?\2(?: · line (\d+))?(?: · model: (`+) ?(.+?) ?\5)?$")
+_FINDING = re.compile(r"^#### (?:(R\d+-[0-9a-f]{7}-\d{3}) · )?(`++) ?(.+?) ?\2(?: · line (\d+))?(?: · model: (`++) ?(.+?) ?\5)?$")
 _REPO = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]*/(?!\.{1,2}$)[A-Za-z0-9_.][A-Za-z0-9_.-]*$")  # GitHub owner/name
 _FINDING_ID = re.compile(r"\bR\d+-[0-9a-f]{7}-\d{3}\b")
 _DISMISSAL = re.compile(r"^Dismissed review finding (R(\d+)-[0-9a-f]{7}-\d{3}): (.+)$")
@@ -182,7 +183,7 @@ def mine(repo: str, limit: int, *, prs: list[int] | None = None, gh=run_gh, case
          today: date | None = None) -> dict:
     check_repo(repo)  # before any gh call
     today = today or date.today()
-    counts = {"cited": 0, "dismissed": 0, "duplicate": 0, "unresolved": 0, "conflict": 0, "no_id": 0}
+    counts = {"cited": 0, "dismissed": 0, "duplicate": 0, "unresolved": 0, "conflict": 0, "no_id": 0, "no_line": 0}
     found: dict[str, dict] = {}
     seen: set[str] = set()
     mined = 0
@@ -202,6 +203,9 @@ def mine(repo: str, limit: int, *, prs: list[int] | None = None, gh=run_gh, case
                 finding_id = f["id"] if f["id"] and f["id"].startswith(f"R{pr['number']}-") else None
                 if finding_id is None:
                     counts["no_id"] += 1
+                    continue
+                if f["line"] is None:  # a case is matched by its line at raised_sha (PMAT-304)
+                    counts["no_line"] += 1
                     continue
                 if finding_id in seen:  # the same report posted again
                     continue

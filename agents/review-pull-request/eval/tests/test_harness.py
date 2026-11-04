@@ -1,0 +1,190 @@
+"""Acceptance tests for the Promptfoo harness (PMAT-304 (a), (b)).
+
+The provider runs the real review core against a recording fake GitHub (tests.test_golden_master)
+and a scripted model, the same boundaries test_review_core fakes. Nothing reaches GitHub or a model.
+"""
+
+import json
+from types import SimpleNamespace
+from unittest.mock import patch
+
+import httpx
+import jsonschema
+import pytest
+
+import agent_provider
+import asserts
+import case_rules
+import load_cases
+from review_pull_request.config import Config, SENSITIVE_PATTERNS
+from tests import test_golden_master as gm
+from tests.helpers import chat_model_factory
+
+X = "5" * 40  # raised_sha: a commit before the PR's head (gm.HEAD)
+
+
+def case(action="raise_true_bug", flag_file="src/cart.py", line=1, **expected):
+    c = {"case_id": f"R7-{action}", "repo": f"{gm.OWNER}/{gm.REPO}", "pr_number": gm.PR, "base_sha": gm.BASE,
+         "head_sha": gm.HEAD, "raised_sha": X, "fix_sha": None, "label": "real_issue", "category": "logic",
+         "notes": "", "expected": {"action": action, "flag_file": flag_file, **expected}}
+    if action != "raise_nothing":
+        c["finding"] = {"file": flag_file, "line": line, "severity": "medium", "summary": "s"}
+    return c
+
+
+TRUE_BUG = case(min_severity="medium")
+
+
+def model_reporting(issues_by_file):
+    """Overview text; per file, the issues given for it (none by default)."""
+    def model(messages, tools):
+        if tools is None:
+            return SimpleNamespace(content="Overview.", tool_calls=[])
+        user = next(m["content"] for m in messages if m["role"] == "user")
+        target = next(p for p in gm.FILES if p in user)
+        return SimpleNamespace(content=json.dumps({"summary": f"Reviewed {target}.",
+                                                   "issues": issues_by_file.get(target, [])}), tool_calls=[])
+    return model
+
+
+@pytest.fixture
+def run(tmp_path, monkeypatch):
+    """call_api for one case through the fakes; returns (provider result, fake GitHub)."""
+    monkeypatch.setitem(gm.DIFFS, f"{gm.BASE}...{X}", gm.DIFFS[f"{gm.BASE}...{gm.HEAD}"])
+    monkeypatch.setenv("EVAL_RUN_DIR", str(tmp_path / "run"))
+    monkeypatch.setenv("HOME", str(tmp_path))  # the core's run locks go to ~/.mesh/locks
+
+    def call(c, model, repeat=0):
+        github = gm.FakeGitHub()
+        cfg = Config(model="m", api_url="http://x", api_token="t", exclusions=list(SENSITIVE_PATTERNS))
+        with patch("agent_provider.load_config", return_value=cfg), \
+                patch("review_pull_request.session.make_chat_model", chat_model_factory(model)), \
+                patch("subprocess.run", github.run), \
+                patch.object(httpx.HTTPTransport, "handle_request", lambda self, req: github.handle(req)):
+            result = agent_provider.call_api(c["case_id"], {"config": {}},
+                                             {"vars": {"case_id": c["case_id"], "case": c}, "repeatIndex": repeat})
+        return result, github
+    return call
+
+
+def grade(c, output):
+    context = {"vars": {"case": c}}
+    return asserts.schema_valid(output, context), asserts.case_expectations(output, context)
+
+
+# (a) ────────────────────────────────────────────────────────────────────────────────────────────
+
+def test_a_case_is_reviewed_at_raised_sha_never_at_the_prs_head(run):
+    result, github = run(TRUE_BUG, model_reporting({}))
+
+    assert "error" not in result, result
+    assert github.diff_ranges == [f"{gm.BASE}...{X}"]
+    assert github.reads == [] or all(ref == X for _, ref in github.reads)
+    assert github.trees == [X]
+    assert github.posted == [] and github.unexpected == []
+    assert result["output"]["head_sha"] == X and result["output"]["files"] == ["src/cart.py", "src/util.py"]
+
+
+def test_cases_on_one_commit_share_one_review_within_a_repeat_but_not_across_repeats(run):
+    first, github = run(TRUE_BUG, model_reporting({}))
+    same_commit, again = run(case("skip_false_bug", "src/util.py"), model_reporting({}))
+    next_repeat, fresh = run(TRUE_BUG, model_reporting({}), repeat=1)
+
+    assert again.diff_ranges == [] and same_commit["output"]["findings"] == first["output"]["findings"]
+    assert fresh.diff_ranges == [f"{gm.BASE}...{X}"]
+
+
+# (b) ────────────────────────────────────────────────────────────────────────────────────────────
+
+def issue(line, severity="medium", comment="Index can go out of range.", file="src/cart.py"):
+    return {"file": file, "line": line, "severity": severity, "comment": comment, "suggestion": None}
+
+
+def test_a_true_bug_raised_near_its_line_passes(run):
+    result, _ = run(TRUE_BUG, model_reporting({"src/cart.py": [issue(3)]}))  # line 1 ± 3
+
+    valid, expected = grade(TRUE_BUG, result["output"])
+    assert valid["pass"], valid["reason"]
+    assert expected["pass"], expected["reason"]
+
+
+def test_a_true_bug_that_is_missing_fails_and_says_why(run):
+    result, _ = run(TRUE_BUG, model_reporting({"src/cart.py": [issue(9)], "src/util.py": [issue(1, file="src/util.py")]}))
+
+    _, expected = grade(TRUE_BUG, result["output"])
+    assert not expected["pass"]
+    assert expected["reason"] == ("raise_true_bug: no finding in src/cart.py within ±3 lines of line 1 "
+                                  "at medium or above")
+
+
+@pytest.mark.parametrize("c, findings, passes, reason", [
+    (case(min_severity="high"), [issue(1, "medium")], False,
+     "raise_true_bug: no finding in src/cart.py within ±3 lines of line 1 at high or above"),
+    (case(min_severity="medium", must_mention_any=["overflow", "RANGE"]), [issue(1)], True, None),
+    (case(min_severity="medium", must_mention_any=["overflow"]), [issue(1)], False,
+     "raise_true_bug: no finding in src/cart.py within ±3 lines of line 1 at medium or above "
+     "mentioning any of ['overflow']"),
+    (case("skip_false_bug", line=20), [issue(1), issue(30)], True, None),  # other findings in the file are fine
+    (case("skip_false_bug", line=20), [issue(1), issue(23, comment="Re-raised.")], False,
+     "skip_false_bug: re-raised in src/cart.py at line 23 (within ±3 lines of line 20): Re-raised."),
+    (case("raise_nothing", "src/**/*.py", min_severity="medium"), [issue(1, "low")], True, None),
+    (case("raise_nothing", "src/**/*.py"), [issue(1, "low")], False,
+     "raise_nothing: finding in src/cart.py at line 1 (low), which matches src/**/*.py"),
+    (case("raise_nothing", "lib/*.py"), [issue(1, "high")], True, None),
+])
+def test_each_action_passes_or_fails_with_a_reason(c, findings, passes, reason):
+    review = {"head_sha": X, "model": "m", "files": ["src/cart.py"], "incomplete": [], "excluded": [],
+              "findings": [dict(f, summary=f.pop("comment")) for f in findings]}
+    result = asserts.case_expectations(review, {"vars": {"case": c}})
+    assert result["pass"] is passes
+    if reason:
+        assert result["reason"] == reason
+
+
+def test_a_review_that_leaves_no_result_is_an_error_not_a_failure(run):
+    def broken(messages, tools):
+        raise RuntimeError("model down")
+
+    result, _ = run(TRUE_BUG, broken)
+
+    assert "output" not in result and result["error"]
+
+
+def test_a_case_whose_file_was_not_fully_reviewed_is_an_error(run):
+    def unusable_for_cart(messages, tools):
+        if tools is not None and "src/cart.py" in next(m["content"] for m in messages if m["role"] == "user"):
+            return SimpleNamespace(content="not json", tool_calls=[])
+        return model_reporting({})(messages, tools)
+
+    result, _ = run(TRUE_BUG, unusable_for_cart)
+
+    assert "output" not in result and "src/cart.py" in result["error"]
+
+
+def test_the_review_output_matches_its_schema_and_the_schema_rejects_a_broken_one():
+    good = {"head_sha": X, "model": "m", "files": [], "incomplete": [], "excluded": [],
+            "findings": [{"file": "a.py", "line": None, "severity": "low", "summary": "s", "suggestion": None}],
+            "reads": []}  # extra fields are allowed (PMAT-302 adds some)
+    jsonschema.validate(good, case_rules.REVIEW_SCHEMA)
+    assert not asserts.schema_valid({"findings": [{"file": "a.py"}]}, {})["pass"]
+
+
+def test_the_loader_turns_every_case_into_a_test_and_refuses_an_invalid_one(tmp_path):
+    tests = load_cases.create_tests()
+    assert len(tests) == len(case_rules.load_cases(case_rules.CASES_DIR))
+    assert {a["value"] for a in tests[0]["assert"]} == {"file://promptfoo/asserts.py:schema_valid",
+                                                        "file://promptfoo/asserts.py:case_expectations"}
+    assert tests[0]["vars"]["case"]["case_id"] == tests[0]["description"]
+
+    bad = tmp_path / "repo" / "bad.json"
+    bad.parent.mkdir()
+    bad.write_text(json.dumps(case() | {"expected": {"action": "skip_false_bug"}}))
+    with pytest.raises(ValueError, match="bad.json"):
+        load_cases.create_tests(cases_dir=tmp_path)
+
+
+def test_the_run_script_turns_promptfoos_templating_off():
+    """Promptfoo renders a string var as Nunjucks, which can run code. The schema refuses such a case_id;
+    this is the second layer (checked by hand against promptfoo 0.125.1, which has no Python API to test it)."""
+    script = (case_rules.EVAL / "scripts" / "run_eval.sh").read_text()
+    assert "PROMPTFOO_DISABLE_TEMPLATING=true" in script

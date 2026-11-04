@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "baseline.schema.json",
+  "title": "review-pull-request eval baseline",
+  "description": "eval/baseline.json (eval/README.md). The guard against labelling to the test: every failing case has a class and a reason, and every label error fixed names its case and its evidence.",
+  "type": "object",
+  "required": ["commit", "cases_commit", "model", "date", "k", "window", "summary", "label_errors_fixed", "cases"],
+  "properties": {
+    "commit": {"type": "string", "minLength": 7, "description": "the agent version the runs were made with"},
+    "cases_commit": {"type": "string", "minLength": 7, "description": "the case files the runs were scored against"},
+    "model": {"type": "string", "minLength": 1},
+    "date": {"type": "string"},
+    "k": {"type": "integer", "minimum": 1},
+    "window": {"type": "integer", "minimum": 0},
+    "summary": {
+      "type": "object",
+      "required": ["cases", "scored_cases", "pass_rate", "pass_k", "file_level_pass_rate", "by_class"],
+      "properties": {
+        "by_class": {
+          "type": "object",
+          "required": ["model_failure", "label_error", "harness_error"],
+          "additionalProperties": false,
+          "properties": {
+            "model_failure": {"type": "integer"},
+            "label_error": {"type": "integer"},
+            "harness_error": {"type": "integer"}
+          }
+        }
+      }
+    },
+    "label_errors_fixed": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["case_id", "reason"],
+        "properties": {
+          "case_id": {"type": "string", "minLength": 1},
+          "reason": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "cases": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["runs", "file_level_runs", "status", "failure_class", "reason", "category", "action"],
+        "properties": {
+          "runs": {"type": "array", "items": {"enum": ["pass", "fail", "error"]}, "minItems": 1},
+          "file_level_runs": {"type": "array", "items": {"enum": ["pass", "fail", "error"]}, "minItems": 1},
+          "reason": {"type": ["string", "null"]},
+          "category": {"type": "string"},
+          "action": {"enum": ["raise_true_bug", "skip_false_bug", "raise_nothing"]},
+          "status": {"enum": ["pass", "flaky", "stable_failure", "harness_error"]},
+          "failure_class": {"enum": [null, "model_failure", "label_error", "harness_error"]}
+        },
+        "allOf": [
+          {
+            "$comment": "error analysis: every failing case says why it failed",
+            "if": {"properties": {"status": {"enum": ["flaky", "stable_failure", "harness_error"]}}},
+            "then": {"properties": {"failure_class": {"type": "string"}, "reason": {"type": "string", "minLength": 1}}}
+          },
+          {
+            "if": {"properties": {"status": {"const": "harness_error"}}},
+            "then": {"properties": {"failure_class": {"const": "harness_error"}}}
+          },
+          {
+            "if": {"properties": {"status": {"const": "pass"}}},
+            "then": {"properties": {"failure_class": {"const": null}}}
+          }
+        ]
+      }
+    }
+  }
+}

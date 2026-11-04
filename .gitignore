@@ -28,3 +28,6 @@ uv.lock
 # CDK
 node_modules/
 cdk.out/
+
+# review-pull-request eval runs (PMAT-304): Promptfoo results, checkpoints
+agents/review-pull-request/eval/runs/
