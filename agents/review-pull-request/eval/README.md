@@ -157,6 +157,11 @@ another case's file at the same repo and `raised_sha`: a file cannot be both cle
 
 ### Baseline
 
+**Stale until PMAT-318.** `baseline.json` and `error_analysis.json` describe the old dataset (57 cases, 49 of them the
+legacy cases deleted in PMAT-310), so `compare_baseline.py` is not meaningful for now. The new cases' failures have
+deliberately not been read or classed: PMAT-318 first splits off the hold-out, then runs the error analysis and writes
+the baseline on the development cases only.
+
 <!-- BASELINE-HEADLINE -->
 `baseline.json`: run `base1`, agent `929b5da`, `nvidia/nemotron-3.5-super-vl:free`, k=3, window ±3 lines,
 57 cases on 20 commits (60 reviews, 2026-10-30 to 2026-11-03), all scored (no harness errors left).
@@ -284,7 +289,7 @@ findings are on the ticket.
   call site, say) is missed, and a different bug inside the window counts as the same one.
 - **The PR description is today's**, fetched at run time; it may have been edited since `raised_sha`.
 - **Mined cases leave out large commits** (`--max-files 22`): 3 real and 19 false findings on 7 commits.
-- **No hold-out set yet** (PMAT-318).
+- **No hold-out set yet** (PMAT-318), and so no baseline for the current cases.
 - **Long reviews can time out in Promptfoo.** The repeats of one commit queue on its lock, so the last
   repeat of a large review (86 files: about an hour each) can wait past the provider's 2-hour timeout and
   become a `harness_error`. Rerunning the same `--run` finishes it from the checkpoints.
