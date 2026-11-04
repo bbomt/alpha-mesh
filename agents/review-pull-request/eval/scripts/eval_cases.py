@@ -16,8 +16,7 @@ never writes to GitHub (gh is only used to read PRs, their comments and their co
 Each case also gets an `expected` block derived from its label (PMAT-309): the properties a good
 review has, for the harness to check. A hand-edited `expected` or `notes` survives a rerun.
 
-Cases: eval/cases/<repo name>/<ID>.json (committed); eval/cases/legacy-file-rule/ holds the frozen
-cases of PMAT-300's file rule, which mine never reads or writes.
+Cases: eval/cases/<repo name>/<ID>.json (committed).
 """
 
 import argparse
@@ -169,7 +168,7 @@ def write_case(path: Path, case: dict) -> None:
 
 
 def case_files(cases_dir: Path) -> list[Path]:
-    """Every case file: the per-repo folders and legacy-file-rule/."""
+    """Every case file."""
     return sorted(Path(cases_dir).glob("*/*.json"))
 
 
