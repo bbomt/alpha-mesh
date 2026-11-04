@@ -36,9 +36,10 @@ LABELS = ("false_positive", "real_issue")
 
 _TITLES = ("# AI Code Review", "# Partial pull request review")
 _COMMIT = re.compile(r"^> \*\*Reviewed commit:\*\* `([0-9a-f]{40})`")
-_MODEL = re.compile(r"^> \*\*Model:\*\* (`+) ?(.+?) ?\1$")
+# (`++) never gives backticks back: with (`+), a PR comment line of thousands of them takes cubic time.
+_MODEL = re.compile(r"^> \*\*Model:\*\* (`++) ?(.+?) ?\1$")
 _SECTION = re.compile(r"^### \S+ (High|Medium|Low)$")
-_FINDING = re.compile(r"^#### (?:(R\d+-[0-9a-f]{7}-\d{3}) · )?(`+) ?(.+?) ?\2(?: · line (\d+))?(?: · model: (`+) ?(.+?) ?\5)?$")
+_FINDING = re.compile(r"^#### (?:(R\d+-[0-9a-f]{7}-\d{3}) · )?(`++) ?(.+?) ?\2(?: · line (\d+))?(?: · model: (`++) ?(.+?) ?\5)?$")
 _REPO = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]*/(?!\.{1,2}$)[A-Za-z0-9_.][A-Za-z0-9_.-]*$")  # GitHub owner/name
 _FINDING_ID = re.compile(r"\bR\d+-[0-9a-f]{7}-\d{3}\b")
 _DISMISSAL = re.compile(r"^Dismissed review finding (R(\d+)-[0-9a-f]{7}-\d{3}): (.+)$")

@@ -47,3 +47,11 @@ def test_a_dirty_pass_marks_the_whole_run_dirty(tmp_path):
     run_meta.write(path, commit="c1", model="m", date="d", k=3, dirty=True, changed=lambda since: False)
     run_meta.write(path, commit="c1", model="m", date="d", k=3, dirty=False, changed=lambda since: False)
     assert meta(path)["dirty"] is True
+
+
+def test_a_commit_that_looks_like_a_git_option_writes_nothing(tmp_path):
+    """run.json's commit reaches `git diff`; `--output=<file>` would overwrite that file."""
+    target = tmp_path / "written-by-git"
+    with pytest.raises(SystemExit):
+        run_meta.agent_changed(f"--output={target}")
+    assert not target.exists()

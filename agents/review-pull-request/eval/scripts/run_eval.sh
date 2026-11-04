@@ -41,6 +41,7 @@ fi
 
 echo "Run: $RUN_DIR (model $MODEL, k=$K, commit ${COMMIT:0:7})" >&2
 cd "$EVAL"
+# Templating off: Promptfoo renders string vars as Nunjucks, which can run code; the provider ignores the prompt.
 EVAL_RUN_DIR="$RUN_DIR" EVAL_MODEL="$MODEL" PROMPTFOO_PYTHON="$AGENT/.venv/bin/python" \
-  PROMPTFOO_DISABLE_TELEMETRY=1 PROMPTFOO_DISABLE_UPDATE=1 PROMPTFOO_CONFIG_DIR="$RUN_DIR/.promptfoo" \
+  PROMPTFOO_DISABLE_TEMPLATING=true PROMPTFOO_DISABLE_TELEMETRY=1 PROMPTFOO_DISABLE_UPDATE=1 PROMPTFOO_CONFIG_DIR="$RUN_DIR/.promptfoo" \
   promptfoo eval -c promptfooconfig.yaml --repeat "$K" --no-cache -o "$RUN_DIR/results.json" "$@"

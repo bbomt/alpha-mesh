@@ -16,7 +16,8 @@ AGENT = Path(__file__).resolve().parents[2]
 
 
 def agent_changed(since: str) -> bool:
-    diff = subprocess.run(["git", "-C", str(AGENT), "diff", "--quiet", since, "HEAD", "--", "src", "eval/promptfoo"])
+    diff = subprocess.run(["git", "-C", str(AGENT), "diff", "--quiet", "--end-of-options", since, "HEAD", "--", "src",
+                           "eval/promptfoo"])
     if diff.returncode > 1:
         sys.exit(f"ERROR: git diff {since} failed")
     return diff.returncode == 1

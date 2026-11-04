@@ -70,7 +70,7 @@ def label_changes(since: str, cases_dir: Path, repo_root: Path) -> list[dict]:
         return subprocess.run(["git", "-C", str(repo_root), *args], capture_output=True, text=True)
 
     rel = Path(cases_dir).resolve().relative_to(Path(repo_root).resolve())
-    diff = git("diff", "--name-only", since, "--", str(rel))
+    diff = git("diff", "--name-only", "--end-of-options", since, "--", str(rel))
     if diff.returncode != 0:  # an unknown commit must not read as "no label changes"
         raise RuntimeError(f"git diff {since} failed: {diff.stderr.strip()}")
     changes = []

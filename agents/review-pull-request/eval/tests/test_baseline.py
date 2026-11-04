@@ -198,6 +198,17 @@ def test_label_changes_fail_loudly_on_an_unknown_commit(tmp_path):
         baseline.label_changes("0" * 40, root / "cases", root)
 
 
+def test_a_commit_that_looks_like_a_git_option_writes_nothing(tmp_path):
+    """cases_commit comes from a baseline file; `git diff --output=<file>` would overwrite that file."""
+    root = tmp_path / "repo"
+    (root / "cases").mkdir(parents=True)
+    git(root, "init", "-q")
+    target = tmp_path / "written-by-git"
+    with pytest.raises(RuntimeError, match="git diff"):
+        baseline.label_changes(f"--output={target}", root / "cases", root)
+    assert not target.exists()
+
+
 def test_a_run_made_with_uncommitted_changes_never_becomes_the_baseline(tmp_path, capsys):
     run = tmp_path / "run"
     run.mkdir()

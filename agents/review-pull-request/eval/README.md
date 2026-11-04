@@ -220,6 +220,14 @@ write until each failing case is classed) and record why it failed in `error_ana
 without reviewing again. It also records each case's result under the old file-only rule
 (`file_level_runs`, `file_level_pass_rate`), to show what line matching changed.
 
+### Security
+
+A case file is input: mined cases hold text from PR comments, and a case's values reach git, `gh` and GitHub API
+paths that carry the token. So the loader refuses a case whose `case_id`, `repo` or commit SHAs are not plain IDs
+(`eval/schema/case.schema.json`), and Promptfoo's templating is off (`run_eval.sh`), since it renders string vars as
+Nunjucks, which can run code. Run the evals with `run_eval.sh`, not `promptfoo` directly. Audited for PMAT-304; the
+findings are on the ticket.
+
 ### Known limitations
 
 - **Selection bias.** Mined cases were selected by the model that raised them, so they favour or penalise

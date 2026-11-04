@@ -181,3 +181,10 @@ def test_the_loader_turns_every_case_into_a_test_and_refuses_an_invalid_one(tmp_
     bad.write_text(json.dumps(case() | {"expected": {"action": "skip_false_bug"}}))
     with pytest.raises(ValueError, match="bad.json"):
         load_cases.create_tests(cases_dir=tmp_path)
+
+
+def test_the_run_script_turns_promptfoos_templating_off():
+    """Promptfoo renders a string var as Nunjucks, which can run code. The schema refuses such a case_id;
+    this is the second layer (checked by hand against promptfoo 0.125.1, which has no Python API to test it)."""
+    script = (case_rules.EVAL / "scripts" / "run_eval.sh").read_text()
+    assert "PROMPTFOO_DISABLE_TEMPLATING=true" in script

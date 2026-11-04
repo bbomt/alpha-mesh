@@ -6,6 +6,7 @@ that record every call: nothing reaches GitHub or a model.
 """
 
 import json
+import time
 from datetime import date
 from types import SimpleNamespace
 
@@ -281,3 +282,13 @@ def test_a_rerun_keeps_a_hand_edited_expected_and_notes_and_label_recomputes_exp
     relabelled = json.loads(path.read_text())
     assert relabelled["expected"] == {"action": "raise_true_bug", "flag_file": "src/a.py", "min_severity": "medium"}
     assert relabelled["notes"] == "The caller checks the length at src/x.py:40."
+
+
+def test_a_hostile_comment_line_cannot_stall_the_parser():
+    """Anyone who can comment on a PR writes what mine parses: a long run of backticks took cubic time."""
+    ticks = "`" * 6000
+    started = time.monotonic()
+    parsed = eval_cases.parse_report(f"# AI Code Review\n> **Model:** {ticks}x\n\n### 🔴 High\n\n#### {ticks} x\n"
+                                     f"#### `a` · model: {ticks}x\n")
+    assert time.monotonic() - started < 5
+    assert parsed["model"] is None

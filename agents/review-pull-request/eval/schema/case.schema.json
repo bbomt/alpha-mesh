@@ -16,11 +16,11 @@
   "properties": {
     "case_id": {
       "type": "string",
-      "minLength": 1
+      "pattern": "^[A-Za-z0-9._-]+$"
     },
     "repo": {
       "type": "string",
-      "pattern": "^[^/]+/[^/]+$"
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9-]*/(?!\\.{1,2}$)[A-Za-z0-9_.][A-Za-z0-9_.-]*$"
     },
     "pr_number": {
       "type": "integer",
@@ -30,25 +30,29 @@
       "type": [
         "string",
         "null"
-      ]
+      ],
+      "pattern": "^[0-9a-f]{40}$"
     },
     "head_sha": {
       "type": [
         "string",
         "null"
-      ]
+      ],
+      "pattern": "^[0-9a-f]{40}$"
     },
     "raised_sha": {
       "type": [
         "string",
         "null"
-      ]
+      ],
+      "pattern": "^[0-9a-f]{40}$"
     },
     "fix_sha": {
       "type": [
         "string",
         "null"
-      ]
+      ],
+      "pattern": "^[0-9a-f]{40}$"
     },
     "label": {
       "enum": [
