@@ -30,7 +30,7 @@ from pathlib import Path
 EVAL_DIR = Path(__file__).resolve().parent.parent
 CASES_DIR = EVAL_DIR / "cases"
 
-CASE_SEVERITIES = ("high", "medium")  # only these become cases; low findings are often left by design
+CASE_SEVERITIES = ("high", "medium", "low")
 LABELS = ("false_positive", "real_issue")
 
 _TITLES = ("# AI Code Review", "# Partial pull request review")
@@ -76,6 +76,11 @@ def pr_commits(gh, repo: str, number: int) -> list[dict]:
     out = gh(["api", f"repos/{check_repo(repo)}/pulls/{int(number)}/commits", "--paginate", "--jq",
               ".[] | {sha, message: .commit.message} | @json"])
     return [json.loads(line) for line in out.splitlines() if line.strip()]
+
+
+def changed_files(gh, repo: str, base: str, head: str) -> int:
+    """How many files the diff base...head changes (at most 300: GitHub's limit on one page, far above any cap)."""
+    return int(gh(["api", f"repos/{check_repo(repo)}/compare/{base}...{head}", "--jq", ".files | length"]))
 
 
 def cited_ids(commits: list[dict]) -> dict[str, str]:
@@ -178,11 +183,13 @@ def load_cases(cases_dir: Path) -> list[dict]:
 
 # ── Commands ────────────────────────────────────────────────────────────────
 
-def mine(repo: str, limit: int, *, prs: list[int] | None = None, gh=run_gh, cases_dir: Path = CASES_DIR,
-         today: date | None = None) -> dict:
+def mine(repo: str, limit: int, *, prs: list[int] | None = None, max_files: int | None = None, gh=run_gh,
+         cases_dir: Path = CASES_DIR, today: date | None = None) -> dict:
     check_repo(repo)  # before any gh call
     today = today or date.today()
-    counts = {"cited": 0, "dismissed": 0, "duplicate": 0, "unresolved": 0, "conflict": 0, "no_id": 0, "no_line": 0}
+    counts = {"cited": 0, "dismissed": 0, "duplicate": 0, "unresolved": 0, "conflict": 0, "no_id": 0, "no_line": 0,
+              "too_large": 0}
+    sizes: dict[str, int] = {}  # raised sha -> files changed: run time grows with it
     found: dict[str, dict] = {}
     seen: set[str] = set()
     mined = 0
@@ -219,6 +226,13 @@ def mine(repo: str, limit: int, *, prs: list[int] | None = None, gh=run_gh, case
                 if not fix and not reason:
                     counts["unresolved"] += 1
                     continue
+                if max_files is not None:
+                    head = parsed["head_sha"]
+                    if head not in sizes:
+                        sizes[head] = changed_files(gh, repo, pr["baseRefOid"], head)
+                    if sizes[head] > max_files:
+                        counts["too_large"] += 1
+                        continue
                 counts["cited" if fix else "dismissed"] += 1
                 # Every case applies to raised_sha, the code the review saw; head_sha is the merged code.
                 case = {
@@ -241,6 +255,8 @@ def mine(repo: str, limit: int, *, prs: list[int] | None = None, gh=run_gh, case
             case.update({k: existing[k] for k in ("label", "label_by", "label_date", "label_reason")})
         elif existing and (existing["label"], existing["label_reason"]) == (case["label"], case["label_reason"]):
             case["label_date"] = existing["label_date"]  # the label did not change: no date churn
+        if existing:
+            case["finding"] = existing["finding"]  # an ID names one finding; its line may have been fixed by hand
         case["category"] = "mined"
         case["expected"] = derive_expected(case["label"], case["finding"])
         if existing and "expected" in existing and existing["expected"] != derive_expected(existing["label"],
@@ -276,6 +292,7 @@ def main(argv=None) -> int:
     p.add_argument("--repo", required=True, help="owner/name, e.g. bbomt/alpha-mesh")
     p.add_argument("--limit", type=int, default=20, help="how many recently merged PRs (default 20)")
     p.add_argument("--prs", help="only these PR numbers, comma-separated")
+    p.add_argument("--max-files", type=int, help="leave out findings raised on a commit changing more files than this")
     p = sub.add_parser("label", help="override a case's label")
     p.add_argument("case_id")
     p.add_argument("label", choices=LABELS)
@@ -285,7 +302,7 @@ def main(argv=None) -> int:
 
     if args.command == "mine":
         prs = [int(n) for n in args.prs.split(",")] if args.prs else None
-        print(json.dumps(mine(args.repo, args.limit, prs=prs), indent=2))
+        print(json.dumps(mine(args.repo, args.limit, prs=prs, max_files=args.max_files), indent=2))
     else:
         label(args.case_id, args.label, args.reason, by=args.by)
     return 0

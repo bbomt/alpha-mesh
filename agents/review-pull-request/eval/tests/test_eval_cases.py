@@ -44,8 +44,9 @@ def commit(sha, message):
 class FakeGh:
     """Reads only: merged PRs, a PR's comments and its commits. Any other call fails the test."""
 
-    def __init__(self, prs, comments=None, commits=None):
+    def __init__(self, prs, comments=None, commits=None, files=None):
         self.prs, self.comments, self.calls = prs, comments or {}, []
+        self.files = files or {}  # raised sha -> changed files in the diff base...raised
         self.commits = commits or {}  # PR number -> [{"sha", "message"}], oldest first
 
     def __call__(self, args):
@@ -56,6 +57,8 @@ class FakeGh:
             return "".join(json.dumps(body) + "\n" for body in self.comments.get(int(args[1].split("/")[4]), []))
         if args[0] == "api" and args[1].endswith("/commits"):  # repos/<owner>/<repo>/pulls/<n>/commits
             return "".join(json.dumps(c) + "\n" for c in self.commits.get(int(args[1].split("/")[4]), []))
+        if args[0] == "api" and "/compare/" in args[1]:  # repos/<owner>/<repo>/compare/<base>...<head>
+            return f"{self.files[args[1].rsplit('...', 1)[1]]}\n"
         raise AssertionError(f"unexpected gh call: {args}")
 
 
@@ -82,6 +85,40 @@ def write_legacy(tmp_path):
     return path
 
 
+def test_a_rerun_keeps_a_finding_line_fixed_by_hand(tmp_path):
+    gh = FakeGh([pr(7, BASE1, HEAD1)],
+                comments={7: [report(OLD1, [MEDIUM], pr_number=7), "Dismissed review finding R7-eeeeeee-001: not a bug."]},
+                commits={7: []})
+    mine(tmp_path, gh)
+    path = tmp_path / "cases" / "repo" / "R7-eeeeeee-001.json"
+    case = json.loads(path.read_text())
+    case["finding"]["line"] = 25  # the label fix: the review cited the wrong line
+    path.write_text(json.dumps(case, indent=2) + "\n")
+
+    mine(tmp_path, gh)
+
+    assert json.loads(path.read_text())["finding"]["line"] == 25
+
+
+def test_max_files_leaves_out_findings_raised_on_a_large_commit_and_asks_github_once_per_commit(tmp_path):
+    small, large = "c" * 40, "d" * 40
+    issues = [MEDIUM, Issue("src/b.py", 20, "medium", "The caller may pass None.", None)]
+    gh = FakeGh([pr(7, BASE1, HEAD1)],
+                comments={7: [report(small, issues, pr_number=7), report(large, issues, pr_number=7),
+                              "Dismissed review finding R7-ccccccc-001: not a bug.\n"
+                              "Dismissed review finding R7-ccccccc-002: not a bug.\n"
+                              "Dismissed review finding R7-ddddddd-001: not a bug.\n"
+                              "Dismissed review finding R7-ddddddd-002: not a bug."]},
+                commits={7: []}, files={small: 22, large: 23})
+
+    summary = mine(tmp_path, gh, max_files=22)
+
+    assert sorted(repo_cases(tmp_path)) == ["R7-ccccccc-001.json", "R7-ccccccc-002.json"]
+    assert summary["findings"]["too_large"] == 2 and summary["findings"]["dismissed"] == 2
+    compares = [args[1] for args in gh.calls if args[0] == "api" and "/compare/" in args[1]]
+    assert sorted(compares) == [f"repos/{REPO}/compare/{BASE1}...{small}", f"repos/{REPO}/compare/{BASE1}...{large}"]
+
+
 def test_each_finding_id_is_labelled_by_what_happened_to_it(tmp_path):  # PMAT-307 acceptance test
     cited = Issue("src/a.py", 12, "high", "Index can go out of range.", "Check the length first.")
     dismissed = Issue("src/b.py", 20, "medium", "The caller may pass None.", None)
@@ -96,14 +133,15 @@ def test_each_finding_id_is_labelled_by_what_happened_to_it(tmp_path):  # PMAT-3
                               "Dismissed review finding R7-eeeeeee-002: the caller never passes None (src/x.py:40).\n"
                               "Dismissed review finding R7-eeeeeee-003: duplicate of R7-eeeeeee-001\n"
                               "Dismissed review finding R7-eeeeeee-004: not a bug.\n"
-                              "Dismissed review finding R7-eeeeeee-006: low findings never become cases."]},
+                              "Dismissed review finding R7-eeeeeee-006: the name is fine."]},
                 commits={7: [commit(OLD1, "feature[PMAT-1]: first cut"),
                              commit(FIX1, "fix[PMAT-1]: fixed review findings R7-eeeeeee-001 and R7-eeeeeee-004")]})
 
     summary = mine(tmp_path, gh)
 
     files = repo_cases(tmp_path)
-    assert sorted(files) == ["R7-eeeeeee-001.json", "R7-eeeeeee-002.json"]
+    assert sorted(files) == ["R7-eeeeeee-001.json", "R7-eeeeeee-002.json", "R7-eeeeeee-006.json"]  # low included
+    assert files["R7-eeeeeee-006.json"]["finding"]["severity"] == "low"
     real, false = files["R7-eeeeeee-001.json"], files["R7-eeeeeee-002.json"]
     assert {k: real[k] for k in ("case_id", "repo", "pr_number", "base_sha", "head_sha", "raised_sha", "fix_sha",
                                  "label", "label_by")} == {
@@ -113,9 +151,9 @@ def test_each_finding_id_is_labelled_by_what_happened_to_it(tmp_path):  # PMAT-3
     assert {k: false[k] for k in ("case_id", "raised_sha", "fix_sha", "label", "label_by", "label_reason")} == {
         "case_id": "R7-eeeeeee-002", "raised_sha": OLD1, "fix_sha": None, "label": "false_positive",
         "label_by": "rule", "label_reason": "the caller never passes None (src/x.py:40)."}
-    assert summary["cases_written"] == 2
-    assert summary["findings"] == {"cited": 1, "dismissed": 1, "duplicate": 1, "unresolved": 1, "conflict": 1,
-                                   "no_id": 0, "no_line": 0}
+    assert summary["cases_written"] == 3
+    assert summary["findings"] == {"cited": 1, "dismissed": 2, "duplicate": 1, "unresolved": 1, "conflict": 1,
+                                   "no_id": 0, "no_line": 0, "too_large": 0}
     assert legacy.read_bytes() == legacy_before
     write_flags = {"-X", "--method", "-f", "-F", "--field", "--raw-field", "--input"}
     for args in gh.calls:
@@ -135,7 +173,7 @@ def test_a_finding_without_an_id_and_another_prs_dismissal_give_no_case(tmp_path
 
     assert repo_cases(tmp_path) == {}
     assert summary["findings"] == {"cited": 0, "dismissed": 0, "duplicate": 0, "unresolved": 1, "conflict": 0,
-                                   "no_id": 1, "no_line": 0}
+                                   "no_id": 1, "no_line": 0, "too_large": 0}
 
 
 def test_a_finding_without_a_line_gives_no_case(tmp_path):
@@ -149,7 +187,7 @@ def test_a_finding_without_a_line_gives_no_case(tmp_path):
 
     assert repo_cases(tmp_path) == {}
     assert summary["findings"] == {"cited": 0, "dismissed": 0, "duplicate": 0, "unresolved": 0, "conflict": 0,
-                                   "no_id": 0, "no_line": 1}
+                                   "no_id": 0, "no_line": 1, "too_large": 0}
 
 
 def test_a_later_dismissal_of_the_same_id_corrects_the_earlier_one(tmp_path):
