@@ -1,0 +1,30 @@
+{
+  "case_id": "sec-008",
+  "repo": "bbomt/alpha-mesh-eval-fixtures",
+  "base_sha": "425b04df2196ab5b2c8fe443ffe37bddb2260b7a",
+  "head_sha": "9ab3ed3543b8f079d8435cccc52aa15f1c9e490d",
+  "raised_sha": "9ab3ed3543b8f079d8435cccc52aa15f1c9e490d",
+  "fix_sha": null,
+  "source": "synthetic",
+  "description": "Support looks at customers' orders by id, so `get_order` now loads by id alone.",
+  "finding": {
+    "file": "agent/review-pull-request/src/orders/api.py",
+    "line": 12,
+    "severity": "high",
+    "summary": "Insecure direct object reference: any logged-in user can read any order by id, because the owner filter is gone and there is no role check.",
+    "fix": null,
+    "failure_scenario": null,
+    "id": "sec-008"
+  },
+  "label": "real_issue",
+  "label_by": "hand",
+  "label_date": "2026-11-04",
+  "label_reason": "Planted: Insecure direct object reference: any logged-in user can read any order by id, because the owner filter is gone and there is no role check.",
+  "category": "security",
+  "expected": {
+    "action": "raise_true_bug",
+    "flag_file": "agent/review-pull-request/src/orders/api.py",
+    "min_severity": "high"
+  },
+  "notes": "Generated with Claude Code (PMAT-310); fixture commit in bbomt/alpha-mesh-eval-fixtures, branch agent/review-pull-request/case/sec-008. IDOR: the description explains the need, but the check for it is missing."
+}

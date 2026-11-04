@@ -1,0 +1,31 @@
+{
+  "case_id": "pub-mikro-orm-481",
+  "repo": "mikro-orm/mikro-orm",
+  "pr_number": 481,
+  "base_sha": "9124badcc80ff2b87882d6ac1daab5bfe8c02551",
+  "head_sha": "db3210d16657ab217d4b3f08f01b27ef9f5d46cb",
+  "raised_sha": "fab3dff0f397265046484e679c2fdfc9a6557f93",
+  "fix_sha": null,
+  "source": "public_pr",
+  "model": null,
+  "finding": {
+    "file": "lib/drivers/MongoDriver.ts",
+    "line": 121,
+    "severity": "low",
+    "summary": "this is wrong, `index.type` is not the same as the parameter `type` you just removed\r\n\r\n\r\n```suggestion\r\n        unique: false,\r\n```",
+    "fix": null,
+    "failure_scenario": null,
+    "id": "pub-mikro-orm-481"
+  },
+  "label": "real_issue",
+  "label_by": "hand",
+  "label_date": "2026-11-04",
+  "label_reason": "A human reviewer raised this in mikro-orm/mikro-orm#481 (merged 2020-04-14), and a later commit in the PR changes the file.",
+  "category": "logic",
+  "expected": {
+    "action": "raise_true_bug",
+    "flag_file": "lib/drivers/MongoDriver.ts",
+    "min_severity": "low"
+  },
+  "notes": "Hand-picked with Claude Code (PMAT-310): https://github.com/mikro-orm/mikro-orm/pull/481. TypeScript: compares a field that no longer means what the code assumes. Human reviewers are not perfect ground truth, and they give no severity, so any severity counts."
+}

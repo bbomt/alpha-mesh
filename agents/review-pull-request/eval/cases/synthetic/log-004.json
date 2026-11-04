@@ -1,0 +1,30 @@
+{
+  "case_id": "log-004",
+  "repo": "bbomt/alpha-mesh-eval-fixtures",
+  "base_sha": "425b04df2196ab5b2c8fe443ffe37bddb2260b7a",
+  "head_sha": "fc9f6072226386bae0c1d7d18eb579edfaa884e1",
+  "raised_sha": "fc9f6072226386bae0c1d7d18eb579edfaa884e1",
+  "fix_sha": null,
+  "source": "synthetic",
+  "description": "Adds `removeSoldOut`, called when the cart loads, to take out items that sold out since the last visit.",
+  "finding": {
+    "file": "agent/review-pull-request/web/src/cart.ts",
+    "line": 23,
+    "severity": "medium",
+    "summary": "Inverted filter: it keeps only the sold out items and removes everything else; the condition must be negated.",
+    "fix": null,
+    "failure_scenario": null,
+    "id": "log-004"
+  },
+  "label": "real_issue",
+  "label_by": "hand",
+  "label_date": "2026-11-04",
+  "label_reason": "Planted: Inverted filter: it keeps only the sold out items and removes everything else; the condition must be negated.",
+  "category": "logic",
+  "expected": {
+    "action": "raise_true_bug",
+    "flag_file": "agent/review-pull-request/web/src/cart.ts",
+    "min_severity": "medium"
+  },
+  "notes": "Generated with Claude Code (PMAT-310); fixture commit in bbomt/alpha-mesh-eval-fixtures, branch agent/review-pull-request/case/log-004. Inverted condition in TypeScript."
+}

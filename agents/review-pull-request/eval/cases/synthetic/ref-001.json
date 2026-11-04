@@ -1,0 +1,22 @@
+{
+  "case_id": "ref-001",
+  "repo": "bbomt/alpha-mesh-eval-fixtures",
+  "base_sha": "425b04df2196ab5b2c8fe443ffe37bddb2260b7a",
+  "head_sha": "37c1e0a708bdd3b55fb6b56d5e3c987f9647f025",
+  "raised_sha": "37c1e0a708bdd3b55fb6b56d5e3c987f9647f025",
+  "fix_sha": null,
+  "source": "synthetic",
+  "description": "`pricing.py` was doing three jobs. `Line` and `subtotal` move to `lines.py`, tax and shipping to `charges.py`. `pricing.py` still exports them, so callers don't change.",
+  "label": "false_positive",
+  "label_by": "hand",
+  "label_date": "2026-11-04",
+  "label_reason": "No bug is planted; the tests of the base pass on this commit.",
+  "category": "refactor",
+  "expected": {
+    "action": "raise_nothing",
+    "flag_file": "agent/review-pull-request/**",
+    "min_severity": "medium",
+    "max_comments": 3
+  },
+  "notes": "Generated with Claude Code (PMAT-310); fixture commit in bbomt/alpha-mesh-eval-fixtures, branch agent/review-pull-request/case/ref-001. A move across three files; the tests pass unchanged."
+}

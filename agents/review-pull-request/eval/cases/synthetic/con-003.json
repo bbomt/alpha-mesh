@@ -1,0 +1,30 @@
+{
+  "case_id": "con-003",
+  "repo": "bbomt/alpha-mesh-eval-fixtures",
+  "base_sha": "425b04df2196ab5b2c8fe443ffe37bddb2260b7a",
+  "head_sha": "01bbd0bfecbdaa21abb04186bcd8f36e8e4631b6",
+  "raised_sha": "01bbd0bfecbdaa21abb04186bcd8f36e8e4631b6",
+  "fix_sha": null,
+  "source": "synthetic",
+  "description": "Checkout feels slow, so the cart sync no longer holds up the page.",
+  "finding": {
+    "file": "agent/review-pull-request/web/src/checkout.ts",
+    "line": 5,
+    "severity": "medium",
+    "summary": "Missing await: the cart save races with `placeOrder`, its failure becomes an unhandled rejection, and the later `saveCart([])` can finish first and leave the old cart saved.",
+    "fix": null,
+    "failure_scenario": null,
+    "id": "con-003"
+  },
+  "label": "real_issue",
+  "label_by": "hand",
+  "label_date": "2026-11-04",
+  "label_reason": "Planted: Missing await: the cart save races with `placeOrder`, its failure becomes an unhandled rejection, and the later `saveCart([])` can finish first and leave the old cart saved.",
+  "category": "concurrency",
+  "expected": {
+    "action": "raise_true_bug",
+    "flag_file": "agent/review-pull-request/web/src/checkout.ts",
+    "min_severity": "medium"
+  },
+  "notes": "Generated with Claude Code (PMAT-310); fixture commit in bbomt/alpha-mesh-eval-fixtures, branch agent/review-pull-request/case/con-003. Missing await in TypeScript, where the description gives a reason that sounds fair."
+}

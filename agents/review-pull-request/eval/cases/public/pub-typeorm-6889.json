@@ -1,0 +1,31 @@
+{
+  "case_id": "pub-typeorm-6889",
+  "repo": "typeorm/typeorm",
+  "pr_number": 6889,
+  "base_sha": "3e8ddca19f4815e9cd279e0e64d25c2d5394bee2",
+  "head_sha": "149fd199a76822af392b16099ba0d52476c38155",
+  "raised_sha": "233550994b123d422a5f84eee51b2b29d738ff44",
+  "fix_sha": null,
+  "source": "public_pr",
+  "model": null,
+  "finding": {
+    "file": "src/commands/InitCommand.ts",
+    "line": 100,
+    "severity": "low",
+    "summary": "Wouldn't `stderr` then a failure exit code cause this to not reject?  Because it would resolve first and then never reject.",
+    "fix": null,
+    "failure_scenario": null,
+    "id": "pub-typeorm-6889"
+  },
+  "label": "real_issue",
+  "label_by": "hand",
+  "label_date": "2026-11-04",
+  "label_reason": "A human reviewer raised this in typeorm/typeorm#6889 (merged 2021-03-08), and a later commit in the PR changes the file.",
+  "category": "logic",
+  "expected": {
+    "action": "raise_true_bug",
+    "flag_file": "src/commands/InitCommand.ts",
+    "min_severity": "low"
+  },
+  "notes": "Hand-picked with Claude Code (PMAT-310): https://github.com/typeorm/typeorm/pull/6889. TypeScript: stderr resolves the promise before the failure can reject it. Human reviewers are not perfect ground truth, and they give no severity, so any severity counts."
+}

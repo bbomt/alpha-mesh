@@ -1,0 +1,30 @@
+{
+  "case_id": "sec-007",
+  "repo": "bbomt/alpha-mesh-eval-fixtures",
+  "base_sha": "425b04df2196ab5b2c8fe443ffe37bddb2260b7a",
+  "head_sha": "07e38c64b64d9611a1e8ba8f9dcd10517db6fc1b",
+  "raised_sha": "07e38c64b64d9611a1e8ba8f9dcd10517db6fc1b",
+  "fix_sha": null,
+  "source": "synthetic",
+  "description": "The nightly jobs call the API with service tokens, which are issued by the platform team.",
+  "finding": {
+    "file": "agent/review-pull-request/src/orders/auth.py",
+    "line": 24,
+    "severity": "high",
+    "summary": "Authentication bypass: a token with the role `service` is accepted before its signature is checked, so anyone can forge `x:service:anything`.",
+    "fix": null,
+    "failure_scenario": null,
+    "id": "sec-007"
+  },
+  "label": "real_issue",
+  "label_by": "hand",
+  "label_date": "2026-11-04",
+  "label_reason": "Planted: Authentication bypass: a token with the role `service` is accepted before its signature is checked, so anyone can forge `x:service:anything`.",
+  "category": "security",
+  "expected": {
+    "action": "raise_true_bug",
+    "flag_file": "agent/review-pull-request/src/orders/auth.py",
+    "min_severity": "high"
+  },
+  "notes": "Generated with Claude Code (PMAT-310); fixture commit in bbomt/alpha-mesh-eval-fixtures, branch agent/review-pull-request/case/sec-007. Auth bypass from an early return placed before verification."
+}

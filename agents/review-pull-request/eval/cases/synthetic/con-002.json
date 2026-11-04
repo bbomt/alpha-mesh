@@ -1,0 +1,30 @@
+{
+  "case_id": "con-002",
+  "repo": "bbomt/alpha-mesh-eval-fixtures",
+  "base_sha": "425b04df2196ab5b2c8fe443ffe37bddb2260b7a",
+  "head_sha": "de09831d6c41000f57542c1a99828772292cabc8",
+  "raised_sha": "de09831d6c41000f57542c1a99828772292cabc8",
+  "fix_sha": null,
+  "source": "synthetic",
+  "description": "Removes the duplicated stock calculation from `reserve`.",
+  "finding": {
+    "file": "agent/review-pull-request/src/orders/inventory.py",
+    "line": 21,
+    "severity": "medium",
+    "summary": "Race: the stock check now happens outside the lock, so two threads can both see enough stock and over-reserve; check and update must stay in one critical section.",
+    "fix": null,
+    "failure_scenario": null,
+    "id": "con-002"
+  },
+  "label": "real_issue",
+  "label_by": "hand",
+  "label_date": "2026-11-04",
+  "label_reason": "Planted: Race: the stock check now happens outside the lock, so two threads can both see enough stock and over-reserve; check and update must stay in one critical section.",
+  "category": "concurrency",
+  "expected": {
+    "action": "raise_true_bug",
+    "flag_file": "agent/review-pull-request/src/orders/inventory.py",
+    "min_severity": "medium"
+  },
+  "notes": "Generated with Claude Code (PMAT-310); fixture commit in bbomt/alpha-mesh-eval-fixtures, branch agent/review-pull-request/case/con-002. Check-then-act race, introduced by a change that looks like a tidy-up."
+}

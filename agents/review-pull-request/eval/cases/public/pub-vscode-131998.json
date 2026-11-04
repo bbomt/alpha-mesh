@@ -1,0 +1,31 @@
+{
+  "case_id": "pub-vscode-131998",
+  "repo": "microsoft/vscode",
+  "pr_number": 131998,
+  "base_sha": "45a1f368f0e4a63d4a99a700ac4d0ede6065bbf6",
+  "head_sha": "a26deb348ac3c699246e3c3e11476607a3e1a422",
+  "raised_sha": "e8d8f16bcf2833c4d106c9334121084e9f93bbf2",
+  "fix_sha": null,
+  "source": "public_pr",
+  "model": null,
+  "finding": {
+    "file": "src/vs/workbench/api/common/extHostEditorTabs.ts",
+    "line": 61,
+    "severity": "low",
+    "summary": "This means that you can never lookup (by instance) the activeTab in the list of tabs. Use, the same instance instead (also results in less code).",
+    "fix": null,
+    "failure_scenario": null,
+    "id": "pub-vscode-131998"
+  },
+  "label": "real_issue",
+  "label_by": "hand",
+  "label_date": "2026-11-04",
+  "label_reason": "A human reviewer raised this in microsoft/vscode#131998 (merged 2021-09-02), and a later commit in the PR changes the file.",
+  "category": "logic",
+  "expected": {
+    "action": "raise_true_bug",
+    "flag_file": "src/vs/workbench/api/common/extHostEditorTabs.ts",
+    "min_severity": "low"
+  },
+  "notes": "Hand-picked with Claude Code (PMAT-310): https://github.com/microsoft/vscode/pull/131998. TypeScript: the active tab is a separate object, so it can never be found in the list by instance. Human reviewers are not perfect ground truth, and they give no severity, so any severity counts."
+}

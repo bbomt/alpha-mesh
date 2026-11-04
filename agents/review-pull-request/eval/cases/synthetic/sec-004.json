@@ -1,0 +1,30 @@
+{
+  "case_id": "sec-004",
+  "repo": "bbomt/alpha-mesh-eval-fixtures",
+  "base_sha": "425b04df2196ab5b2c8fe443ffe37bddb2260b7a",
+  "head_sha": "ca8e436c63b838b15a16972e3a16c6be8812bf40",
+  "raised_sha": "ca8e436c63b838b15a16972e3a16c6be8812bf40",
+  "fix_sha": null,
+  "source": "synthetic",
+  "description": "Support needs to be able to refund an order from the admin screen.",
+  "finding": {
+    "file": "agent/review-pull-request/src/orders/api.py",
+    "line": 30,
+    "severity": "high",
+    "summary": "Missing authorization: any logged-in user can refund any order, because there is no `require_role` or ownership check, unlike `mark_shipped` beside it.",
+    "fix": null,
+    "failure_scenario": null,
+    "id": "sec-004"
+  },
+  "label": "real_issue",
+  "label_by": "hand",
+  "label_date": "2026-11-04",
+  "label_reason": "Planted: Missing authorization: any logged-in user can refund any order, because there is no `require_role` or ownership check, unlike `mark_shipped` beside it.",
+  "category": "security",
+  "expected": {
+    "action": "raise_true_bug",
+    "flag_file": "agent/review-pull-request/src/orders/api.py",
+    "min_severity": "high"
+  },
+  "notes": "Generated with Claude Code (PMAT-310); fixture commit in bbomt/alpha-mesh-eval-fixtures, branch agent/review-pull-request/case/sec-004. Missing authz, shown by contrast with the handler next to it."
+}

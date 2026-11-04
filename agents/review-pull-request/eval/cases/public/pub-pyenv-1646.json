@@ -1,0 +1,31 @@
+{
+  "case_id": "pub-pyenv-1646",
+  "repo": "pyenv/pyenv",
+  "pr_number": 1646,
+  "base_sha": "cabdc451813a47c642f2f48048b01c4fd7de8c66",
+  "head_sha": "b82b65560c06ae4986a099bbaa3dd347874fac04",
+  "raised_sha": "a3f95fa285c8120c16e328273f1fc93aecf04544",
+  "fix_sha": null,
+  "source": "public_pr",
+  "model": null,
+  "finding": {
+    "file": "plugins/python-build/bin/python-build",
+    "line": 1522,
+    "severity": "low",
+    "summary": "This looks like it would break horribly if Homebrew isn't present (e.g. in Linux).",
+    "fix": null,
+    "failure_scenario": null,
+    "id": "pub-pyenv-1646"
+  },
+  "label": "real_issue",
+  "label_by": "hand",
+  "label_date": "2026-11-04",
+  "label_reason": "A human reviewer raised this in pyenv/pyenv#1646 (merged 2021-09-17), and a later commit in the PR changes the file.",
+  "category": "logic",
+  "expected": {
+    "action": "raise_true_bug",
+    "flag_file": "plugins/python-build/bin/python-build",
+    "min_severity": "low"
+  },
+  "notes": "Hand-picked with Claude Code (PMAT-310): https://github.com/pyenv/pyenv/pull/1646. Bash: calls `brew` with no check that Homebrew is present, so it breaks on Linux. Human reviewers are not perfect ground truth, and they give no severity, so any severity counts."
+}

@@ -1,0 +1,31 @@
+{
+  "case_id": "pub-ansible-66192",
+  "repo": "ansible/ansible",
+  "pr_number": 66192,
+  "base_sha": "193879d462013433c5a60e7b16ef724723457f3c",
+  "head_sha": "09f846e0802e80b5896d77794d8243204a9aa8b9",
+  "raised_sha": "fda4a4f28d6a8653a0760c066fa9f62316f450ef",
+  "fix_sha": null,
+  "source": "public_pr",
+  "model": null,
+  "finding": {
+    "file": "lib/ansible/modules/cloud/docker/docker_container.py",
+    "line": 2276,
+    "severity": "low",
+    "summary": "This is wrong. It should be `restart_policy=(host_config.get('RestartPolicy') or dict()).get('Name')`. But it's better to store `host_config.get('RestartPolicy') or dict()` into a new variable before, since you need to reuse it below.",
+    "fix": null,
+    "failure_scenario": null,
+    "id": "pub-ansible-66192"
+  },
+  "label": "real_issue",
+  "label_by": "hand",
+  "label_date": "2026-11-04",
+  "label_reason": "A human reviewer raised this in ansible/ansible#66192 (merged 2020-01-06), and a later commit in the PR changes the file.",
+  "category": "logic",
+  "expected": {
+    "action": "raise_true_bug",
+    "flag_file": "lib/ansible/modules/cloud/docker/docker_container.py",
+    "min_severity": "low"
+  },
+  "notes": "Hand-picked with Claude Code (PMAT-310): https://github.com/ansible/ansible/pull/66192. Python: passes the whole RestartPolicy dict where the name is expected. Human reviewers are not perfect ground truth, and they give no severity, so any severity counts."
+}

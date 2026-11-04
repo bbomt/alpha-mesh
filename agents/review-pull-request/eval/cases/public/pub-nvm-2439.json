@@ -1,0 +1,31 @@
+{
+  "case_id": "pub-nvm-2439",
+  "repo": "nvm-sh/nvm",
+  "pr_number": 2439,
+  "base_sha": "d9b11ba20843c8bc10772157571a67b9076b7ba5",
+  "head_sha": "4fdef427e4b1d563570ba5992bdbe7d7e23f025b",
+  "raised_sha": "1c0f702f5ca6efc67535dd2dcd6da6e4e9099560",
+  "fix_sha": null,
+  "source": "public_pr",
+  "model": null,
+  "finding": {
+    "file": "nvm.sh",
+    "line": 1930,
+    "severity": "low",
+    "summary": "```suggestion\r\n  nosource=\"${4-}\"\r\n```\r\nassignments won't work if there's spaces around the =",
+    "fix": null,
+    "failure_scenario": null,
+    "id": "pub-nvm-2439"
+  },
+  "label": "real_issue",
+  "label_by": "hand",
+  "label_date": "2026-11-04",
+  "label_reason": "A human reviewer raised this in nvm-sh/nvm#2439 (merged 2021-02-28), and a later commit in the PR changes the file.",
+  "category": "logic",
+  "expected": {
+    "action": "raise_true_bug",
+    "flag_file": "nvm.sh",
+    "min_severity": "low"
+  },
+  "notes": "Hand-picked with Claude Code (PMAT-310): https://github.com/nvm-sh/nvm/pull/2439. Bash: spaces around `=` make this a command, not an assignment. Human reviewers are not perfect ground truth, and they give no severity, so any severity counts."
+}

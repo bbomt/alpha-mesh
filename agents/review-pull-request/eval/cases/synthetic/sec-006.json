@@ -1,0 +1,30 @@
+{
+  "case_id": "sec-006",
+  "repo": "bbomt/alpha-mesh-eval-fixtures",
+  "base_sha": "425b04df2196ab5b2c8fe443ffe37bddb2260b7a",
+  "head_sha": "a5c6ff133866f84877efd21795c8937aa5abc6aa",
+  "raised_sha": "a5c6ff133866f84877efd21795c8937aa5abc6aa",
+  "fix_sha": null,
+  "source": "synthetic",
+  "description": "Lets a user ask for a large export to be compressed by name before downloading it.",
+  "finding": {
+    "file": "agent/review-pull-request/src/orders/exports.py",
+    "line": 20,
+    "severity": "high",
+    "summary": "Command injection: the user-supplied `name` goes into a shell string with `shell=True` and skips `export_path`'s check; a name like `x; rm -rf /` runs.",
+    "fix": null,
+    "failure_scenario": null,
+    "id": "sec-006"
+  },
+  "label": "real_issue",
+  "label_by": "hand",
+  "label_date": "2026-11-04",
+  "label_reason": "Planted: Command injection: the user-supplied `name` goes into a shell string with `shell=True` and skips `export_path`'s check; a name like `x; rm -rf /` runs.",
+  "category": "security",
+  "expected": {
+    "action": "raise_true_bug",
+    "flag_file": "agent/review-pull-request/src/orders/exports.py",
+    "min_severity": "high"
+  },
+  "notes": "Generated with Claude Code (PMAT-310); fixture commit in bbomt/alpha-mesh-eval-fixtures, branch agent/review-pull-request/case/sec-006. Command injection, in the same file as the guard it bypasses."
+}

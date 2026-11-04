@@ -1,0 +1,31 @@
+{
+  "case_id": "pub-httpx-307",
+  "repo": "encode/httpx",
+  "pr_number": 307,
+  "base_sha": "08355c62f56b899af15967906aa45392cd45dbdd",
+  "head_sha": "a9e8c5a67bc2d75464cf4efb98532285e38391c5",
+  "raised_sha": "4cac5d49ab1188ea3c22c461a64f9767f898ee0b",
+  "fix_sha": null,
+  "source": "public_pr",
+  "model": null,
+  "finding": {
+    "file": "httpx/utils.py",
+    "line": 115,
+    "severity": "low",
+    "summary": "I don't think this is doing what we want: `bool(ssl_path)` is always going to be `True` because it refers to a `Path` object.\r\n\r\nAs a result, we'll probably end up using the current directory as the `SSL_CERT_DIR` in all cases. 😕 \r\n\r\nWe should probably instead write something like…\r\n\r\n```python\r\nif \"SSL_CERT_DIR\" in os.environ:\r\n    ssl_path = Path(os.environ[\"SSL_CERT_DIR\"])\r\n    if ssl_path.is_dir():\r\n        return str(ssl_path)\r\n```\r\n\r\nand do the same kind of procesing for `SSL_CERT_FILE` above (although the bug wouldn't happen because the current directory is never a file).\r\n",
+    "fix": null,
+    "failure_scenario": null,
+    "id": "pub-httpx-307"
+  },
+  "label": "real_issue",
+  "label_by": "hand",
+  "label_date": "2026-11-04",
+  "label_reason": "A human reviewer raised this in encode/httpx#307 (merged 2019-09-23), and a later commit in the PR changes the file.",
+  "category": "logic",
+  "expected": {
+    "action": "raise_true_bug",
+    "flag_file": "httpx/utils.py",
+    "min_severity": "low"
+  },
+  "notes": "Hand-picked with Claude Code (PMAT-310): https://github.com/encode/httpx/pull/307. Python: `bool(Path(...))` is always true, so the check never rejects an empty value. Human reviewers are not perfect ground truth, and they give no severity, so any severity counts."
+}
