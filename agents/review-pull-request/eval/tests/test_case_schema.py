@@ -60,7 +60,7 @@ def test_no_two_cases_in_the_dataset_contradict():
     lambda c: c["expected"].pop("action"),
     lambda c: c["expected"].pop("flag_file"),
     lambda c: c["expected"].update(action="must_flag"),
-    lambda c: c["expected"].update(max_comments=0),  # removed key
+    lambda c: c["expected"].update(max_comments=0),  # only raise_nothing takes it
     lambda c: c["expected"].update(min_severity="critical"),
     lambda c: c["expected"].pop("min_severity"),
     lambda c: c["expected"].update(flag_file="src/*.py"),
@@ -78,14 +78,16 @@ def test_no_two_cases_in_the_dataset_contradict():
     lambda c: c.update(repo="org/repo?per_page=1"),
     lambda c: c.update(raised_sha="../../../user"),
     lambda c: c.update(base_sha="main"),
+    lambda c: c.pop("pr_number"),  # no PR, so a description is required
+    lambda c: c.update(expected={"action": "raise_nothing", "flag_file": "src/*.py", "max_comments": -1}),
     lambda c: c.update(head_sha="a" * 39),
     lambda c: c.update(fix_sha="--output=x"),
-], ids=["no expected", "no category", "no notes", "no action", "no flag_file", "unknown action", "unknown key",
+], ids=["no expected", "no category", "no notes", "no action", "no flag_file", "unknown action", "max_comments on a true bug",
         "bad severity", "true bug without min_severity", "glob on a true bug", "glob on a false bug",
         "min_severity on a false bug", "must_mention_any on raise_nothing",
         "true bug without a finding", "true bug with no line", "true bug at line 0", "false bug with no line",
         "true bug without raised_sha", "true bug without base_sha", "template in case_id", "repo traversal",
-        "query in repo", "raised_sha not a sha", "base_sha not a sha", "short head_sha", "option as fix_sha"])
+        "query in repo", "raised_sha not a sha", "base_sha not a sha", "no pr and no description", "negative max_comments", "short head_sha", "option as fix_sha"])
 def test_the_schema_rejects_a_broken_case(broken):
     bad = case("raise_true_bug", "src/a.py", min_severity="medium")
     broken(bad)
@@ -98,9 +100,16 @@ def test_the_schema_rejects_a_broken_case(broken):
     {"action": "skip_false_bug", "flag_file": "src/a.py"},
     {"action": "raise_nothing", "flag_file": "src/a.py"},
     {"action": "raise_nothing", "flag_file": "agents/**/*.py", "min_severity": "medium"},
+    {"action": "raise_nothing", "flag_file": "agents/**", "min_severity": "medium", "max_comments": 3},
 ])
 def test_the_schema_accepts_each_action(expected):
     jsonschema.validate(case(expected["action"], expected["flag_file"]) | {"expected": expected}, SCHEMA)
+
+
+def test_the_schema_accepts_a_case_with_no_pr_when_it_has_a_description():
+    c = case("raise_nothing", "src/a.py") | {"description": "Renames a helper."}
+    del c["pr_number"]
+    jsonschema.validate(c, SCHEMA)
 
 
 @pytest.mark.parametrize("glob, path, matches", [

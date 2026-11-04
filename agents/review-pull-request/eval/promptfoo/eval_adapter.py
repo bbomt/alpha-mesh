@@ -19,7 +19,7 @@ def review_case(case: dict, *, config, token: str, description: str, checkpointe
     """Review the case's commit, or reuse the finished review of it in this checkpointer."""
     owner, repo = case["repo"].split("/")
     head = case["raised_sha"]
-    thread = thread_id(owner, repo, case["pr_number"], head, "full", config.exclusions)
+    thread = thread_id(owner, repo, case.get("pr_number"), head, "full", config.exclusions)
     graph = build_review_graph(checkpointer)
     run_config = {"configurable": {"thread_id": thread}}
 
@@ -32,7 +32,7 @@ def review_case(case: dict, *, config, token: str, description: str, checkpointe
 
         code = review_commit(owner, repo, case["base_sha"], head, description, config=config, token=token,
                              publish=lambda report: None, all_excluded=all_excluded,
-                             pr_number=case["pr_number"], checkpointer=checkpointer)
+                             pr_number=case.get("pr_number"), checkpointer=checkpointer)
         if excluded:  # every changed file is excluded: nothing was reviewed, so nothing was raised
             return _review(case, config, files=[], incomplete=[], excluded=excluded, findings=[])
         state = graph.get_state(run_config)
@@ -49,5 +49,5 @@ def review_case(case: dict, *, config, token: str, description: str, checkpointe
 
 
 def _review(case, config, **fields) -> dict:
-    return {"repo": case["repo"], "pr_number": case["pr_number"], "base_sha": case["base_sha"],
+    return {"repo": case["repo"], "pr_number": case.get("pr_number"), "base_sha": case["base_sha"],
             "head_sha": case["raised_sha"], "model": config.model, **fields}

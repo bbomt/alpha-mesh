@@ -81,12 +81,14 @@ def check(case: dict, review: dict, window: int = WINDOW) -> tuple[bool, str]:
             return False, (f"skip_false_bug: re-raised in {flag_file} at line {hit['line']} "
                            f"(within ±{window} lines of line {line}): {hit['summary'][:200]}")
         return True, f"skip_false_bug: not re-raised in {flag_file} near line {line}"
-    pattern, minimum = glob_regex(flag_file), exp.get("min_severity")
-    hit = next((f for f in findings if pattern.match(f["file"])
-                and (minimum is None or RANK[f["severity"]] >= RANK[minimum])), None)
+    pattern, minimum, limit = glob_regex(flag_file), exp.get("min_severity"), exp.get("max_comments")
+    matching = [f for f in findings if pattern.match(f["file"])]
+    hit = next((f for f in matching if minimum is None or RANK[f["severity"]] >= RANK[minimum]), None)
     if hit:
         return False, (f"raise_nothing: finding in {hit['file']} at line {hit['line']} ({hit['severity']}), "
                        f"which matches {flag_file}")
+    if limit is not None and len(matching) > limit:
+        return False, f"raise_nothing: {len(matching)} findings match {flag_file}, more than the {limit} allowed"
     return True, f"raise_nothing: no finding in {flag_file}"
 
 
