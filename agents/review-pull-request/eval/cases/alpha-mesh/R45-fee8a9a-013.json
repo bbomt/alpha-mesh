@@ -10,7 +10,7 @@
   "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
   "finding": {
     "file": "agents/review-pull-request/eval/scripts/baseline.py",
-    "line": 78,
+    "line": 147,
     "severity": "medium",
     "summary": "label_changes compares case files against meta['commit'] (the agent commit) rather than the cases commit at run time. If the eval run was performed at a different commit than the agent version, this will incorrectly attribute case changes to the run period.",
     "fix": "Store the cases commit in run.json at eval time (like the agent commit), and use that as the 'since' reference for label_changes. Alternatively, document that runs must be executed at the agent commit.",
@@ -27,5 +27,5 @@
     "flag_file": "agents/review-pull-request/eval/scripts/baseline.py",
     "min_severity": "medium"
   },
-  "notes": ""
+  "notes": "finding.line moved 78 -> 147: at raised_sha fee8a9a the label_changes(meta[\"commit\"], ...) call the finding describes is at baseline.py:147 (78 is inside label_changes, unrelated to which commit is passed); the review cited the wrong line."
 }
