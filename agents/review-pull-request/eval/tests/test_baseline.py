@@ -134,10 +134,9 @@ def test_the_committed_baseline_passes_its_guard():
     jsonschema.validate(committed, baseline.SCHEMA)
 
 
-@pytest.mark.xfail(strict=True, reason="PMAT-310 changed the cases; PMAT-318 rebuilds the baseline on the development cases")
-def test_the_committed_baseline_covers_exactly_the_current_cases():
+def test_the_committed_baseline_covers_exactly_the_current_development_cases():
     committed = json.loads((case_rules.EVAL / "baseline.json").read_text())
-    assert set(committed["cases"]) == {c["case_id"] for c in case_rules.load_cases()}
+    assert set(committed["cases"]) == {c["case_id"] for c in case_rules.development_cases()}
 
 
 @pytest.mark.parametrize("broken", [

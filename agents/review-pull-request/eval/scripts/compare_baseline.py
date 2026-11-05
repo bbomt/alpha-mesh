@@ -19,7 +19,7 @@ SIMPLE = {"pass": "pass", "flaky": "fail", "stable_failure": "fail", "harness_er
 
 
 def compare(old: dict, results: dict, *, cases_dir: Path, repo_root: Path) -> dict:
-    cases = case_rules.load_cases(cases_dir)
+    cases = case_rules.development_cases(cases_dir)
     report = {"new_failures": [], "new_passes": [], "unchanged": [], "errors": [],
               "label_changes": bl.label_changes(old["cases_commit"], cases_dir, repo_root)}
     for case_id, case_runs in sorted(bl.runs(results, cases, old.get("window", case_rules.WINDOW)).items()):

@@ -160,9 +160,10 @@ def main(argv=None) -> int:
         return 1
     results = json.loads((args.run_dir / "results.json").read_text())
     analysis = json.loads(ANALYSIS.read_text()) if ANALYSIS.exists() else {}
-    changes = label_changes(meta["commit"], case_rules.CASES_DIR, REPO_ROOT)
+    held = case_rules.holdout_ids()
+    changes = [c for c in label_changes(meta["commit"], case_rules.CASES_DIR, REPO_ROOT) if c["case_id"] not in held]
     try:
-        baseline = build(results, case_rules.load_cases(), meta | {"cases_commit": git("rev-parse", "HEAD")},
+        baseline = build(results, case_rules.development_cases(), meta | {"cases_commit": git("rev-parse", "HEAD")},
                          analysis=analysis, label_changes=changes)
         jsonschema.validate(baseline, SCHEMA)
     except NotAnalysed as e:

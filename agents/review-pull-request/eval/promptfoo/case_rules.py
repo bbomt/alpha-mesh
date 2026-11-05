@@ -14,6 +14,7 @@ import jsonschema
 
 EVAL = Path(__file__).resolve().parent.parent
 CASES_DIR = EVAL / "cases"
+HOLDOUT = EVAL / "holdout.json"
 CASE_SCHEMA = json.loads((EVAL / "schema" / "case.schema.json").read_text())
 REVIEW_SCHEMA = json.loads((EVAL / "schema" / "review.schema.json").read_text())
 
@@ -54,6 +55,21 @@ def load_cases(cases_dir: Path = CASES_DIR) -> list[dict]:
             raise ValueError(f"{path}: invalid case: {e.message}") from e
         cases.append(case)
     return cases
+
+
+def holdout_ids() -> set[str]:
+    return set(json.loads(HOLDOUT.read_text())["cases"])
+
+
+def development_cases(cases_dir: Path | None = None) -> list[dict]:
+    """Every case outside the hold-out: what normal runs, the baseline and the comparison use."""
+    held = holdout_ids()
+    return [c for c in load_cases(cases_dir or CASES_DIR) if c["case_id"] not in held]
+
+
+def holdout_cases(cases_dir: Path | None = None) -> list[dict]:
+    held = holdout_ids()
+    return [c for c in load_cases(cases_dir or CASES_DIR) if c["case_id"] in held]
 
 
 def _near(finding: dict, flag_file: str, line: int, window: int) -> bool:
