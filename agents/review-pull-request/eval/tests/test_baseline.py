@@ -183,6 +183,26 @@ def test_the_baseline_records_runs_stability_and_classes():
     assert b["label_errors_fixed"] == [{"case_id": "B", "reason": "src/a.py:40 calls it when --force is set."}]
 
 
+def test_the_baseline_records_pass_rates_per_category_and_severity():
+    """Public cases share the category `logic` with synthetic ones, so they get their own row (README)."""
+    high = case("P", "raise_true_bug", label="real_issue") | {"source": "public_pr", "category": "logic"}
+    high["finding"] = {**high["finding"], "severity": "high"}
+    clean = {k: v for k, v in case("N").items() if k != "finding"} | {"category": "style_only"}
+    clean["expected"] = {"action": "raise_nothing", "flag_file": "src/*.py"}
+    rows = [row("P", 0, review(10)), row("P", 1, review()), row("N", 0, review()), row("N", 1, review())]
+    meta = {"commit": SHA, "cases_commit": SHA, "model": "m", "date": "2026-11-05", "k": 2, "window": 3}
+    analysis = {"P": {"failure_class": "model_failure", "reason": "Misses the bug in repeat 1."}}
+
+    s = baseline.build(results(*rows), [high, clean], meta, analysis=analysis, label_changes=[])["summary"]
+
+    assert s["by_category"] == {
+        "public/raise_true_bug": {"cases": 1, "runs_passed": 1, "runs": 2, "passed_all": 0},
+        "style_only/raise_nothing": {"cases": 1, "runs_passed": 2, "runs": 2, "passed_all": 1}}
+    assert s["by_severity"] == {
+        "high/raise_true_bug": {"cases": 1, "runs_passed": 1, "runs": 2, "passed_all": 0},
+        "none/raise_nothing": {"cases": 1, "runs_passed": 2, "runs": 2, "passed_all": 1}}
+
+
 def test_the_baseline_is_refused_until_every_failing_case_has_been_analysed():
     with pytest.raises(baseline.NotAnalysed, match="B"):
         build()

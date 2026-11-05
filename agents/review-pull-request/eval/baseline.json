@@ -1,543 +1,195 @@
 {
-  "commit": "929b5da98d7d4a54685584d4e8916b4386846da6",
+  "commit": "665c767bb257da196fbbd57ab86552e03d63f9ff",
   "model": "nvidia/nemotron-3.5-super-vl:free",
-  "date": "2026-10-30",
+  "date": "2026-11-04",
   "k": 3,
   "window": 3,
-  "cases_commit": "646e201d1708fd025d0b71b265f40a94f295a815",
+  "cases_commit": "99a43f03573d733a2fabf2c93ac012554a2c8e11",
   "summary": {
-    "cases": 57,
-    "scored_cases": 57,
-    "pass_rate": 0.7076,
-    "pass_k": 0.5439,
-    "file_level_pass_rate": 0.4269,
+    "cases": 65,
+    "scored_cases": 65,
+    "pass_rate": 0.6974,
+    "pass_k": 0.5077,
+    "file_level_pass_rate": 0.6821,
     "by_class": {
-      "model_failure": 26,
-      "label_error": 2,
+      "model_failure": 32,
+      "label_error": 16,
       "harness_error": 0
+    },
+    "by_category": {
+      "mined/skip_false_bug": {
+        "cases": 20,
+        "runs_passed": 38,
+        "runs": 60,
+        "passed_all": 6
+      },
+      "mined/raise_true_bug": {
+        "cases": 10,
+        "runs_passed": 7,
+        "runs": 30,
+        "passed_all": 0
+      },
+      "concurrency/raise_true_bug": {
+        "cases": 3,
+        "runs_passed": 9,
+        "runs": 9,
+        "passed_all": 3
+      },
+      "degenerate/raise_nothing": {
+        "cases": 2,
+        "runs_passed": 6,
+        "runs": 6,
+        "passed_all": 2
+      },
+      "improvable/raise_true_bug": {
+        "cases": 3,
+        "runs_passed": 4,
+        "runs": 9,
+        "passed_all": 1
+      },
+      "logic/raise_true_bug": {
+        "cases": 6,
+        "runs_passed": 18,
+        "runs": 18,
+        "passed_all": 6
+      },
+      "public/raise_true_bug": {
+        "cases": 8,
+        "runs_passed": 18,
+        "runs": 24,
+        "passed_all": 5
+      },
+      "refactor/raise_nothing": {
+        "cases": 3,
+        "runs_passed": 7,
+        "runs": 9,
+        "passed_all": 1
+      },
+      "security/raise_true_bug": {
+        "cases": 6,
+        "runs_passed": 17,
+        "runs": 18,
+        "passed_all": 5
+      },
+      "style_only/raise_nothing": {
+        "cases": 4,
+        "runs_passed": 12,
+        "runs": 12,
+        "passed_all": 4
+      }
+    },
+    "by_severity": {
+      "medium/skip_false_bug": {
+        "cases": 9,
+        "runs_passed": 14,
+        "runs": 27,
+        "passed_all": 1
+      },
+      "medium/raise_true_bug": {
+        "cases": 15,
+        "runs_passed": 33,
+        "runs": 45,
+        "passed_all": 9
+      },
+      "high/skip_false_bug": {
+        "cases": 5,
+        "runs_passed": 13,
+        "runs": 15,
+        "passed_all": 3
+      },
+      "high/raise_true_bug": {
+        "cases": 9,
+        "runs_passed": 18,
+        "runs": 27,
+        "passed_all": 5
+      },
+      "low/skip_false_bug": {
+        "cases": 6,
+        "runs_passed": 11,
+        "runs": 18,
+        "passed_all": 2
+      },
+      "low/raise_true_bug": {
+        "cases": 12,
+        "runs_passed": 22,
+        "runs": 36,
+        "passed_all": 6
+      },
+      "none/raise_nothing": {
+        "cases": 9,
+        "runs_passed": 25,
+        "runs": 27,
+        "passed_all": 7
+      }
     }
   },
   "label_errors_fixed": [
     {
-      "case_id": "R36-812f904-001",
-      "reason": "finding.line moved 135 -> 148: at raised_sha 812f904 the status.save_queue(queue) before loop.start() that the finding describes is at cli.py:148 (135 is the active() check); the review cited the wrong line."
+      "case_id": "R45-fee8a9a-001",
+      "reason": "finding.line moved 42 -> 53: at raised_sha fee8a9a the fcntl.flock(lock, fcntl.LOCK_EX) the finding describes is at agent_provider.py:53 (42 is sqlite3.connect's path.parent.mkdir); the review cited the wrong line."
     },
     {
-      "case_id": "R36-812f904-002",
-      "reason": "finding.line moved 140 -> 153: at raised_sha 812f904 the initial start_queued() call the finding describes is at cli.py:153 (140 is queue.append); the review cited the wrong line."
+      "case_id": "R45-fee8a9a-002",
+      "reason": "finding.line moved 53 -> 45: at raised_sha fee8a9a the results[f] lookup the finding describes is at eval_adapter.py:45 (53 is the last line of _review); the review cited the wrong line."
+    },
+    {
+      "case_id": "R45-fee8a9a-004",
+      "reason": "finding.line moved 55 -> 46: at raised_sha fee8a9a the required list naming file_level_runs, reason, category and action is at baseline.schema.json:46 (55 is the first allOf's if); the review cited the wrong line."
+    },
+    {
+      "case_id": "R45-fee8a9a-005",
+      "reason": "finding.line moved 102 -> 87: at raised_sha fee8a9a the `reason or \"\"` the finding describes is at baseline.py:87 (102 is the harness_error reason in build); the review cited the wrong line."
+    },
+    {
+      "case_id": "R45-fee8a9a-006",
+      "reason": "finding.line moved 30 -> 37: at raised_sha fee8a9a the printf that builds run.json is at run_eval.sh:37 (30 is the nvm source line); the review cited the wrong line."
+    },
+    {
+      "case_id": "R45-fee8a9a-008",
+      "reason": "finding.line moved 43 -> 57: at raised_sha fee8a9a the `except SystemExit` around load_config is at agent_provider.py:57 (43 is the SqliteSaver line); the review cited the wrong line."
+    },
+    {
+      "case_id": "R45-fee8a9a-010",
+      "reason": "finding.line moved 53 -> 44: at raised_sha fee8a9a the `\"line\": i[\"line\"]` the finding describes is at eval_adapter.py:44 (53 is the last line of _review); the review cited the wrong line."
+    },
+    {
+      "case_id": "R45-fee8a9a-013",
+      "reason": "finding.line moved 78 -> 147: at raised_sha fee8a9a the label_changes(meta[\"commit\"], ...) call the finding describes is at baseline.py:147 (78 is inside label_changes, unrelated to which commit is passed); the review cited the wrong line."
+    },
+    {
+      "case_id": "R45-fee8a9a-014",
+      "reason": "finding.line moved 28 -> 34: at raised_sha fee8a9a the grep on run.json the finding describes is at run_eval.sh:34 (28 is a comment about Node); the review cited the wrong line."
+    },
+    {
+      "case_id": "R45-fee8a9a-015",
+      "reason": "finding.line moved 31 -> 39: at raised_sha fee8a9a the uncommitted-changes check that only warns is at run_eval.sh:39 (31 is nvm use); the review cited the wrong line."
+    },
+    {
+      "case_id": "R45-fee8a9a-016",
+      "reason": "finding.line moved 17 -> 29: at raised_sha fee8a9a the module-level _savers dictionary is at agent_provider.py:29 (17 is `import sqlite3`); the review cited the wrong line."
+    },
+    {
+      "case_id": "R45-fee8a9a-017",
+      "reason": "finding.line moved 27 -> 41: at raised_sha fee8a9a the `if path not in _savers` the finding describes is at agent_provider.py:41 (27 is an import); the review cited the wrong line."
+    },
+    {
+      "case_id": "R45-fee8a9a-018",
+      "reason": "finding.line moved 22 -> 18: at raised_sha fee8a9a review_case's signature with the unannotated config and checkpointer is at eval_adapter.py:18 (22 is the thread_id call); the review cited the wrong line."
+    },
+    {
+      "case_id": "R45-fee8a9a-019",
+      "reason": "finding.line moved 56 -> 48: at raised_sha fee8a9a the hardcoded excluded=[] the finding describes is at eval_adapter.py:48 (56 is past the end of the file); the review cited the wrong line."
+    },
+    {
+      "case_id": "R45-fee8a9a-021",
+      "reason": "finding.line moved 85 -> 73: at raised_sha fee8a9a the git diff call whose return code is not checked is at baseline.py:73 (85 is a changes.append); the review cited the wrong line."
+    },
+    {
+      "case_id": "R45-fee8a9a-022",
+      "reason": "finding.line moved 26 -> 31: at raised_sha fee8a9a the `nvm use 24` the finding describes is at run_eval.sh:31 (26 is mkdir); the review cited the wrong line."
     }
   ],
   "cases": {
-    "06e126070776": {
-      "runs": [
-        "pass",
-        "pass",
-        "pass"
-      ],
-      "file_level_runs": [
-        "fail",
-        "fail",
-        "fail"
-      ],
-      "status": "pass",
-      "failure_class": null,
-      "reason": null,
-      "category": "mined",
-      "action": "skip_false_bug"
-    },
-    "0d80d5210c9a": {
-      "runs": [
-        "pass",
-        "pass",
-        "pass"
-      ],
-      "file_level_runs": [
-        "fail",
-        "pass",
-        "fail"
-      ],
-      "status": "pass",
-      "failure_class": null,
-      "reason": null,
-      "category": "mined",
-      "action": "skip_false_bug"
-    },
-    "1804d7ebe2b3": {
-      "runs": [
-        "pass",
-        "pass",
-        "pass"
-      ],
-      "file_level_runs": [
-        "fail",
-        "fail",
-        "fail"
-      ],
-      "status": "pass",
-      "failure_class": null,
-      "reason": null,
-      "category": "mined",
-      "action": "skip_false_bug"
-    },
-    "24124f114148": {
-      "runs": [
-        "fail",
-        "fail",
-        "pass"
-      ],
-      "file_level_runs": [
-        "fail",
-        "fail",
-        "pass"
-      ],
-      "status": "flaky",
-      "failure_class": "model_failure",
-      "reason": "Re-raises the dismissed claim (out-of-bounds args index in the test stub with set -u) at lines 13-14.",
-      "category": "mined",
-      "action": "skip_false_bug"
-    },
-    "29023012af76": {
-      "runs": [
-        "pass",
-        "pass",
-        "pass"
-      ],
-      "file_level_runs": [
-        "fail",
-        "pass",
-        "pass"
-      ],
-      "status": "pass",
-      "failure_class": null,
-      "reason": null,
-      "category": "mined",
-      "action": "skip_false_bug"
-    },
-    "2c89358ebc5c": {
-      "runs": [
-        "pass",
-        "pass",
-        "pass"
-      ],
-      "file_level_runs": [
-        "pass",
-        "pass",
-        "pass"
-      ],
-      "status": "pass",
-      "failure_class": null,
-      "reason": null,
-      "category": "mined",
-      "action": "skip_false_bug"
-    },
-    "319435a5c6c0": {
-      "runs": [
-        "fail",
-        "fail",
-        "fail"
-      ],
-      "file_level_runs": [
-        "fail",
-        "fail",
-        "fail"
-      ],
-      "status": "stable_failure",
-      "failure_class": "model_failure",
-      "reason": "Repeat 0 re-raises the dismissed run.tasks claim (line 133); repeats 1-2 raise a different claim (node errors swallowed) inside the window, which the \u00b13-line matcher cannot tell apart until PMAT-311.",
-      "category": "mined",
-      "action": "skip_false_bug"
-    },
-    "3245b67d18fc": {
-      "runs": [
-        "pass",
-        "pass",
-        "pass"
-      ],
-      "file_level_runs": [
-        "fail",
-        "pass",
-        "fail"
-      ],
-      "status": "pass",
-      "failure_class": null,
-      "reason": null,
-      "category": "mined",
-      "action": "skip_false_bug"
-    },
-    "352cfda2c909": {
-      "runs": [
-        "pass",
-        "fail",
-        "fail"
-      ],
-      "file_level_runs": [
-        "fail",
-        "fail",
-        "fail"
-      ],
-      "status": "flaky",
-      "failure_class": "model_failure",
-      "reason": "Re-raises the dismissed claim (provider-error detection relies on the LangChain frame name _create_chat_result) at lines 51-55.",
-      "category": "mined",
-      "action": "skip_false_bug"
-    },
-    "353ced23f55e": {
-      "runs": [
-        "fail",
-        "fail",
-        "fail"
-      ],
-      "file_level_runs": [
-        "fail",
-        "fail",
-        "fail"
-      ],
-      "status": "stable_failure",
-      "failure_class": "model_failure",
-      "reason": "Matcher limit: every failing repeat raises a different claim (httpx.Client never closed, lines 87-88) inside the window of the dismissed contextvar claim; the same claim is case 68547c7dd112.",
-      "category": "mined",
-      "action": "skip_false_bug"
-    },
-    "3af58d253ded": {
-      "runs": [
-        "fail",
-        "fail",
-        "fail"
-      ],
-      "file_level_runs": [
-        "fail",
-        "fail",
-        "fail"
-      ],
-      "status": "stable_failure",
-      "failure_class": "model_failure",
-      "reason": "Repeats 1-2 re-raise the dismissed claim (STORE.touch(mode=0o600) does not tighten an existing file); repeat 0 raises a different claim (empty result.content) inside the window.",
-      "category": "mined",
-      "action": "skip_false_bug"
-    },
-    "412f7d524e79": {
-      "runs": [
-        "pass",
-        "pass",
-        "pass"
-      ],
-      "file_level_runs": [
-        "pass",
-        "pass",
-        "pass"
-      ],
-      "status": "pass",
-      "failure_class": null,
-      "reason": null,
-      "category": "mined",
-      "action": "skip_false_bug"
-    },
-    "4393f7882354": {
-      "runs": [
-        "pass",
-        "fail",
-        "pass"
-      ],
-      "file_level_runs": [
-        "fail",
-        "fail",
-        "fail"
-      ],
-      "status": "flaky",
-      "failure_class": "model_failure",
-      "reason": "Re-raises part of the dismissed fragile-parsing claim (tab-split ValueError in background()) at line 17.",
-      "category": "mined",
-      "action": "skip_false_bug"
-    },
-    "46e145f3f108": {
-      "runs": [
-        "fail",
-        "pass",
-        "fail"
-      ],
-      "file_level_runs": [
-        "fail",
-        "pass",
-        "fail"
-      ],
-      "status": "flaky",
-      "failure_class": "model_failure",
-      "reason": "Re-raises the dismissed claim (readlink -f is not portable to macOS) at line 7.",
-      "category": "mined",
-      "action": "skip_false_bug"
-    },
-    "47ebf9ed0d9d": {
-      "runs": [
-        "pass",
-        "pass",
-        "pass"
-      ],
-      "file_level_runs": [
-        "fail",
-        "pass",
-        "fail"
-      ],
-      "status": "pass",
-      "failure_class": null,
-      "reason": null,
-      "category": "mined",
-      "action": "skip_false_bug"
-    },
-    "4f838bf0a2d6": {
-      "runs": [
-        "fail",
-        "pass",
-        "fail"
-      ],
-      "file_level_runs": [
-        "fail",
-        "pass",
-        "fail"
-      ],
-      "status": "flaky",
-      "failure_class": "model_failure",
-      "reason": "Matcher limit: the failing repeats raise different claims inside the window (out-of-bounds args at line 12, ORCH_TICKET path traversal at line 7), not the dismissed env-var validation claim.",
-      "category": "mined",
-      "action": "skip_false_bug"
-    },
-    "506fb56dea11": {
-      "runs": [
-        "fail",
-        "fail",
-        "fail"
-      ],
-      "file_level_runs": [
-        "fail",
-        "fail",
-        "fail"
-      ],
-      "status": "stable_failure",
-      "failure_class": "model_failure",
-      "reason": "Re-raises the dismissed claim (post node publishes without an idempotency guard on resume) at lines 92-96, in every repeat.",
-      "category": "mined",
-      "action": "skip_false_bug"
-    },
-    "5ecaa5f59940": {
-      "runs": [
-        "pass",
-        "pass",
-        "pass"
-      ],
-      "file_level_runs": [
-        "pass",
-        "pass",
-        "pass"
-      ],
-      "status": "pass",
-      "failure_class": null,
-      "reason": null,
-      "category": "mined",
-      "action": "skip_false_bug"
-    },
-    "6259d92af508": {
-      "runs": [
-        "pass",
-        "pass",
-        "pass"
-      ],
-      "file_level_runs": [
-        "pass",
-        "pass",
-        "pass"
-      ],
-      "status": "pass",
-      "failure_class": null,
-      "reason": null,
-      "category": "mined",
-      "action": "skip_false_bug"
-    },
-    "68547c7dd112": {
-      "runs": [
-        "fail",
-        "fail",
-        "fail"
-      ],
-      "file_level_runs": [
-        "fail",
-        "fail",
-        "fail"
-      ],
-      "status": "stable_failure",
-      "failure_class": "model_failure",
-      "reason": "Re-raises the dismissed claim (httpx.Client never closed) at lines 87-88 in every repeat. Kept as false_positive: the client lives for one short CLI process, and the owner merged the file unchanged.",
-      "category": "mined",
-      "action": "skip_false_bug"
-    },
-    "686d7cb66481": {
-      "runs": [
-        "pass",
-        "pass",
-        "pass"
-      ],
-      "file_level_runs": [
-        "pass",
-        "pass",
-        "pass"
-      ],
-      "status": "pass",
-      "failure_class": null,
-      "reason": null,
-      "category": "mined",
-      "action": "skip_false_bug"
-    },
-    "6a54ae42e939": {
-      "runs": [
-        "pass",
-        "pass",
-        "pass"
-      ],
-      "file_level_runs": [
-        "pass",
-        "fail",
-        "pass"
-      ],
-      "status": "pass",
-      "failure_class": null,
-      "reason": null,
-      "category": "mined",
-      "action": "skip_false_bug"
-    },
-    "76dcf2b33729": {
-      "runs": [
-        "pass",
-        "pass",
-        "pass"
-      ],
-      "file_level_runs": [
-        "pass",
-        "pass",
-        "pass"
-      ],
-      "status": "pass",
-      "failure_class": null,
-      "reason": null,
-      "category": "mined",
-      "action": "skip_false_bug"
-    },
-    "7bdb84357434": {
-      "runs": [
-        "pass",
-        "pass",
-        "pass"
-      ],
-      "file_level_runs": [
-        "pass",
-        "fail",
-        "fail"
-      ],
-      "status": "pass",
-      "failure_class": null,
-      "reason": null,
-      "category": "mined",
-      "action": "skip_false_bug"
-    },
-    "837ba3405bc0": {
-      "runs": [
-        "pass",
-        "pass",
-        "pass"
-      ],
-      "file_level_runs": [
-        "fail",
-        "fail",
-        "fail"
-      ],
-      "status": "pass",
-      "failure_class": null,
-      "reason": null,
-      "category": "mined",
-      "action": "skip_false_bug"
-    },
-    "8d094d2ad494": {
-      "runs": [
-        "pass",
-        "pass",
-        "pass"
-      ],
-      "file_level_runs": [
-        "fail",
-        "fail",
-        "fail"
-      ],
-      "status": "pass",
-      "failure_class": null,
-      "reason": null,
-      "category": "mined",
-      "action": "skip_false_bug"
-    },
-    "8ed3420f02ac": {
-      "runs": [
-        "pass",
-        "pass",
-        "pass"
-      ],
-      "file_level_runs": [
-        "fail",
-        "fail",
-        "pass"
-      ],
-      "status": "pass",
-      "failure_class": null,
-      "reason": null,
-      "category": "mined",
-      "action": "skip_false_bug"
-    },
-    "97498b3ff0c3": {
-      "runs": [
-        "pass",
-        "pass",
-        "pass"
-      ],
-      "file_level_runs": [
-        "pass",
-        "pass",
-        "fail"
-      ],
-      "status": "pass",
-      "failure_class": null,
-      "reason": null,
-      "category": "mined",
-      "action": "skip_false_bug"
-    },
-    "9eb9d57d1b22": {
-      "runs": [
-        "fail",
-        "pass",
-        "pass"
-      ],
-      "file_level_runs": [
-        "fail",
-        "fail",
-        "fail"
-      ],
-      "status": "flaky",
-      "failure_class": "model_failure",
-      "reason": "Re-raises the dismissed claim (on_node is called after the graph finishes, not in real time) at line 136.",
-      "category": "mined",
-      "action": "skip_false_bug"
-    },
-    "9f45cb2942b4": {
-      "runs": [
-        "pass",
-        "pass",
-        "pass"
-      ],
-      "file_level_runs": [
-        "fail",
-        "pass",
-        "pass"
-      ],
-      "status": "pass",
-      "failure_class": null,
-      "reason": null,
-      "category": "mined",
-      "action": "skip_false_bug"
-    },
     "R36-812f904-001": {
       "runs": [
         "fail",
@@ -551,15 +203,15 @@
       ],
       "status": "stable_failure",
       "failure_class": "model_failure",
-      "reason": "Re-raises the dismissed claim (save_queue runs before loop.start) at lines 147-148 in every repeat. It passed before only because its line was wrong (fixed in 5d0b156).",
+      "reason": "Re-raises the dismissed claim (save_queue before loop.start loses the ticket) at lines 148, 148 and 150, in every repeat.",
       "category": "mined",
       "action": "skip_false_bug"
     },
     "R36-812f904-002": {
       "runs": [
-        "pass",
         "fail",
-        "fail"
+        "fail",
+        "pass"
       ],
       "file_level_runs": [
         "pass",
@@ -568,7 +220,7 @@
       ],
       "status": "flaky",
       "failure_class": "model_failure",
-      "reason": "Misses the real bug (initial start_queued() not wrapped in try/except) in repeats 1-2; repeat 0 raises it at line 152.",
+      "reason": "Misses the real bug (initial start_queued() outside try/except) in every repeat. Repeat 2 passes only because a different claim (save_queue ordering, line 150) is inside the window.",
       "category": "mined",
       "action": "raise_true_bug"
     },
@@ -585,24 +237,24 @@
       ],
       "status": "flaky",
       "failure_class": "model_failure",
-      "reason": "Re-raises the dismissed claim (queued() returns 1-tuples for malformed lines) at lines 43-44; queue.txt is only written by save_queue.",
+      "reason": "Re-raises the dismissed claim (queued() returns 1-tuples for malformed lines) at lines 44 and 43; repeat 1 raises it too, at line 48, outside the window, so it passes.",
       "category": "mined",
       "action": "skip_false_bug"
     },
     "R36-c3e9e57-001": {
       "runs": [
-        "pass",
+        "fail",
         "pass",
         "pass"
       ],
       "file_level_runs": [
         "fail",
         "fail",
-        "fail"
+        "pass"
       ],
-      "status": "pass",
-      "failure_class": null,
-      "reason": null,
+      "status": "flaky",
+      "failure_class": "model_failure",
+      "reason": "Repeat 0 re-raises the dismissed claim (a ticket that keeps failing blocks the queue) at line 156.",
       "category": "mined",
       "action": "skip_false_bug"
     },
@@ -613,30 +265,30 @@
         "fail"
       ],
       "file_level_runs": [
-        "fail",
+        "pass",
         "pass",
         "pass"
       ],
       "status": "flaky",
       "failure_class": "model_failure",
-      "reason": "Misses the real bug at high severity: repeat 0 does not raise it, repeat 2 raises it at line 151 only at medium (its high-severity version is at line 156, outside the window).",
+      "reason": "Raises the real bug's claim in every repeat but cites the wrong line in two: repeat 0 at line 155 and repeat 2 at line 164, both outside the window; repeat 1 at line 150 passes.",
       "category": "mined",
       "action": "raise_true_bug"
     },
     "R36-d2309a5-002": {
       "runs": [
-        "pass",
-        "pass",
-        "fail"
+        "fail",
+        "fail",
+        "pass"
       ],
       "file_level_runs": [
-        "pass",
+        "fail",
         "fail",
         "fail"
       ],
       "status": "flaky",
       "failure_class": "model_failure",
-      "reason": "Repeat 2 re-raises the dismissed claim (the early return stops the rest of the queue) at line 156.",
+      "reason": "Repeat 1 re-raises the dismissed claim (the early return stops the rest of the queue) at line 155. Repeat 0 raises a different claim (the ticket is lost) on the same line, which the matcher cannot tell apart.",
       "category": "mined",
       "action": "skip_false_bug"
     },
@@ -648,8 +300,8 @@
       ],
       "file_level_runs": [
         "pass",
-        "pass",
-        "fail"
+        "fail",
+        "pass"
       ],
       "status": "pass",
       "failure_class": null,
@@ -660,159 +312,6 @@
     "R37-1fbb920-002": {
       "runs": [
         "pass",
-        "pass",
-        "fail"
-      ],
-      "file_level_runs": [
-        "pass",
-        "pass",
-        "fail"
-      ],
-      "status": "flaky",
-      "failure_class": "model_failure",
-      "reason": "Repeat 2 re-raises the dismissed claim (ENV_FILE's parents[4] is brittle) at line 23.",
-      "category": "mined",
-      "action": "skip_false_bug"
-    },
-    "a39f9942e3ab": {
-      "runs": [
-        "pass",
-        "pass",
-        "pass"
-      ],
-      "file_level_runs": [
-        "pass",
-        "pass",
-        "pass"
-      ],
-      "status": "pass",
-      "failure_class": null,
-      "reason": null,
-      "category": "mined",
-      "action": "skip_false_bug"
-    },
-    "ab074b1046f1": {
-      "runs": [
-        "pass",
-        "pass",
-        "pass"
-      ],
-      "file_level_runs": [
-        "fail",
-        "pass",
-        "pass"
-      ],
-      "status": "pass",
-      "failure_class": null,
-      "reason": null,
-      "category": "mined",
-      "action": "skip_false_bug"
-    },
-    "acb6095efab6": {
-      "runs": [
-        "pass",
-        "pass",
-        "pass"
-      ],
-      "file_level_runs": [
-        "pass",
-        "pass",
-        "fail"
-      ],
-      "status": "pass",
-      "failure_class": null,
-      "reason": null,
-      "category": "mined",
-      "action": "skip_false_bug"
-    },
-    "aeb554baee1a": {
-      "runs": [
-        "pass",
-        "fail",
-        "pass"
-      ],
-      "file_level_runs": [
-        "fail",
-        "fail",
-        "fail"
-      ],
-      "status": "flaky",
-      "failure_class": "model_failure",
-      "reason": "Matcher limit: repeat 1 raises a different claim (listJiraIssueComments maxResults 20) at line 108, inside the window of the dismissed statusCategory key claim.",
-      "category": "mined",
-      "action": "skip_false_bug"
-    },
-    "b64840cb436d": {
-      "runs": [
-        "fail",
-        "fail",
-        "pass"
-      ],
-      "file_level_runs": [
-        "fail",
-        "fail",
-        "fail"
-      ],
-      "status": "flaky",
-      "failure_class": "model_failure",
-      "reason": "Re-raises the dismissed claim (provider-error detection relies on the LangChain frame name) at lines 53-56.",
-      "category": "mined",
-      "action": "skip_false_bug"
-    },
-    "b7167609ac34": {
-      "runs": [
-        "pass",
-        "fail",
-        "fail"
-      ],
-      "file_level_runs": [
-        "fail",
-        "fail",
-        "fail"
-      ],
-      "status": "flaky",
-      "failure_class": "model_failure",
-      "reason": "Matcher limit: the failing repeats raise a different retry claim (_NoToolEndpoint 404s are retried) at line 103, not the dismissed stacked-retries claim.",
-      "category": "mined",
-      "action": "skip_false_bug"
-    },
-    "bba4677b9a51": {
-      "runs": [
-        "pass",
-        "pass",
-        "pass"
-      ],
-      "file_level_runs": [
-        "pass",
-        "pass",
-        "pass"
-      ],
-      "status": "pass",
-      "failure_class": null,
-      "reason": null,
-      "category": "mined",
-      "action": "skip_false_bug"
-    },
-    "c60b873fc395": {
-      "runs": [
-        "fail",
-        "pass",
-        "pass"
-      ],
-      "file_level_runs": [
-        "fail",
-        "pass",
-        "pass"
-      ],
-      "status": "flaky",
-      "failure_class": "model_failure",
-      "reason": "Re-raises the dismissed claim (deleting bin/pr-review breaks callers without an alias) at line 1.",
-      "category": "mined",
-      "action": "skip_false_bug"
-    },
-    "ca66fa65b634": {
-      "runs": [
-        "pass",
         "fail",
         "pass"
       ],
@@ -823,164 +322,11 @@
       ],
       "status": "flaky",
       "failure_class": "model_failure",
-      "reason": "Re-raises the dismissed claim (readlink -f is not portable to macOS) at line 7.",
+      "reason": "Repeat 1 re-raises the dismissed claim (ENV_FILE's parents[4] couples config.py to the repo layout) at line 24.",
       "category": "mined",
       "action": "skip_false_bug"
     },
-    "cc0ef46b14bd": {
-      "runs": [
-        "fail",
-        "pass",
-        "pass"
-      ],
-      "file_level_runs": [
-        "fail",
-        "pass",
-        "fail"
-      ],
-      "status": "flaky",
-      "failure_class": "model_failure",
-      "reason": "Re-raises the dismissed claim (the stub builds JSON with printf and unescaped variables) at line 18.",
-      "category": "mined",
-      "action": "skip_false_bug"
-    },
-    "cd2cebe5dc3c": {
-      "runs": [
-        "pass",
-        "pass",
-        "pass"
-      ],
-      "file_level_runs": [
-        "fail",
-        "pass",
-        "pass"
-      ],
-      "status": "pass",
-      "failure_class": null,
-      "reason": null,
-      "category": "mined",
-      "action": "skip_false_bug"
-    },
-    "ceb5ec589c50": {
-      "runs": [
-        "pass",
-        "pass",
-        "fail"
-      ],
-      "file_level_runs": [
-        "pass",
-        "pass",
-        "fail"
-      ],
-      "status": "flaky",
-      "failure_class": "model_failure",
-      "reason": "Re-raises the dismissed claim (a non-string tool path reaches normalise() unchecked) at line 189.",
-      "category": "mined",
-      "action": "skip_false_bug"
-    },
-    "dddc5891b25f": {
-      "runs": [
-        "pass",
-        "pass",
-        "pass"
-      ],
-      "file_level_runs": [
-        "pass",
-        "pass",
-        "pass"
-      ],
-      "status": "pass",
-      "failure_class": null,
-      "reason": null,
-      "category": "mined",
-      "action": "skip_false_bug"
-    },
-    "e3326ed24460": {
-      "runs": [
-        "pass",
-        "pass",
-        "pass"
-      ],
-      "file_level_runs": [
-        "fail",
-        "fail",
-        "fail"
-      ],
-      "status": "pass",
-      "failure_class": null,
-      "reason": null,
-      "category": "mined",
-      "action": "skip_false_bug"
-    },
-    "ee47b2c43f23": {
-      "runs": [
-        "pass",
-        "pass",
-        "pass"
-      ],
-      "file_level_runs": [
-        "pass",
-        "pass",
-        "pass"
-      ],
-      "status": "pass",
-      "failure_class": null,
-      "reason": null,
-      "category": "mined",
-      "action": "skip_false_bug"
-    },
-    "eeb27e040fce": {
-      "runs": [
-        "fail",
-        "fail",
-        "pass"
-      ],
-      "file_level_runs": [
-        "fail",
-        "fail",
-        "fail"
-      ],
-      "status": "flaky",
-      "failure_class": "model_failure",
-      "reason": "Repeat 1 re-raises the dismissed claim (q[\"code\"][0] without a check) at line 64; repeat 0 raises a different claim (comment keys) on the same line.",
-      "category": "mined",
-      "action": "skip_false_bug"
-    },
-    "f5fb0b35e9ce": {
-      "runs": [
-        "pass",
-        "pass",
-        "pass"
-      ],
-      "file_level_runs": [
-        "fail",
-        "pass",
-        "fail"
-      ],
-      "status": "pass",
-      "failure_class": null,
-      "reason": null,
-      "category": "mined",
-      "action": "skip_false_bug"
-    },
-    "fad6e3371bb2": {
-      "runs": [
-        "pass",
-        "pass",
-        "pass"
-      ],
-      "file_level_runs": [
-        "pass",
-        "pass",
-        "pass"
-      ],
-      "status": "pass",
-      "failure_class": null,
-      "reason": null,
-      "category": "mined",
-      "action": "skip_false_bug"
-    },
-    "ff0bb8f41a32": {
+    "R45-02d37e7-001": {
       "runs": [
         "fail",
         "fail",
@@ -993,9 +339,961 @@
       ],
       "status": "stable_failure",
       "failure_class": "model_failure",
-      "reason": "Matcher limit: every repeat raises a different claim inside the window (ps has no timeout, split may not unpack, a tab in a window name), not the dismissed list-panes -s claim.",
+      "reason": "Misses the real bug: no finding in baseline.json in any repeat, though the file was reviewed.",
+      "category": "mined",
+      "action": "raise_true_bug"
+    },
+    "R45-fee8a9a-001": {
+      "runs": [
+        "fail",
+        "pass",
+        "pass"
+      ],
+      "file_level_runs": [
+        "fail",
+        "fail",
+        "fail"
+      ],
+      "status": "flaky",
+      "failure_class": "model_failure",
+      "reason": "Matcher limit: repeat 0 raises a different claim (the lock is held across network calls) at line 52, not the dismissed claim that flock can hang for ever after a crash.",
       "category": "mined",
       "action": "skip_false_bug"
+    },
+    "R45-fee8a9a-002": {
+      "runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "file_level_runs": [
+        "pass",
+        "pass",
+        "fail"
+      ],
+      "status": "pass",
+      "failure_class": null,
+      "reason": null,
+      "category": "mined",
+      "action": "skip_false_bug"
+    },
+    "R45-fee8a9a-004": {
+      "runs": [
+        "fail",
+        "fail",
+        "fail"
+      ],
+      "file_level_runs": [
+        "fail",
+        "fail",
+        "fail"
+      ],
+      "status": "stable_failure",
+      "failure_class": "model_failure",
+      "reason": "Misses the real bug at high severity: repeat 1 raises it at line 46 only at medium; repeats 0 and 2 have no finding in the file.",
+      "category": "mined",
+      "action": "raise_true_bug"
+    },
+    "R45-fee8a9a-005": {
+      "runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "file_level_runs": [
+        "fail",
+        "fail",
+        "fail"
+      ],
+      "status": "pass",
+      "failure_class": null,
+      "reason": null,
+      "category": "mined",
+      "action": "skip_false_bug"
+    },
+    "R45-fee8a9a-006": {
+      "runs": [
+        "fail",
+        "fail",
+        "fail"
+      ],
+      "file_level_runs": [
+        "fail",
+        "fail",
+        "fail"
+      ],
+      "status": "stable_failure",
+      "failure_class": "model_failure",
+      "reason": "Raises the real bug (printf builds run.json unescaped) at line 37 in every repeat, but at medium or low, below the high severity the case requires.",
+      "category": "mined",
+      "action": "raise_true_bug"
+    },
+    "R45-fee8a9a-007": {
+      "runs": [
+        "pass",
+        "pass",
+        "fail"
+      ],
+      "file_level_runs": [
+        "fail",
+        "fail",
+        "fail"
+      ],
+      "status": "flaky",
+      "failure_class": "model_failure",
+      "reason": "Repeat 2 re-raises the dismissed claim (fcntl is Unix-only) at line 14.",
+      "category": "mined",
+      "action": "skip_false_bug"
+    },
+    "R45-fee8a9a-008": {
+      "runs": [
+        "pass",
+        "fail",
+        "pass"
+      ],
+      "file_level_runs": [
+        "fail",
+        "fail",
+        "fail"
+      ],
+      "status": "flaky",
+      "failure_class": "model_failure",
+      "reason": "Matcher limit: repeat 1 raises a different claim (the PR description is today's) at line 59, not the dismissed load_config claim.",
+      "category": "mined",
+      "action": "skip_false_bug"
+    },
+    "R45-fee8a9a-009": {
+      "runs": [
+        "fail",
+        "pass",
+        "fail"
+      ],
+      "file_level_runs": [
+        "fail",
+        "pass",
+        "fail"
+      ],
+      "status": "flaky",
+      "failure_class": "model_failure",
+      "reason": "Repeats 0 and 2 re-raise the dismissed claim (case_expectations does not handle exceptions) at lines 20 and 23.",
+      "category": "mined",
+      "action": "skip_false_bug"
+    },
+    "R45-fee8a9a-010": {
+      "runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "file_level_runs": [
+        "pass",
+        "pass",
+        "fail"
+      ],
+      "status": "pass",
+      "failure_class": null,
+      "reason": null,
+      "category": "mined",
+      "action": "skip_false_bug"
+    },
+    "R45-fee8a9a-011": {
+      "runs": [
+        "pass",
+        "fail",
+        "pass"
+      ],
+      "file_level_runs": [
+        "pass",
+        "fail",
+        "pass"
+      ],
+      "status": "flaky",
+      "failure_class": "model_failure",
+      "reason": "Matcher limit: repeat 1 raises a different claim (summary fields have no types) at line 17, not the dismissed date format claim.",
+      "category": "mined",
+      "action": "skip_false_bug"
+    },
+    "R45-fee8a9a-012": {
+      "runs": [
+        "fail",
+        "fail",
+        "fail"
+      ],
+      "file_level_runs": [
+        "pass",
+        "fail",
+        "pass"
+      ],
+      "status": "stable_failure",
+      "failure_class": "model_failure",
+      "reason": "Misses the real bug (raised_sha stays nullable and not required) in every repeat. Repeats 0 and 2 raise a different claim about the same allOf at line 192, outside the window.",
+      "category": "mined",
+      "action": "raise_true_bug"
+    },
+    "R45-fee8a9a-013": {
+      "runs": [
+        "fail",
+        "pass",
+        "fail"
+      ],
+      "file_level_runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "status": "flaky",
+      "failure_class": "model_failure",
+      "reason": "Misses the real bug (label_changes gets the agent commit) in every repeat. Repeat 1 passes only because a different claim (malformed JSON, line 145) is inside the window.",
+      "category": "mined",
+      "action": "raise_true_bug"
+    },
+    "R45-fee8a9a-014": {
+      "runs": [
+        "pass",
+        "fail",
+        "pass"
+      ],
+      "file_level_runs": [
+        "pass",
+        "fail",
+        "pass"
+      ],
+      "status": "flaky",
+      "failure_class": "model_failure",
+      "reason": "Misses the real bug (grep on JSON is fragile to its format). Repeat 2 raises a different claim on the same grep (regex metacharacters, line 34) and repeat 0 another (printf, line 37), and both pass inside the window; repeat 1 has only a low finding there.",
+      "category": "mined",
+      "action": "raise_true_bug"
+    },
+    "R45-fee8a9a-015": {
+      "runs": [
+        "pass",
+        "fail",
+        "pass"
+      ],
+      "file_level_runs": [
+        "pass",
+        "fail",
+        "pass"
+      ],
+      "status": "flaky",
+      "failure_class": "model_failure",
+      "reason": "Misses the real bug (uncommitted changes only warn) in every repeat. Repeats 0 and 2 pass only because a different claim (printf, line 37) is inside the window.",
+      "category": "mined",
+      "action": "raise_true_bug"
+    },
+    "R45-fee8a9a-016": {
+      "runs": [
+        "fail",
+        "pass",
+        "fail"
+      ],
+      "file_level_runs": [
+        "fail",
+        "fail",
+        "fail"
+      ],
+      "status": "flaky",
+      "failure_class": "model_failure",
+      "reason": "Repeats 0 and 2 re-raise the dismissed claim (_savers never evicts) at line 29.",
+      "category": "mined",
+      "action": "skip_false_bug"
+    },
+    "R45-fee8a9a-017": {
+      "runs": [
+        "pass",
+        "fail",
+        "fail"
+      ],
+      "file_level_runs": [
+        "fail",
+        "fail",
+        "fail"
+      ],
+      "status": "flaky",
+      "failure_class": "model_failure",
+      "reason": "Matcher limit: repeats 1 and 2 raise a different claim (commits share one saver's connection) at lines 40 and 43, not the dismissed claim that the cache's initialisation is not thread-safe.",
+      "category": "mined",
+      "action": "skip_false_bug"
+    },
+    "R45-fee8a9a-018": {
+      "runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "file_level_runs": [
+        "pass",
+        "pass",
+        "fail"
+      ],
+      "status": "pass",
+      "failure_class": null,
+      "reason": null,
+      "category": "mined",
+      "action": "skip_false_bug"
+    },
+    "R45-fee8a9a-019": {
+      "runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "file_level_runs": [
+        "pass",
+        "pass",
+        "fail"
+      ],
+      "status": "pass",
+      "failure_class": null,
+      "reason": null,
+      "category": "mined",
+      "action": "skip_false_bug"
+    },
+    "R45-fee8a9a-020": {
+      "runs": [
+        "pass",
+        "fail",
+        "pass"
+      ],
+      "file_level_runs": [
+        "pass",
+        "fail",
+        "pass"
+      ],
+      "status": "flaky",
+      "failure_class": "model_failure",
+      "reason": "Matcher limit: repeat 1 raises a different claim (case fields have no types, the real bug of R45-fee8a9a-004) at line 46, not the dismissed maxItems claim.",
+      "category": "mined",
+      "action": "skip_false_bug"
+    },
+    "R45-fee8a9a-021": {
+      "runs": [
+        "fail",
+        "fail",
+        "fail"
+      ],
+      "file_level_runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "status": "stable_failure",
+      "failure_class": "model_failure",
+      "reason": "Misses the real bug (git diff's return code is not checked) in every repeat; the findings in the file are about other lines.",
+      "category": "mined",
+      "action": "raise_true_bug"
+    },
+    "R45-fee8a9a-022": {
+      "runs": [
+        "fail",
+        "pass",
+        "fail"
+      ],
+      "file_level_runs": [
+        "fail",
+        "fail",
+        "fail"
+      ],
+      "status": "flaky",
+      "failure_class": "model_failure",
+      "reason": "Matcher limit: repeats 0 and 2 raise a different claim ($MODEL as a grep regex) at line 34, not the dismissed nvm claim.",
+      "category": "mined",
+      "action": "skip_false_bug"
+    },
+    "con-001": {
+      "runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "file_level_runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "status": "pass",
+      "failure_class": null,
+      "reason": null,
+      "category": "concurrency",
+      "action": "raise_true_bug"
+    },
+    "con-003": {
+      "runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "file_level_runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "status": "pass",
+      "failure_class": null,
+      "reason": null,
+      "category": "concurrency",
+      "action": "raise_true_bug"
+    },
+    "con-004": {
+      "runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "file_level_runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "status": "pass",
+      "failure_class": null,
+      "reason": null,
+      "category": "concurrency",
+      "action": "raise_true_bug"
+    },
+    "deg-001": {
+      "runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "file_level_runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "status": "pass",
+      "failure_class": null,
+      "reason": null,
+      "category": "degenerate",
+      "action": "raise_nothing"
+    },
+    "deg-002": {
+      "runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "file_level_runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "status": "pass",
+      "failure_class": null,
+      "reason": null,
+      "category": "degenerate",
+      "action": "raise_nothing"
+    },
+    "imp-001": {
+      "runs": [
+        "fail",
+        "pass",
+        "fail"
+      ],
+      "file_level_runs": [
+        "fail",
+        "pass",
+        "fail"
+      ],
+      "status": "flaky",
+      "failure_class": "model_failure",
+      "reason": "Repeats 0 and 2 have no finding in the file: the agent does not suggest the idiomatic sum().",
+      "category": "improvable",
+      "action": "raise_true_bug"
+    },
+    "imp-003": {
+      "runs": [
+        "fail",
+        "fail",
+        "fail"
+      ],
+      "file_level_runs": [
+        "fail",
+        "fail",
+        "fail"
+      ],
+      "status": "stable_failure",
+      "failure_class": "model_failure",
+      "reason": "No finding in the file in any repeat: the agent does not suggest the idiomatic map().",
+      "category": "improvable",
+      "action": "raise_true_bug"
+    },
+    "imp-004": {
+      "runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "file_level_runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "status": "pass",
+      "failure_class": null,
+      "reason": null,
+      "category": "improvable",
+      "action": "raise_true_bug"
+    },
+    "log-001": {
+      "runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "file_level_runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "status": "pass",
+      "failure_class": null,
+      "reason": null,
+      "category": "logic",
+      "action": "raise_true_bug"
+    },
+    "log-002": {
+      "runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "file_level_runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "status": "pass",
+      "failure_class": null,
+      "reason": null,
+      "category": "logic",
+      "action": "raise_true_bug"
+    },
+    "log-004": {
+      "runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "file_level_runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "status": "pass",
+      "failure_class": null,
+      "reason": null,
+      "category": "logic",
+      "action": "raise_true_bug"
+    },
+    "log-005": {
+      "runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "file_level_runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "status": "pass",
+      "failure_class": null,
+      "reason": null,
+      "category": "logic",
+      "action": "raise_true_bug"
+    },
+    "log-007": {
+      "runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "file_level_runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "status": "pass",
+      "failure_class": null,
+      "reason": null,
+      "category": "logic",
+      "action": "raise_true_bug"
+    },
+    "log-008": {
+      "runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "file_level_runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "status": "pass",
+      "failure_class": null,
+      "reason": null,
+      "category": "logic",
+      "action": "raise_true_bug"
+    },
+    "pub-ansible-66192": {
+      "runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "file_level_runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "status": "pass",
+      "failure_class": null,
+      "reason": null,
+      "category": "logic",
+      "action": "raise_true_bug"
+    },
+    "pub-ansible-74714": {
+      "runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "file_level_runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "status": "pass",
+      "failure_class": null,
+      "reason": null,
+      "category": "logic",
+      "action": "raise_true_bug"
+    },
+    "pub-dokku-3703": {
+      "runs": [
+        "pass",
+        "pass",
+        "fail"
+      ],
+      "file_level_runs": [
+        "pass",
+        "pass",
+        "fail"
+      ],
+      "status": "flaky",
+      "failure_class": "model_failure",
+      "reason": "Repeat 2 has no finding in the file. Repeat 0 passes only because a different claim (regex metacharacters, line 201) is inside the window; repeat 1 raises the reviewer's claim at line 202.",
+      "category": "logic",
+      "action": "raise_true_bug"
+    },
+    "pub-httpx-307": {
+      "runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "file_level_runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "status": "pass",
+      "failure_class": null,
+      "reason": null,
+      "category": "logic",
+      "action": "raise_true_bug"
+    },
+    "pub-mikro-orm-481": {
+      "runs": [
+        "fail",
+        "fail",
+        "fail"
+      ],
+      "file_level_runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "status": "stable_failure",
+      "failure_class": "model_failure",
+      "reason": "Misses the reviewer's bug in repeats 0 and 1. Repeat 2 raises it, but at line 116, outside the window: the code is at line 121 at raised_sha (checked), so the line is the model's error.",
+      "category": "logic",
+      "action": "raise_true_bug"
+    },
+    "pub-pyenv-1646": {
+      "runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "file_level_runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "status": "pass",
+      "failure_class": null,
+      "reason": null,
+      "category": "logic",
+      "action": "raise_true_bug"
+    },
+    "pub-trio-1832": {
+      "runs": [
+        "fail",
+        "pass",
+        "fail"
+      ],
+      "file_level_runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "status": "flaky",
+      "failure_class": "model_failure",
+      "reason": "Misses the reviewer's bug (a failed DeviceIoControl loses the afd_group): repeats 0 and 2 raise a different claim in process_events, and repeat 1 passes on a different afd_group.size claim at line 674, inside the window.",
+      "category": "logic",
+      "action": "raise_true_bug"
+    },
+    "pub-typeorm-6889": {
+      "runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "file_level_runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "status": "pass",
+      "failure_class": null,
+      "reason": null,
+      "category": "logic",
+      "action": "raise_true_bug"
+    },
+    "ref-001": {
+      "runs": [
+        "fail",
+        "pass",
+        "pass"
+      ],
+      "file_level_runs": [
+        "fail",
+        "pass",
+        "pass"
+      ],
+      "status": "flaky",
+      "failure_class": "model_failure",
+      "reason": "Repeat 0 raises a medium finding on a behaviour-preserving refactor (floating-point tax rounding, line 9): the code it describes moved, and did not change.",
+      "category": "refactor",
+      "action": "raise_nothing"
+    },
+    "ref-003": {
+      "runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "file_level_runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "status": "pass",
+      "failure_class": null,
+      "reason": null,
+      "category": "refactor",
+      "action": "raise_nothing"
+    },
+    "ref-004": {
+      "runs": [
+        "pass",
+        "pass",
+        "fail"
+      ],
+      "file_level_runs": [
+        "pass",
+        "pass",
+        "fail"
+      ],
+      "status": "flaky",
+      "failure_class": "model_failure",
+      "reason": "Repeat 2 raises a medium finding on a behaviour-preserving refactor: sourcing the script runs main, which nothing in the commit does.",
+      "category": "refactor",
+      "action": "raise_nothing"
+    },
+    "sec-001": {
+      "runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "file_level_runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "status": "pass",
+      "failure_class": null,
+      "reason": null,
+      "category": "security",
+      "action": "raise_true_bug"
+    },
+    "sec-002": {
+      "runs": [
+        "pass",
+        "pass",
+        "fail"
+      ],
+      "file_level_runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "status": "flaky",
+      "failure_class": "model_failure",
+      "reason": "Repeat 2 raises the SQL injection at high severity but cites line 52, outside the window of line 47: the line is the model's error.",
+      "category": "security",
+      "action": "raise_true_bug"
+    },
+    "sec-004": {
+      "runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "file_level_runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "status": "pass",
+      "failure_class": null,
+      "reason": null,
+      "category": "security",
+      "action": "raise_true_bug"
+    },
+    "sec-005": {
+      "runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "file_level_runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "status": "pass",
+      "failure_class": null,
+      "reason": null,
+      "category": "security",
+      "action": "raise_true_bug"
+    },
+    "sec-007": {
+      "runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "file_level_runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "status": "pass",
+      "failure_class": null,
+      "reason": null,
+      "category": "security",
+      "action": "raise_true_bug"
+    },
+    "sec-008": {
+      "runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "file_level_runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "status": "pass",
+      "failure_class": null,
+      "reason": null,
+      "category": "security",
+      "action": "raise_true_bug"
+    },
+    "sty-002": {
+      "runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "file_level_runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "status": "pass",
+      "failure_class": null,
+      "reason": null,
+      "category": "style_only",
+      "action": "raise_nothing"
+    },
+    "sty-004": {
+      "runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "file_level_runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "status": "pass",
+      "failure_class": null,
+      "reason": null,
+      "category": "style_only",
+      "action": "raise_nothing"
+    },
+    "sty-005": {
+      "runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "file_level_runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "status": "pass",
+      "failure_class": null,
+      "reason": null,
+      "category": "style_only",
+      "action": "raise_nothing"
+    },
+    "sty-006": {
+      "runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "file_level_runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "status": "pass",
+      "failure_class": null,
+      "reason": null,
+      "category": "style_only",
+      "action": "raise_nothing"
     }
   }
 }
