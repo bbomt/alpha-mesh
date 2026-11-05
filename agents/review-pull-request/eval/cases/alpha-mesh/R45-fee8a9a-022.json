@@ -10,7 +10,7 @@
   "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
   "finding": {
     "file": "agents/review-pull-request/eval/scripts/run_eval.sh",
-    "line": 26,
+    "line": 31,
     "severity": "low",
     "summary": "Hardcoded 'nvm use 24' assumes Node 24 is installed via nvm. If nvm is not available or Node 24 is not installed, the script fails silently (output redirected to /dev/null) with a confusing error later from promptfoo.",
     "fix": "Add explicit check: if ! command -v nvm >/dev/null; then echo \"ERROR: nvm not found\" >&2; exit 1; fi. Also verify Node 24 is available: nvm ls 24 >/dev/null || { echo \"ERROR: Node 24 not installed via nvm\" >&2; exit 1; }",
@@ -26,5 +26,5 @@
     "action": "skip_false_bug",
     "flag_file": "agents/review-pull-request/eval/scripts/run_eval.sh"
   },
-  "notes": ""
+  "notes": "finding.line moved 26 -> 31: at raised_sha fee8a9a the `nvm use 24` the finding describes is at run_eval.sh:31 (26 is mkdir); the review cited the wrong line."
 }
