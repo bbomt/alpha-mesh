@@ -10,7 +10,7 @@
   "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
   "finding": {
     "file": "agents/review-pull-request/eval/promptfoo/eval_adapter.py",
-    "line": 22,
+    "line": 18,
     "severity": "low",
     "summary": "The config and checkpointer parameters lack type annotations, reducing IDE support and making the interface less clear.",
     "fix": "Add type hints: config: Any (or a Protocol), checkpointer: Any (or langgraph.checkpoint.BaseCheckpointSaver).",
@@ -26,5 +26,5 @@
     "action": "skip_false_bug",
     "flag_file": "agents/review-pull-request/eval/promptfoo/eval_adapter.py"
   },
-  "notes": ""
+  "notes": "finding.line moved 22 -> 18: at raised_sha fee8a9a review_case's signature with the unannotated config and checkpointer is at eval_adapter.py:18 (22 is the thread_id call); the review cited the wrong line."
 }
