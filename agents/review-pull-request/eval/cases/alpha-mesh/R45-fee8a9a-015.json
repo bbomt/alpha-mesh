@@ -10,7 +10,7 @@
   "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
   "finding": {
     "file": "agents/review-pull-request/eval/scripts/run_eval.sh",
-    "line": 31,
+    "line": 39,
     "severity": "medium",
     "summary": "Uncommitted changes in src/ or eval/promptfoo/ only produce a warning but allow the run to proceed. This creates a mismatch between the commit hash recorded in run.json and the actual code executing, violating test–production parity.",
     "fix": "Either exit with an error on uncommitted changes (recommended for reproducibility), or add a --force flag to override. Example: [[ -n \"$(git -C \"$AGENT\" status --porcelain -- src eval/promptfoo)\" ]] && { echo \"ERROR: uncommitted changes...\" >&2; exit 1; }",
@@ -27,5 +27,5 @@
     "flag_file": "agents/review-pull-request/eval/scripts/run_eval.sh",
     "min_severity": "medium"
   },
-  "notes": ""
+  "notes": "finding.line moved 31 -> 39: at raised_sha fee8a9a the uncommitted-changes check that only warns is at run_eval.sh:39 (31 is nvm use); the review cited the wrong line."
 }
