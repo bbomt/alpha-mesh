@@ -10,7 +10,7 @@
   "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
   "finding": {
     "file": "agents/review-pull-request/eval/promptfoo/eval_adapter.py",
-    "line": 53,
+    "line": 45,
     "severity": "high",
     "summary": "The findings extraction assumes every file in state.values['files'] has a corresponding entry in results. If the checkpoint is corrupted, from a different graph version, or the graph logic has a bug, this will raise a KeyError. The graph's after_review logic should ensure all files have results when state.next is empty, but there's no defensive check.",
     "fix": "Use results.get(f, {}).get('issues', []) to safely handle missing entries, or add an assertion that all files have results before extraction.",
@@ -26,5 +26,5 @@
     "action": "skip_false_bug",
     "flag_file": "agents/review-pull-request/eval/promptfoo/eval_adapter.py"
   },
-  "notes": ""
+  "notes": "finding.line moved 53 -> 45: at raised_sha fee8a9a the results[f] lookup the finding describes is at eval_adapter.py:45 (53 is the last line of _review); the review cited the wrong line."
 }
