@@ -10,7 +10,7 @@
   "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
   "finding": {
     "file": "agents/review-pull-request/eval/promptfoo/agent_provider.py",
-    "line": 27,
+    "line": 41,
     "severity": "low",
     "summary": "The _saver function's cache initialization (if path not in _savers) is not thread-safe. Two threads could simultaneously create connections for the same path.",
     "fix": "Add a threading.Lock to protect the cache initialization, or use functools.lru_cache on a function that creates the saver.",
@@ -26,5 +26,5 @@
     "action": "skip_false_bug",
     "flag_file": "agents/review-pull-request/eval/promptfoo/agent_provider.py"
   },
-  "notes": ""
+  "notes": "finding.line moved 27 -> 41: at raised_sha fee8a9a the `if path not in _savers` the finding describes is at agent_provider.py:41 (27 is an import); the review cited the wrong line."
 }
