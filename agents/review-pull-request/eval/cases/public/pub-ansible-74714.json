@@ -1,0 +1,31 @@
+{
+  "case_id": "pub-ansible-74714",
+  "repo": "ansible/ansible",
+  "pr_number": 74714,
+  "base_sha": "015331518dff60f31a7d8ce24fc315e3ac9e86f8",
+  "head_sha": "2b1df50650f1576f1fba36dc66855f95a12708f6",
+  "raised_sha": "1d70231c6f0b935dec654cf83f4134820deed6cb",
+  "fix_sha": null,
+  "source": "public_pr",
+  "model": null,
+  "finding": {
+    "file": "lib/ansible/module_utils/facts/hardware/linux.py",
+    "line": 588,
+    "severity": "low",
+    "summary": "@bcoca I tested this in our environment overnight and it looks like it works because it took this code path, but it ultimately failed due to a typo :) `s/modulw/module/`",
+    "fix": null,
+    "failure_scenario": null,
+    "id": "pub-ansible-74714"
+  },
+  "label": "real_issue",
+  "label_by": "hand",
+  "label_date": "2026-11-04",
+  "label_reason": "A human reviewer raised this in ansible/ansible#74714 (merged 2021-06-01), and a later commit in the PR changes the file.",
+  "category": "logic",
+  "expected": {
+    "action": "raise_true_bug",
+    "flag_file": "lib/ansible/module_utils/facts/hardware/linux.py",
+    "min_severity": "low"
+  },
+  "notes": "Hand-picked with Claude Code (PMAT-310): https://github.com/ansible/ansible/pull/74714. Python: a typo in an attribute name on an error path, which fails at run time only when the error happens. Human reviewers are not perfect ground truth, and they give no severity, so any severity counts."
+}

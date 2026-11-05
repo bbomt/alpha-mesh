@@ -1,0 +1,30 @@
+{
+  "case_id": "log-005",
+  "repo": "bbomt/alpha-mesh-eval-fixtures",
+  "base_sha": "425b04df2196ab5b2c8fe443ffe37bddb2260b7a",
+  "head_sha": "39c385becf1e2178ee217fdf018b5cb6ed90d292",
+  "raised_sha": "39c385becf1e2178ee217fdf018b5cb6ed90d292",
+  "fix_sha": null,
+  "source": "synthetic",
+  "description": "Retention can now be set per environment with `RETENTION_DAYS`; the default stays 30 days.",
+  "finding": {
+    "file": "agent/review-pull-request/scripts/backup.sh",
+    "line": 16,
+    "severity": "medium",
+    "summary": "Wrong comparison: `-mtime -30` matches files newer than 30 days, so the script deletes recent backups (including tonight's) and keeps the old ones; it must be `+`.",
+    "fix": null,
+    "failure_scenario": null,
+    "id": "log-005"
+  },
+  "label": "real_issue",
+  "label_by": "hand",
+  "label_date": "2026-11-04",
+  "label_reason": "Planted: Wrong comparison: `-mtime -30` matches files newer than 30 days, so the script deletes recent backups (including tonight's) and keeps the old ones; it must be `+`.",
+  "category": "logic",
+  "expected": {
+    "action": "raise_true_bug",
+    "flag_file": "agent/review-pull-request/scripts/backup.sh",
+    "min_severity": "medium"
+  },
+  "notes": "Generated with Claude Code (PMAT-310); fixture commit in bbomt/alpha-mesh-eval-fixtures, branch agent/review-pull-request/case/log-005. Logic bug in bash with destructive results, one character in a config change."
+}

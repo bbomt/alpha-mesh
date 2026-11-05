@@ -1,0 +1,30 @@
+{
+  "case_id": "log-008",
+  "repo": "bbomt/alpha-mesh-eval-fixtures",
+  "base_sha": "425b04df2196ab5b2c8fe443ffe37bddb2260b7a",
+  "head_sha": "9cfabecb3d15f64390b9b6a1fb646213a5941d2e",
+  "raised_sha": "9cfabecb3d15f64390b9b6a1fb646213a5941d2e",
+  "fix_sha": null,
+  "source": "synthetic",
+  "description": "Adds a log line per attempt. Attempts are numbered from 1 so the logs read naturally.",
+  "finding": {
+    "file": "agent/review-pull-request/src/orders/worker.py",
+    "line": 26,
+    "severity": "medium",
+    "summary": "Off by one: `range(1, retries)` makes one attempt too few, and with `retries=1` the handler is never called and the event counts as failed.",
+    "fix": null,
+    "failure_scenario": null,
+    "id": "log-008"
+  },
+  "label": "real_issue",
+  "label_by": "hand",
+  "label_date": "2026-11-04",
+  "label_reason": "Planted: Off by one: `range(1, retries)` makes one attempt too few, and with `retries=1` the handler is never called and the event counts as failed.",
+  "category": "logic",
+  "expected": {
+    "action": "raise_true_bug",
+    "flag_file": "agent/review-pull-request/src/orders/worker.py",
+    "min_severity": "medium"
+  },
+  "notes": "Generated with Claude Code (PMAT-310); fixture commit in bbomt/alpha-mesh-eval-fixtures, branch agent/review-pull-request/case/log-008. Off-by-one in a retry loop, in a change described as logging."
+}

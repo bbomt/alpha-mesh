@@ -1,0 +1,30 @@
+{
+  "case_id": "sec-002",
+  "repo": "bbomt/alpha-mesh-eval-fixtures",
+  "base_sha": "425b04df2196ab5b2c8fe443ffe37bddb2260b7a",
+  "head_sha": "8964d47cd2ce6c918d47abbdd4fbff7835cf9a59",
+  "raised_sha": "8964d47cd2ce6c918d47abbdd4fbff7835cf9a59",
+  "fix_sha": null,
+  "source": "synthetic",
+  "description": "Adds a status filter for the order history page, passed through from the query string.",
+  "finding": {
+    "file": "agent/review-pull-request/src/orders/store.py",
+    "line": 47,
+    "severity": "high",
+    "summary": "SQL injection: `status` comes from the query string and is interpolated into the SQL; it must be a bound parameter like the other queries.",
+    "fix": null,
+    "failure_scenario": null,
+    "id": "sec-002"
+  },
+  "label": "real_issue",
+  "label_by": "hand",
+  "label_date": "2026-11-04",
+  "label_reason": "Planted: SQL injection: `status` comes from the query string and is interpolated into the SQL; it must be a bound parameter like the other queries.",
+  "category": "security",
+  "expected": {
+    "action": "raise_true_bug",
+    "flag_file": "agent/review-pull-request/src/orders/store.py",
+    "min_severity": "high"
+  },
+  "notes": "Generated with Claude Code (PMAT-310); fixture commit in bbomt/alpha-mesh-eval-fixtures, branch agent/review-pull-request/case/sec-002. SQL injection, next to parameterised queries that show the right way."
+}

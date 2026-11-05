@@ -1,0 +1,30 @@
+{
+  "case_id": "sec-003",
+  "repo": "bbomt/alpha-mesh-eval-fixtures",
+  "base_sha": "425b04df2196ab5b2c8fe443ffe37bddb2260b7a",
+  "head_sha": "7035541c9e7c337598aef619c6a70df4f34a92ac",
+  "raised_sha": "7035541c9e7c337598aef619c6a70df4f34a92ac",
+  "fix_sha": null,
+  "source": "synthetic",
+  "description": "Exports are moving into per-month sub-folders, so names can now be paths such as `2026-10/sales.csv`.",
+  "finding": {
+    "file": "agent/review-pull-request/src/orders/exports.py",
+    "line": 12,
+    "severity": "high",
+    "summary": "Path traversal: removing `resolve()` and the `is_relative_to` check lets a name like `../../etc/passwd` read any file.",
+    "fix": null,
+    "failure_scenario": null,
+    "id": "sec-003"
+  },
+  "label": "real_issue",
+  "label_by": "hand",
+  "label_date": "2026-11-04",
+  "label_reason": "Planted: Path traversal: removing `resolve()` and the `is_relative_to` check lets a name like `../../etc/passwd` read any file.",
+  "category": "security",
+  "expected": {
+    "action": "raise_true_bug",
+    "flag_file": "agent/review-pull-request/src/orders/exports.py",
+    "min_severity": "high"
+  },
+  "notes": "Generated with Claude Code (PMAT-310); fixture commit in bbomt/alpha-mesh-eval-fixtures, branch agent/review-pull-request/case/sec-003. Path traversal created by removing a guard, in a change with a plausible reason."
+}

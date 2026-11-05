@@ -1,0 +1,30 @@
+{
+  "case_id": "log-007",
+  "repo": "bbomt/alpha-mesh-eval-fixtures",
+  "base_sha": "425b04df2196ab5b2c8fe443ffe37bddb2260b7a",
+  "head_sha": "7393d9be4290e2bd2070b58f3f9764bacb37c6f9",
+  "raised_sha": "7393d9be4290e2bd2070b58f3f9764bacb37c6f9",
+  "fix_sha": null,
+  "source": "synthetic",
+  "description": "The supplier feed sends prices as decimal strings such as `19.99`; this converts them to cents.",
+  "finding": {
+    "file": "agent/review-pull-request/src/orders/pricing.py",
+    "line": 19,
+    "severity": "medium",
+    "summary": "Float truncation: `int(float('19.99') * 100)` gives 1998, not 1999, so prices lose a cent; it must round, or parse with Decimal.",
+    "fix": null,
+    "failure_scenario": null,
+    "id": "log-007"
+  },
+  "label": "real_issue",
+  "label_by": "hand",
+  "label_date": "2026-11-04",
+  "label_reason": "Planted: Float truncation: `int(float('19.99') * 100)` gives 1998, not 1999, so prices lose a cent; it must round, or parse with Decimal.",
+  "category": "logic",
+  "expected": {
+    "action": "raise_true_bug",
+    "flag_file": "agent/review-pull-request/src/orders/pricing.py",
+    "min_severity": "medium"
+  },
+  "notes": "Generated with Claude Code (PMAT-310); fixture commit in bbomt/alpha-mesh-eval-fixtures, branch agent/review-pull-request/case/log-007. A numeric bug that looks right and passes on most values."
+}

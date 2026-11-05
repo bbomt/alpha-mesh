@@ -1,0 +1,30 @@
+{
+  "case_id": "log-003",
+  "repo": "bbomt/alpha-mesh-eval-fixtures",
+  "base_sha": "425b04df2196ab5b2c8fe443ffe37bddb2260b7a",
+  "head_sha": "b4203c3c4900d9be3bb06d3f7f7bb90e50b25228",
+  "raised_sha": "b4203c3c4900d9be3bb06d3f7f7bb90e50b25228",
+  "fix_sha": null,
+  "source": "synthetic",
+  "description": "Adds a docstring to `can_ship` and returns the condition directly.",
+  "finding": {
+    "file": "agent/review-pull-request/src/orders/inventory.py",
+    "line": 40,
+    "severity": "medium",
+    "summary": "Wrong operator: `or` lets an order ship with no stock when the warehouse is open, or with the warehouse closed; it must be `and`.",
+    "fix": null,
+    "failure_scenario": null,
+    "id": "log-003"
+  },
+  "label": "real_issue",
+  "label_by": "hand",
+  "label_date": "2026-11-04",
+  "label_reason": "Planted: Wrong operator: `or` lets an order ship with no stock when the warehouse is open, or with the warehouse closed; it must be `and`.",
+  "category": "logic",
+  "expected": {
+    "action": "raise_true_bug",
+    "flag_file": "agent/review-pull-request/src/orders/inventory.py",
+    "min_severity": "medium"
+  },
+  "notes": "Generated with Claude Code (PMAT-310); fixture commit in bbomt/alpha-mesh-eval-fixtures, branch agent/review-pull-request/case/log-003. Wrong boolean operator, hidden inside a change described as documentation."
+}

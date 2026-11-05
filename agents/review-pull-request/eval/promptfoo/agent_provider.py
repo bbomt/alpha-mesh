@@ -21,6 +21,7 @@ from pathlib import Path
 
 from langgraph.checkpoint.sqlite import SqliteSaver
 
+from case_rules import glob_regex
 from eval_adapter import review_case
 from review_pull_request.config import load_config
 from review_pull_request.git import get_pr_description
@@ -59,8 +60,11 @@ def review(case: dict, repeat: int) -> dict:
         token = _get_github_token() or ""
         if not token:
             raise RuntimeError("no GitHub token: run 'gh auth login' (or set GITHUB_TOKEN)")
-        # Today's description: it may have been edited since raised_sha (README, Known limitations).
-        description = get_pr_description(f"https://github.com/{case['repo']}/pull/{case['pr_number']}", token)
+        # A fixture commit has no PR and states its own. A PR's is today's: it may have been edited since
+        # raised_sha (README, Known limitations).
+        description = case.get("description")
+        if description is None:
+            description = get_pr_description(f"https://github.com/{case['repo']}/pull/{case['pr_number']}", token)
         print(f"[eval] {case['case_id']}: {case['repo']}@{case['raised_sha'][:7]} repeat {repeat}", file=sys.stderr)
         return review_case(case, config=config, token=token, description=description,
                            checkpointer=_saver(run_dir / f"checkpoints-repeat-{repeat}.sqlite"))
@@ -72,7 +76,9 @@ def call_api(prompt, options, context):
         result = review(case, repeat)
     except Exception as e:
         return {"error": f"{type(e).__name__}: {e}"}
-    if case["expected"]["flag_file"] in result["incomplete"]:
-        return {"error": f"{case['expected']['flag_file']} was not fully reviewed (unusable model response), "
+    pattern = glob_regex(case["expected"]["flag_file"])  # a raise_nothing case's flag_file may be a glob
+    unreviewed = [f for f in result["incomplete"] if pattern.match(f)]
+    if unreviewed:
+        return {"error": f"{', '.join(unreviewed)} not fully reviewed (unusable model response), "
                          "so this case cannot be scored"}
     return {"output": result}

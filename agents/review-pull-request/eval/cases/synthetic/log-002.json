@@ -1,0 +1,30 @@
+{
+  "case_id": "log-002",
+  "repo": "bbomt/alpha-mesh-eval-fixtures",
+  "base_sha": "425b04df2196ab5b2c8fe443ffe37bddb2260b7a",
+  "head_sha": "7c1a9adfd02971d3b5b716ac86a66f24a751fc3f",
+  "raised_sha": "7c1a9adfd02971d3b5b716ac86a66f24a751fc3f",
+  "fix_sha": null,
+  "source": "synthetic",
+  "description": "The cart page wants to show a free-shipping badge, so the check moves into its own function.",
+  "finding": {
+    "file": "agent/review-pull-request/src/orders/pricing.py",
+    "line": 35,
+    "severity": "medium",
+    "summary": "Inverted condition: orders below the threshold qualify for free shipping and larger orders pay the fee.",
+    "fix": null,
+    "failure_scenario": null,
+    "id": "log-002"
+  },
+  "label": "real_issue",
+  "label_by": "hand",
+  "label_date": "2026-11-04",
+  "label_reason": "Planted: Inverted condition: orders below the threshold qualify for free shipping and larger orders pay the fee.",
+  "category": "logic",
+  "expected": {
+    "action": "raise_true_bug",
+    "flag_file": "agent/review-pull-request/src/orders/pricing.py",
+    "min_severity": "medium"
+  },
+  "notes": "Generated with Claude Code (PMAT-310); fixture commit in bbomt/alpha-mesh-eval-fixtures, branch agent/review-pull-request/case/log-002. Inverted condition, introduced while extracting a helper."
+}

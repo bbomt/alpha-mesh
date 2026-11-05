@@ -1,0 +1,31 @@
+{
+  "case_id": "pub-dokku-3703",
+  "repo": "dokku/dokku",
+  "pr_number": 3703,
+  "base_sha": "9256248cfd50c424b80b8be3e71e1d166144300d",
+  "head_sha": "592b10122d652fee0c4e04e87b9fed6d390d55bf",
+  "raised_sha": "1726ae878b195be7eb715b8b33a621ee98d246e5",
+  "fix_sha": null,
+  "source": "public_pr",
+  "model": null,
+  "finding": {
+    "file": "plugins/ps/functions",
+    "line": 202,
+    "severity": "low",
+    "summary": "We should check if `DOKKU_PROCFILE` exists. If an app is not deployed but a user calls `ps:scale`, then no Procfile is extracted, and this will probably fail.",
+    "fix": null,
+    "failure_scenario": null,
+    "id": "pub-dokku-3703"
+  },
+  "label": "real_issue",
+  "label_by": "hand",
+  "label_date": "2026-11-04",
+  "label_reason": "A human reviewer raised this in dokku/dokku#3703 (merged 2019-10-04), and a later commit in the PR changes the file.",
+  "category": "logic",
+  "expected": {
+    "action": "raise_true_bug",
+    "flag_file": "plugins/ps/functions",
+    "min_severity": "low"
+  },
+  "notes": "Hand-picked with Claude Code (PMAT-310): https://github.com/dokku/dokku/pull/3703. Bash: reads a file that may not exist when the app has not been deployed. Human reviewers are not perfect ground truth, and they give no severity, so any severity counts."
+}

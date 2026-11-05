@@ -7,7 +7,6 @@
   "required": [
     "case_id",
     "repo",
-    "pr_number",
     "label",
     "category",
     "expected",
@@ -25,6 +24,9 @@
     "pr_number": {
       "type": "integer",
       "minimum": 1
+    },
+    "description": {
+      "type": "string"
     },
     "base_sha": {
       "type": [
@@ -110,6 +112,10 @@
             "low"
           ]
         },
+        "max_comments": {
+          "type": "integer",
+          "minimum": 0
+        },
         "must_mention_any": {
           "type": "array",
           "items": {
@@ -136,7 +142,8 @@
             "properties": {
               "flag_file": {
                 "pattern": "^[^*?\\[]+$"
-              }
+              },
+              "max_comments": false
             }
           }
         },
@@ -190,6 +197,19 @@
       "type": "string"
     }
   },
+  "anyOf": [
+    {
+      "$comment": "a case from a PR gets its description from the PR; a case with no PR (a fixture commit) states its own",
+      "required": [
+        "pr_number"
+      ]
+    },
+    {
+      "required": [
+        "description"
+      ]
+    }
+  ],
   "allOf": [
     {
       "$comment": "a true or false bug is reviewed at raised_sha (diff base_sha...raised_sha) and matched by its line there (within a window), so it must have all three",

@@ -1,0 +1,20 @@
+{
+  "case_id": "sty-005",
+  "repo": "bbomt/alpha-mesh-eval-fixtures",
+  "base_sha": "425b04df2196ab5b2c8fe443ffe37bddb2260b7a",
+  "head_sha": "17422c95ef273964fbbf0e40f1c51ab26631fc1a",
+  "raised_sha": "17422c95ef273964fbbf0e40f1c51ab26631fc1a",
+  "fix_sha": null,
+  "source": "synthetic",
+  "description": "Adds comments to `deploy.sh`.",
+  "label": "false_positive",
+  "label_by": "hand",
+  "label_date": "2026-11-04",
+  "label_reason": "No bug is planted; the tests of the base pass on this commit.",
+  "category": "style_only",
+  "expected": {
+    "action": "raise_nothing",
+    "flag_file": "agent/review-pull-request/**"
+  },
+  "notes": "Generated with Claude Code (PMAT-310); fixture commit in bbomt/alpha-mesh-eval-fixtures, branch agent/review-pull-request/case/sty-005. Comments only, in bash."
+}

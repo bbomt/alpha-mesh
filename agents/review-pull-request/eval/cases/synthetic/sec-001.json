@@ -1,0 +1,30 @@
+{
+  "case_id": "sec-001",
+  "repo": "bbomt/alpha-mesh-eval-fixtures",
+  "base_sha": "425b04df2196ab5b2c8fe443ffe37bddb2260b7a",
+  "head_sha": "3f27b642aeb18d968b16732efa0e4adfa2dde017",
+  "raised_sha": "3f27b642aeb18d968b16732efa0e4adfa2dde017",
+  "fix_sha": null,
+  "source": "synthetic",
+  "description": "`config.py` fails at import when `PAYMENT_API_KEY` isn't set, which gets in the way when running locally.",
+  "finding": {
+    "file": "agent/review-pull-request/src/orders/config.py",
+    "line": 9,
+    "severity": "high",
+    "summary": "Hardcoded production credential committed as a default; anyone who can read the repo has the payment key.",
+    "fix": null,
+    "failure_scenario": null,
+    "id": "sec-001"
+  },
+  "label": "real_issue",
+  "label_by": "hand",
+  "label_date": "2026-11-04",
+  "label_reason": "Planted: Hardcoded production credential committed as a default; anyone who can read the repo has the payment key.",
+  "category": "security",
+  "expected": {
+    "action": "raise_true_bug",
+    "flag_file": "agent/review-pull-request/src/orders/config.py",
+    "min_severity": "high"
+  },
+  "notes": "Generated with Claude Code (PMAT-310); fixture commit in bbomt/alpha-mesh-eval-fixtures, branch agent/review-pull-request/case/sec-001. Hardcoded secret. The key is fake and its format matches no real provider."
+}

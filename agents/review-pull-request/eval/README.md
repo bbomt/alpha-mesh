@@ -5,8 +5,15 @@ The golden dataset (the cases, below) and the Promptfoo harness that runs the ag
 
 ## What the dataset is
 
-High and medium review findings from merged PRs, each labelled by what happened to its ID
-(`R<PR>-<commit7>-<NNN>`, on the finding's heading):
+Three kinds of case:
+
+- **Mined** (`cases/<repo>/`): high, medium and low findings from our own merged PRs (below). They only cover what the
+  agent happened to raise.
+- **Synthetic** (`cases/synthetic/`): one small commit per case, targeting every category: planted bugs the agent must
+  raise, and clean changes where it must say nothing (the hallucination traps). See [Synthetic cases](#synthetic-cases).
+- **Public** (`cases/public/`): merged open source PRs with a human reviewer's comment. See [Public cases](#public-cases).
+
+Mined findings are labelled by what happened to their ID (`R<PR>-<commit7>-<NNN>`, on the finding's heading):
 
 - **Real issue:** a commit in the PR cites the ID, e.g. `fix[PMAT-12]: fixed review finding R31-e0c98f3-003 in src/x.py`.
 - **False positive:** a comment on the PR dismisses it on a line of its own:
@@ -14,7 +21,8 @@ High and medium review findings from merged PRs, each labelled by what happened 
   line wins, so a wrong dismissal is corrected by posting a new line.
 
 Everything else is not a case: duplicates (a dismissal reason starting `duplicate of <ID>`), conflicts
-(both cited and dismissed), unresolved findings (neither), findings without an ID or a line, and low findings.
+(both cited and dismissed), unresolved findings (neither), findings without an ID or a line, and findings on a
+commit above `--max-files`.
 Running the agent against the dataset is [Running the evals](#running-the-evals).
 
 ## How to run it
@@ -26,10 +34,15 @@ nothing is written to GitHub.
 S=eval/scripts/eval_cases.py
 python3 $S mine --repo bbomt/alpha-mesh --limit 40            # the 40 most recently merged PRs
 python3 $S mine --repo bbomt/alpha-mesh --prs 36,37           # only some PRs
+python3 $S mine --repo bbomt/alpha-mesh --limit 60 --max-files 22   # how the dataset is mined
 python3 $S label R31-e0c98f3-004 real_issue --reason "The caller never checks the length (src/x.py:40)."
 ```
 
-`mine` prints a summary: `cited`, `dismissed`, `duplicate`, `conflict`, `unresolved`, `no_id`, `no_line`.
+`mine` prints a summary: `cited`, `dismissed`, `duplicate`, `conflict`, `unresolved`, `no_id`, `no_line`, `too_large`.
+
+Run time grows with the files a commit changes, so the dataset is mined with `--max-files 22`: those 6 commits
+hold 11 of the 14 real bugs in 75 files, and the other 7 commits add 268 files for 3 more.
+
 
 ## When to run it
 
@@ -46,21 +59,55 @@ kept. Nothing is ever deleted. A case that has not changed is not rewritten. A c
 when its label or reason changes.
 
 `expected` is recomputed from the label, unless it differs from what the rules give for the case's
-current label: then it was edited by hand and is kept. `notes` is always kept. `label` recomputes
+current label: then it was edited by hand and is kept. `notes` and `finding` (whose line may have been
+fixed by hand) are always kept. `label` recomputes
 `expected` from the new label (a hand edit made for the old label is stale) and keeps `notes`.
 
-## The legacy cases
+## Synthetic cases
 
-The 49 cases in `cases/legacy-file-rule/` came from the old file rule (PMAT-300): a finding whose file
-did not change before the merge. `mine` never reads, rewrites or recreates them (their findings have no
-ID). `label` can still relabel them. They are deleted by hand once enough ID-based cases exist.
+The agent only reads from GitHub, so the commits live in the private repo `bbomt/alpha-mesh-eval-fixtures`: branch
+`agent/review-pull-request/base` holds a small orders service in Python, TypeScript and bash, and each
+`agent/review-pull-request/case/<id>` is one commit on it. Its `main` branch holds the generator (`case_defs.py`,
+`build.py`) and shares no history with the case branches, so a review cannot read it.
+
+| Category | Cases | The review must | `expected` |
+| :-- | --: | :-- | :-- |
+| `logic` | 8 | flag it, medium or above | `raise_true_bug`, `min_severity: medium` |
+| `security` | 8 | flag it as high | `raise_true_bug`, `min_severity: high` |
+| `concurrency` | 4 | flag it, medium or above | `raise_true_bug`, `min_severity: medium` |
+| `improvable` | 4 | suggest a change, at any severity | `raise_true_bug`, `min_severity: low` |
+| `style_only` | 6 | say nothing, low included | `raise_nothing` |
+| `degenerate` | 3 | not crash, not invent a review | `raise_nothing` |
+| `refactor` | 4 | no high or medium finding, at most 3 of any severity | `raise_nothing`, `min_severity: medium`, `max_comments: 3` |
+
+The generator checks that style, refactor and degenerate commits pass the base's tests, so they really do not change
+behaviour, and that a planted bug's line is in a file the commit changed. Commit messages and `description` read like a
+developer's and never hint at the bug. Each case has its own commit, so a true bug never overlaps a clean glob.
+
+The model sees file paths but never the repo name (`owner` and `repo` only go into GitHub API URLs), so the name
+"fixtures" does not reach it. The paths do contain `agent/review-pull-request/`.
+
+`deg-002` (a 4,500-line lockfile) is skipped by the agent's own exclusions, so it tests that route, not how the model
+copes with a large file.
+
+## Public cases
+
+11 cases from 10 merged PRs in well-known open source repos, picked by hand, merged 2019 to 2021, so before AI review
+tools were common and the comment is a human's: 4 Python, 4 TypeScript, 3 bash. Each is `raise_true_bug` with
+`min_severity: low`, at the line the reviewer commented on, on the commit they saw, with a later commit in the PR
+changing the file. Humans give no severity, so any severity counts. Their `category` is `logic`; report them by folder.
+
+The picks were checked by hand: the comment names a concrete bug, the line matches the code at that commit, and the
+later commit deals with it. Human reviewers are not perfect ground truth, and reviewers miss things: an agent can find
+a real bug here that no one raised. Use these for instructive comparison.
 
 ## Folder layout
 
 | Path | Holds |
 | :-- | :-- |
-| `cases/<repo>/<ID>.json` | one case per finding ID (an ID is unique only within its repo) |
-| `cases/legacy-file-rule/` | the frozen legacy cases |
+| `cases/<repo>/<ID>.json` | one mined case per finding ID (an ID is unique only within its repo) |
+| `cases/synthetic/<id>.json` | one case per fixture commit; `pr_number` is absent and `description` is required |
+| `cases/public/<id>.json` | one case per public PR review comment |
 | `scripts/eval_cases.py` | the miner (stdlib only) |
 | `schema/case.schema.json` | the JSON Schema every case file must match |
 | `promptfooconfig.yaml`, `promptfoo/` | the harness: provider, eval adapter, loader, asserts, `case_rules.py` |
@@ -77,8 +124,8 @@ for reference.
 
 Besides the finding and its label, every case has:
 
-- `category`: `mined` for mined cases. Hand-written cases (later) use `logic`, `security`, `style_only`,
-  `refactor`, `concurrency`, `improvable` or `degenerate`.
+- `category`: `mined` for mined cases. Hand-written cases use `logic`, `security`, `style_only`, `refactor`,
+  `concurrency`, `improvable` or `degenerate`.
 - `notes`: free text for people, saying why the case exists. The harness never reads it; the judge may.
 - `expected`: what a good review of `raised_sha` does, never expected text. Every case passes or fails.
   `action` and `flag_file` are required:
@@ -87,7 +134,7 @@ Besides the finding and its label, every case has:
 | :-- | :-- | :-- | :-- |
 | `raise_true_bug` | raise a finding in `flag_file` within ±3 lines of `finding.line`, at `min_severity` or above | `min_severity` (required), `must_mention_any` (optional, added by hand: the finding's text mentions at least one of these strings, ignoring case) | `real_issue` |
 | `skip_false_bug` | raise no finding in `flag_file` within ±3 lines of `finding.line` (a hallucination); other findings, in that file too, are fine | none | `false_positive` |
-| `raise_nothing` | raise no finding in `flag_file`, which may be a glob (hand-written clean-code cases) | `min_severity` (optional: findings below it do not count; without it, any finding counts, low included) | never |
+| `raise_nothing` | raise no finding in `flag_file`, which may be a glob (hand-written clean-code cases) | `min_severity` (optional: findings below it do not count; without it, any finding counts, low included), `max_comments` (optional: fails on more findings than this at any severity) | never |
 
 - `flag_file` is a repo-relative path. Only `raise_nothing` takes a glob, with git rules: `*` and `?` stay
   within one folder, `**` spans any depth, and the glob matches the whole path (`src/*.py` matches
@@ -99,7 +146,7 @@ Besides the finding and its label, every case has:
   135 / 140 and 151 / 155, where one review raised a real and a false bug in one file). So every
   `raise_true_bug` and `skip_false_bug` case must have `finding.line` (the schema enforces it).
 
-`uv run pytest eval/tests` checks every case file against `schema/case.schema.json` (a missing or unknown
+`uv run pytest eval/tests` also checks each category's minimum count (`tests/test_dataset_coverage.py`), and checks every case file against `schema/case.schema.json` (a missing or unknown
 key, a glob outside `raise_nothing`, or a true or false bug without a line, fails), and rejects a `raise_nothing` case whose `flag_file` matches
 another case's file at the same repo and `raised_sha`: a file cannot be both clean and hold a finding.
 
@@ -109,6 +156,11 @@ another case's file at the same repo and `raised_sha`: a file cannot be both cle
 `expected` block (PMAT-304). `promptfoo view` shows the results.
 
 ### Baseline
+
+**Stale until PMAT-318.** `baseline.json` and `error_analysis.json` describe the old dataset (57 cases, 49 of them the
+legacy cases deleted in PMAT-310), so `compare_baseline.py` is not meaningful for now. The new cases' failures have
+deliberately not been read or classed: PMAT-318 first splits off the hold-out, then runs the error analysis and writes
+the baseline on the development cases only.
 
 <!-- BASELINE-HEADLINE -->
 `baseline.json`: run `base1`, agent `929b5da`, `nvidia/nemotron-3.5-super-vl:free`, k=3, window ±3 lines,
@@ -231,14 +283,13 @@ findings are on the ticket.
 ### Known limitations
 
 - **Selection bias.** Mined cases were selected by the model that raised them, so they favour or penalise
-  that model. Compare agent versions on the full set; compare models on the synthetic and public cases
-  (PMAT-310). Each case's `model` field records its source; no per-model split is reported.
+  that model. Compare agent versions on the full set; compare models on the synthetic and public cases.
+  Each case's `model` field records its source; no per-model split is reported.
 - **Line matching is a proxy** until the judge (PMAT-311): the same claim cited outside the window (at a
   call site, say) is missed, and a different bug inside the window counts as the same one.
 - **The PR description is today's**, fetched at run time; it may have been edited since `raised_sha`.
-- **49 of the cases are legacy** (`legacy-file-rule/`): all `false_positive`, labelled by the weaker file
-  rule. They are scored with the rest; their `category`/folder tells them apart.
-- **No hold-out set yet** (PMAT-310, when synthetic cases arrive).
+- **Mined cases leave out large commits** (`--max-files 22`): 3 real and 19 false findings on 7 commits.
+- **No hold-out set yet** (PMAT-318), and so no baseline for the current cases.
 - **Long reviews can time out in Promptfoo.** The repeats of one commit queue on its lock, so the last
   repeat of a large review (86 files: about an hour each) can wait past the provider's 2-hour timeout and
   become a `harness_error`. Rerunning the same `--run` finishes it from the checkpoints.

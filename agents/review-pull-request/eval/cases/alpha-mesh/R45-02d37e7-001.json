@@ -1,0 +1,31 @@
+{
+  "case_id": "R45-02d37e7-001",
+  "repo": "bbomt/alpha-mesh",
+  "pr_number": 45,
+  "base_sha": "c1a5c5c266f395716780a7b31b2c1107720f233f",
+  "head_sha": "d086e454c4090e04108b326a890d8e8252dfc0ce",
+  "raised_sha": "02d37e7201b8666d82a618177690d1ac4ab6fccb",
+  "fix_sha": "7d194dcfa16fb6b35523d70413e45b391530945f",
+  "source": "pr_comment",
+  "model": "nvidia/nemotron-3.5-lightning:free",
+  "finding": {
+    "file": "agents/review-pull-request/eval/baseline.json",
+    "line": 7,
+    "severity": "medium",
+    "summary": "The 'dirty' field is not defined in baseline.schema.json properties, violating the schema guard intended to prevent baseline corruption. The runtime dirty check in baseline.py operates on run.json and eval/cases directory, not this file.",
+    "fix": "Either add 'dirty' to the baseline.schema.json properties or remove it from baseline.json if it is not needed for the baseline's persistent state, since the actual dirty guard checks run.json metadata and eval/cases uncommitted changes.",
+    "failure_scenario": null,
+    "id": "R45-02d37e7-001"
+  },
+  "label": "real_issue",
+  "label_by": "rule",
+  "label_date": "2026-11-04",
+  "label_reason": "Commit 7d194dc in the PR cites finding R45-02d37e7-001.",
+  "category": "mined",
+  "expected": {
+    "action": "raise_true_bug",
+    "flag_file": "agents/review-pull-request/eval/baseline.json",
+    "min_severity": "medium"
+  },
+  "notes": ""
+}

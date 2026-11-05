@@ -1,0 +1,30 @@
+{
+  "case_id": "con-001",
+  "repo": "bbomt/alpha-mesh-eval-fixtures",
+  "base_sha": "425b04df2196ab5b2c8fe443ffe37bddb2260b7a",
+  "head_sha": "84765a0bb5ad5ca4f59d06b768eccc089c5a9857",
+  "raised_sha": "84765a0bb5ad5ca4f59d06b768eccc089c5a9857",
+  "fix_sha": null,
+  "source": "synthetic",
+  "description": "Finance wants one file for the year, so this merges the monthly exports and keeps one header.",
+  "finding": {
+    "file": "agent/review-pull-request/src/orders/reports.py",
+    "line": 18,
+    "severity": "medium",
+    "summary": "Unclosed file handle: the file is opened in a loop and never closed; it must use `with`, like `write_csv` below it.",
+    "fix": null,
+    "failure_scenario": null,
+    "id": "con-001"
+  },
+  "label": "real_issue",
+  "label_by": "hand",
+  "label_date": "2026-11-04",
+  "label_reason": "Planted: Unclosed file handle: the file is opened in a loop and never closed; it must use `with`, like `write_csv` below it.",
+  "category": "concurrency",
+  "expected": {
+    "action": "raise_true_bug",
+    "flag_file": "agent/review-pull-request/src/orders/reports.py",
+    "min_severity": "medium"
+  },
+  "notes": "Generated with Claude Code (PMAT-310); fixture commit in bbomt/alpha-mesh-eval-fixtures, branch agent/review-pull-request/case/con-001. Resource leak in a loop, next to code that does it right."
+}

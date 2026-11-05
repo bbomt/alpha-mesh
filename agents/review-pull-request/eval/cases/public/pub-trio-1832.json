@@ -1,0 +1,31 @@
+{
+  "case_id": "pub-trio-1832",
+  "repo": "python-trio/trio",
+  "pr_number": 1832,
+  "base_sha": "784eb69b9bb6498b76dff282419c8d624d0f27ea",
+  "head_sha": "944eea1cba1cf6ece9e28b3aa0474977d8c4ac37",
+  "raised_sha": "5139f88488a886db6e8ffd1a3cd0fbf450bcc076",
+  "fix_sha": null,
+  "source": "public_pr",
+  "model": null,
+  "finding": {
+    "file": "trio/_core/_io_windows.py",
+    "line": 675,
+    "severity": "low",
+    "summary": "Hmm, I think there's a real bug here, not just a style nitpick like my other comments :-). If the `DeviceIoControl` call fails and the function exits early, then we can \"lose\" the `afd_group` -- it still has vacancies, but we won't put it back in `self._vacant_afd_groups`. I think the clearest way would be to leave the group in `_vacant_afd_groups` until we're ready to increment `.size`.\r\n\r\nIt's annoying there's no equivalent of `pop` that *doesn't* remove the item. I guess the choices are `afd_group = next(iter(self._vacant_afd_groups))` or `afd_group = self._vacant_afd_groups.pop(); self._vacant_afd_groups.add(afd_group)`.",
+    "fix": null,
+    "failure_scenario": null,
+    "id": "pub-trio-1832"
+  },
+  "label": "real_issue",
+  "label_by": "hand",
+  "label_date": "2026-11-04",
+  "label_reason": "A human reviewer raised this in python-trio/trio#1832 (merged 2020-12-29), and a later commit in the PR changes the file.",
+  "category": "logic",
+  "expected": {
+    "action": "raise_true_bug",
+    "flag_file": "trio/_core/_io_windows.py",
+    "min_severity": "low"
+  },
+  "notes": "Hand-picked with Claude Code (PMAT-310): https://github.com/python-trio/trio/pull/1832. Python: state is updated before a call that can fail, so a failure loses track of a resource. Human reviewers are not perfect ground truth, and they give no severity, so any severity counts."
+}

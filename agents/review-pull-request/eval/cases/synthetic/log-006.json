@@ -1,0 +1,30 @@
+{
+  "case_id": "log-006",
+  "repo": "bbomt/alpha-mesh-eval-fixtures",
+  "base_sha": "425b04df2196ab5b2c8fe443ffe37bddb2260b7a",
+  "head_sha": "ee32b4fbb6d8d75ef451652306777656e0894998",
+  "raised_sha": "ee32b4fbb6d8d75ef451652306777656e0894998",
+  "fix_sha": null,
+  "source": "synthetic",
+  "description": "The admin screen shows which coupons have expired, so the check moves to a helper it can call.",
+  "finding": {
+    "file": "agent/review-pull-request/src/orders/coupons.py",
+    "line": 21,
+    "severity": "medium",
+    "summary": "Inverted comparison: a coupon counts as expired before its expiry date and as valid after it; it must be `now >= coupon.expires_at`.",
+    "fix": null,
+    "failure_scenario": null,
+    "id": "log-006"
+  },
+  "label": "real_issue",
+  "label_by": "hand",
+  "label_date": "2026-11-04",
+  "label_reason": "Planted: Inverted comparison: a coupon counts as expired before its expiry date and as valid after it; it must be `now >= coupon.expires_at`.",
+  "category": "logic",
+  "expected": {
+    "action": "raise_true_bug",
+    "flag_file": "agent/review-pull-request/src/orders/coupons.py",
+    "min_severity": "medium"
+  },
+  "notes": "Generated with Claude Code (PMAT-310); fixture commit in bbomt/alpha-mesh-eval-fixtures, branch agent/review-pull-request/case/log-006. Inverted date comparison in an extracted helper."
+}

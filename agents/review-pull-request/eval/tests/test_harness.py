@@ -131,6 +131,13 @@ def test_a_true_bug_that_is_missing_fails_and_says_why(run):
     (case("raise_nothing", "src/**/*.py"), [issue(1, "low")], False,
      "raise_nothing: finding in src/cart.py at line 1 (low), which matches src/**/*.py"),
     (case("raise_nothing", "lib/*.py"), [issue(1, "high")], True, None),
+    (case("raise_nothing", "src/**", min_severity="medium", max_comments=2), [issue(1, "low"), issue(2, "low")], True, None),
+    (case("raise_nothing", "src/**", min_severity="medium", max_comments=2),
+     [issue(1, "low"), issue(2, "low"), issue(3, "low")], False,
+     "raise_nothing: 3 findings match src/**, more than the 2 allowed"),
+    (case("raise_nothing", "src/**", min_severity="medium", max_comments=2), [issue(1, "medium")], False,
+     "raise_nothing: finding in src/cart.py at line 1 (medium), which matches src/**"),
+    (case("raise_nothing", "lib/*.py", max_comments=0), [issue(1, "low")], True, None),  # only findings in flag_file count
 ])
 def test_each_action_passes_or_fails_with_a_reason(c, findings, passes, reason):
     review = {"head_sha": X, "model": "m", "files": ["src/cart.py"], "incomplete": [], "excluded": [],
@@ -139,6 +146,35 @@ def test_each_action_passes_or_fails_with_a_reason(c, findings, passes, reason):
     assert result["pass"] is passes
     if reason:
         assert result["reason"] == reason
+
+
+def test_a_case_with_no_pr_is_reviewed_with_its_own_description_and_never_calls_the_pr_api(run):
+    c = {k: v for k, v in TRUE_BUG.items() if k != "pr_number"} | {"description": "Adds a bulk discount."}
+    prompts = []
+
+    def model(messages, tools):
+        prompts.append(next(m["content"] for m in messages if m["role"] == "user"))
+        return model_reporting({})(messages, tools)
+
+    result, github = run(c, model)
+
+    assert "error" not in result, result
+    assert "Adds a bulk discount." in prompts[0]
+    assert github.diff_ranges == [f"{gm.BASE}...{X}"] and github.unexpected == []
+    assert grade(c, result["output"])[0]["pass"]
+
+
+def test_a_glob_case_over_a_file_that_was_not_fully_reviewed_is_an_error(run):
+    c = case("raise_nothing", "src/**")
+
+    def unusable_for_cart(messages, tools):
+        if tools is not None and "src/cart.py" in next(m["content"] for m in messages if m["role"] == "user"):
+            return SimpleNamespace(content="not json", tool_calls=[])
+        return model_reporting({})(messages, tools)
+
+    result, _ = run(c, unusable_for_cart)
+
+    assert "output" not in result and "src/cart.py" in result["error"]
 
 
 def test_a_review_that_leaves_no_result_is_an_error_not_a_failure(run):

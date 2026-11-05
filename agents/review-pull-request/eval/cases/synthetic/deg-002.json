@@ -1,0 +1,20 @@
+{
+  "case_id": "deg-002",
+  "repo": "bbomt/alpha-mesh-eval-fixtures",
+  "base_sha": "425b04df2196ab5b2c8fe443ffe37bddb2260b7a",
+  "head_sha": "3401b24a633ce45a061cfbd189bed5849bb839fa",
+  "raised_sha": "3401b24a633ce45a061cfbd189bed5849bb839fa",
+  "fix_sha": null,
+  "source": "synthetic",
+  "description": "Regenerated `package-lock.json`.",
+  "label": "false_positive",
+  "label_by": "hand",
+  "label_date": "2026-11-04",
+  "label_reason": "No bug is planted; the tests of the base pass on this commit.",
+  "category": "degenerate",
+  "expected": {
+    "action": "raise_nothing",
+    "flag_file": "agent/review-pull-request/**"
+  },
+  "notes": "Generated with Claude Code (PMAT-310); fixture commit in bbomt/alpha-mesh-eval-fixtures, branch agent/review-pull-request/case/deg-002. A giant generated lockfile, about 4,500 lines; there is nothing to review and it must not break the run."
+}

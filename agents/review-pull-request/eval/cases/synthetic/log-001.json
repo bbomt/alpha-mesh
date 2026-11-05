@@ -1,0 +1,30 @@
+{
+  "case_id": "log-001",
+  "repo": "bbomt/alpha-mesh-eval-fixtures",
+  "base_sha": "425b04df2196ab5b2c8fe443ffe37bddb2260b7a",
+  "head_sha": "0db254d84b91a179e3c71207e7b800515e174bdc",
+  "raised_sha": "0db254d84b91a179e3c71207e7b800515e174bdc",
+  "fix_sha": null,
+  "source": "synthetic",
+  "description": "Adds `has_next` to `Page`, so the list endpoints can show or hide the next-page link.",
+  "finding": {
+    "file": "agent/review-pull-request/src/orders/pagination.py",
+    "line": 20,
+    "severity": "medium",
+    "summary": "Off by one: `end <= len(items)` says there is a next page when the current page ends exactly at the last item; it must be `end < len(items)`.",
+    "fix": null,
+    "failure_scenario": null,
+    "id": "log-001"
+  },
+  "label": "real_issue",
+  "label_by": "hand",
+  "label_date": "2026-11-04",
+  "label_reason": "Planted: Off by one: `end <= len(items)` says there is a next page when the current page ends exactly at the last item; it must be `end < len(items)`.",
+  "category": "logic",
+  "expected": {
+    "action": "raise_true_bug",
+    "flag_file": "agent/review-pull-request/src/orders/pagination.py",
+    "min_severity": "medium"
+  },
+  "notes": "Generated with Claude Code (PMAT-310); fixture commit in bbomt/alpha-mesh-eval-fixtures, branch agent/review-pull-request/case/log-001. Off-by-one at a boundary, in a one-line addition."
+}

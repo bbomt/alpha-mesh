@@ -1,0 +1,30 @@
+{
+  "case_id": "imp-003",
+  "repo": "bbomt/alpha-mesh-eval-fixtures",
+  "base_sha": "425b04df2196ab5b2c8fe443ffe37bddb2260b7a",
+  "head_sha": "af03da322c820473211c89188a4b5e99e5e70e99",
+  "raised_sha": "af03da322c820473211c89188a4b5e99e5e70e99",
+  "fix_sha": null,
+  "source": "synthetic",
+  "description": "The checkout summary lists the names of the items in the cart.",
+  "finding": {
+    "file": "agent/review-pull-request/web/src/cart.ts",
+    "line": 24,
+    "severity": "low",
+    "summary": "Works, but `items.map((i) => i.name)` is the idiom, and it is what the rest of this file does.",
+    "fix": null,
+    "failure_scenario": null,
+    "id": "imp-003"
+  },
+  "label": "real_issue",
+  "label_by": "hand",
+  "label_date": "2026-11-04",
+  "label_reason": "Planted: Works, but `items.map((i) => i.name)` is the idiom, and it is what the rest of this file does.",
+  "category": "improvable",
+  "expected": {
+    "action": "raise_true_bug",
+    "flag_file": "agent/review-pull-request/web/src/cart.ts",
+    "min_severity": "low"
+  },
+  "notes": "Generated with Claude Code (PMAT-310); fixture commit in bbomt/alpha-mesh-eval-fixtures, branch agent/review-pull-request/case/imp-003. Non-idiomatic TypeScript that behaves correctly."
+}
