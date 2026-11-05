@@ -10,7 +10,7 @@
   "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
   "finding": {
     "file": "agents/review-pull-request/eval/scripts/run_eval.sh",
-    "line": 28,
+    "line": 34,
     "severity": "medium",
     "summary": "Model mismatch check uses grep on JSON, which is fragile to whitespace, key ordering, or formatting differences. Could produce false positives (blocking valid resumption) or false negatives (allowing model mismatch).",
     "fix": "Use jq to parse and compare: if [[ -f \"$RUN_DIR/run.json\" ]] && [[ \"$(jq -r .model \"$RUN_DIR/run.json\")\" != \"$MODEL\" ]]; then",
@@ -27,5 +27,5 @@
     "flag_file": "agents/review-pull-request/eval/scripts/run_eval.sh",
     "min_severity": "medium"
   },
-  "notes": ""
+  "notes": "finding.line moved 28 -> 34: at raised_sha fee8a9a the grep on run.json the finding describes is at run_eval.sh:34 (28 is a comment about Node); the review cited the wrong line."
 }
