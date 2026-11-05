@@ -10,7 +10,7 @@
   "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
   "finding": {
     "file": "agents/review-pull-request/eval/promptfoo/agent_provider.py",
-    "line": 43,
+    "line": 57,
     "severity": "medium",
     "summary": "load_config error handling only catches SystemExit. If load_config is changed to raise exceptions instead of calling sys.exit(), errors will not be caught and will propagate as unhandled exceptions.",
     "fix": "Catch a broader exception base class (e.g., Exception) or check load_config's actual error behavior and handle both SystemExit and specific exceptions it may raise.",
@@ -26,5 +26,5 @@
     "action": "skip_false_bug",
     "flag_file": "agents/review-pull-request/eval/promptfoo/agent_provider.py"
   },
-  "notes": ""
+  "notes": "finding.line moved 43 -> 57: at raised_sha fee8a9a the `except SystemExit` around load_config is at agent_provider.py:57 (43 is the SqliteSaver line); the review cited the wrong line."
 }
