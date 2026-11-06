@@ -9,8 +9,7 @@ JSON only, no other text:
 
 {"correctness": {"why": "...", "score": 1},
  "coverage": {"why": "...", "score": 1},
- "actionability": {"why": "...", "score": 1},
- "same_claim": {"why": "...", "verdict": true, "finding": 0}}
+ "actionability": {"why": "...", "score": 1}}
 
 ## CORRECTNESS: are the review's findings real and correctly located? (all findings, every file)
 
@@ -36,10 +35,10 @@ Judge from the diff. If it does not show enough to tell, do not count the findin
 
 Use the case's `action`:
 
-- `raise_true_bug`: the case's `finding` is a real bug. 5 if the review raises that claim at `min_severity` or
-  above. 4 if it raises it below that severity, or only partly. 2 if it only circles the problem. 1 if it misses it.
-- `skip_false_bug`: the case's `finding` is a false claim that must not come back. 5 if it does not come back
-  and nothing important in `flag_file` is missed. 3 if it does not come back but something important in the
+- `raise_true_bug`: the case's `finding` is a real bug. 5 if the review raises that claim (the same defect, for the
+  same reason; a different defect near the same line does not count) at `min_severity` or above. 4 if it raises it below that severity, or only partly. 2 if it only circles the problem. 1 if it misses it.
+- `skip_false_bug`: the case's `finding` is a false claim that must not come back (a different defect near the same
+  line is not that claim). 5 if it does not come back and nothing important in `flag_file` is missed. 3 if it does not come back but something important in the
   diff is missed. 1 if the false claim comes back.
 - `raise_nothing`: the code in `flag_file` is clean. 5 if the review raises nothing there (below `min_severity`
   does not count). 3 for one low finding. 1 for several findings, or for a high or medium one.
@@ -52,18 +51,6 @@ Use the case's `action`:
 - 2: mostly vague.
 - 1: no one could act on it.
 
-## SAME_CLAIM: did the review make the case's claim? (only for `raise_true_bug` and `skip_false_bug`)
-
-Compare each finding in `flag_file` with the case's `finding`. `verdict` is true if one finding makes the same
-claim: the same defect, for the same reason. Its line may differ, for example when it cites a call site. A
-different defect at or near the same line is NOT the same claim, however close it is. Give that finding's
-number in `finding`; otherwise `finding` is null.
-
-`verdict` means the same for both actions: for `raise_true_bug` true is good, and for `skip_false_bug` true is bad.
-
-For `raise_nothing`, `verdict` and `finding` are null.
-
 ## With no findings
 
-If the review has no findings, `correctness` and `actionability` get a null score, and `same_claim` is false
-(null for `raise_nothing`). `coverage` is still scored.
+If the review has no findings, `correctness` and `actionability` get a null score. `coverage` is still scored.

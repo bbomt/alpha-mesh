@@ -14,6 +14,7 @@ from unittest.mock import patch
 
 import httpx
 import pytest
+import yaml
 
 import agent_provider
 import case_rules
@@ -39,18 +40,17 @@ def case(action="raise_true_bug", flag_file="src/queue.py", line=3, **expected):
     return c
 
 
-def finding(summary=CLAIM, file="src/queue.py", line=3, severity="high"):
-    return {"file": file, "line": line, "severity": severity, "summary": summary, "suggestion": "Save after start."}
+def finding(summary=CLAIM, file="src/queue.py", line=3, severity="high", suggestion="Save after start."):
+    return {"file": file, "line": line, "severity": severity, "summary": summary, "suggestion": suggestion}
 
 
 def review(*findings):
     return {"findings": list(findings), "model": "nvidia/nemotron", "files": ["src/queue.py"], "incomplete": []}
 
 
-def reply(correctness=4, coverage=4, actionability=4, verdict=True, index=0):
+def reply(correctness=4, coverage=4, actionability=4):
     return {"correctness": {"why": "c", "score": correctness}, "coverage": {"why": "v", "score": coverage},
-            "actionability": {"why": "a", "score": actionability},
-            "same_claim": {"why": "s", "verdict": verdict, "finding": index}}
+            "actionability": {"why": "a", "score": actionability}}
 
 
 @pytest.fixture
@@ -97,19 +97,30 @@ def test_b_the_real_run_stops_before_any_review_when_the_token_is_empty(tmp_path
     assert "JUDGE_TOKEN is not set" in done.stdout + done.stderr
 
 
-def test_a_holdout_run_needs_no_judge_and_gets_none(monkeypatch):
-    """Rubric iterations must not use the hold-out, so its cases never reach the judge."""
+def test_a_holdout_run_needs_no_judge_settings(monkeypatch):
     monkeypatch.setenv("EVAL_HOLDOUT", "1")
     for v in llm_rubric.REQUIRED:
         monkeypatch.setenv(v, "")
-    assert not [a for t in load_cases.create_tests() for a in t["assert"] if "llm_rubric" in a["value"]]
+    assert {t["vars"]["case_id"] for t in load_cases.create_tests()} == case_rules.holdout_ids()
 
 
-def test_every_development_case_gets_the_judge(monkeypatch):
-    for v in llm_rubric.REQUIRED:
-        monkeypatch.setenv(v, "x")
-    tests = load_cases.create_tests()
-    assert all({"type": "python", "value": "file://promptfoo/llm_rubric.py:judge_results"} in t["assert"] for t in tests)
+def test_a_holdout_case_never_reaches_the_judge():
+    """Rubric iterations must not use the hold-out. The assert runs on every test, so the refusal is in the judge."""
+    held = sorted(case_rules.holdout_ids())[0]
+    with patch.object(llm_rubric, "judge_review", side_effect=AssertionError("the judge read a hold-out case")):
+        graded = llm_rubric.judge_results(review(finding()), {"vars": {"case": case() | {"case_id": held}}})
+    assert graded["pass"] is True and "hold-out" in graded["reason"] and "namedScores" not in graded
+
+
+def test_the_config_shows_every_assert_in_order():
+    config = yaml.safe_load((case_rules.EVAL / "promptfooconfig.yaml").read_text())
+    assert config["defaultTest"]["assert"] == [
+        {"type": "python", "value": "file://promptfoo/asserts.py:schema_valid"},
+        {"type": "python", "value": "file://promptfoo/asserts.py:case_expectations"},
+        {"type": "python", "value": "file://promptfoo/llm_rubric.py:judge_results"}]
+    for a in config["defaultTest"]["assert"]:
+        path, function = a["value"].removeprefix("file://").split(":")
+        assert f"def {function}(" in (case_rules.EVAL / path).read_text()
 
 
 # (d) ── a stored review is judged without running the agent ──────────────────────────────────────
@@ -184,7 +195,7 @@ def test_the_real_chat_model_runs_at_temperature_0_with_the_judge_settings():
 
 def test_the_judge_never_gates_a_case(judged):
     """Scores aren't used for any gate until the owner sets thresholds, so even the worst passes."""
-    graded, _ = judged(case(min_severity="low"), review(finding()), reply(1, 1, 1, False, None))
+    graded, _ = judged(case(min_severity="low"), review(finding()), reply(1, 1, 1))
     assert graded["pass"] is True
     assert graded["namedScores"] == {"correctness": 1, "coverage": 1, "actionability": 1}
 
@@ -194,8 +205,6 @@ def test_the_judge_never_gates_a_case(judged):
     (reply(correctness=6), "correctness"),
     (reply(correctness=True), "correctness"),
     ({**reply(), "coverage": {"why": "v"}}, "coverage"),
-    (reply(verdict="yes"), "same_claim"),
-    (reply(index=7), "same_claim"),
 ])
 def test_an_unusable_reply_is_recorded_not_failed(judged, answer, why):
     graded, _ = judged(case(min_severity="low"), review(finding()), answer)
@@ -209,15 +218,10 @@ def test_a_fenced_json_reply_is_accepted(judged):
 
 
 def test_with_no_findings_only_coverage_is_scored(judged):
-    graded, _ = judged(case("raise_nothing", "src/**"), review(), reply(5, 5, 5, None, None))
+    graded, _ = judged(case("raise_nothing", "src/**"), review(), reply(5, 5, 5))
     assert graded["namedScores"] == {"coverage": 5}
     judgment = graded["metadata"]["judgment"]
     assert judgment["correctness"]["score"] is None and judgment["actionability"]["score"] is None
-
-
-def test_a_raise_nothing_case_has_no_claim_to_compare(judged):
-    graded, _ = judged(case("raise_nothing", "src/**"), review(finding()), reply(verdict=True))
-    assert graded["metadata"]["judgment"]["same_claim"]["verdict"] is None
 
 
 def test_the_family_warning_checks_the_runs_model_and_the_env_model(capsys, monkeypatch, tmp_path):
@@ -306,8 +310,8 @@ def test_e_the_draw_never_reads_results():
 
 
 # (c) ── judge–human agreement ────────────────────────────────────────────────────────────────────
-def scores(correctness=4, coverage=4, actionability=4, same_claim=True):
-    return {"correctness": correctness, "coverage": coverage, "actionability": actionability, "same_claim": same_claim}
+def scores(correctness=4, coverage=4, actionability=4):
+    return {"correctness": correctness, "coverage": coverage, "actionability": actionability}
 
 
 def test_c_agreement_within_one_point_per_dimension_leaves_out_nulls():
@@ -326,12 +330,6 @@ def test_c_kappa_corrects_for_chance_on_pass_fail():
     assert judge_agreement.kappa(list(zip(h, j))) == pytest.approx(-1 / 9)
     assert judge_agreement.kappa([(5, 5), (2, 2), (5, 5), (1, 1)]) == 1
     assert judge_agreement.kappa([(5, 5), (5, 5)]) is None, "one class only: kappa is undefined"
-
-
-def test_c_same_claim_agreement_is_reported():
-    out = judge_agreement.agreement({"a": scores(), "b": scores(same_claim=False), "c": scores(same_claim=None)},
-                                    {"a": scores(), "b": scores(), "c": scores()})
-    assert out["same_claim"] == {"n": 2, "agree": 0.5}
 
 
 def test_c_the_script_refuses_unfinished_labels_and_a_case_the_judge_lacks(tmp_path, capsys):
@@ -366,20 +364,10 @@ def graded_row(case_id, repeat, judgment, passed=True):
                  "assertion": {"value": "file://promptfoo/llm_rubric.py:judge_results"}}]}}
 
 
-def judgment(correctness=4, coverage=4, actionability=4, verdict=True, severity="high", cost=0.01):
+def judgment(correctness=4, coverage=4, actionability=4, cost=0.01):
     return {"correctness": {"score": correctness}, "coverage": {"score": coverage}, "actionability": {"score": actionability},
-            "same_claim": {"verdict": verdict, "finding_severity": severity}, "rubric": "v1", "model_requested": "z-ai/glm",
+            "rubric": "v1", "model_requested": "z-ai/glm",
             "model_reported": "z-ai/glm", "provider": "Wafer", "cost": cost, "prompt_tokens": 1, "completion_tokens": 1}
-
-
-def test_the_report_counts_a_true_bug_only_when_the_same_claim_is_at_the_required_severity():
-    c = case(min_severity="high")
-    assert judge_report.judge_pass(c, judgment())
-    assert not judge_report.judge_pass(c, judgment(severity="low"))
-    assert not judge_report.judge_pass(c, judgment(verdict=False))
-    skip = case("skip_false_bug")
-    assert judge_report.judge_pass(skip, judgment(verdict=False)) and not judge_report.judge_pass(skip, judgment())
-    assert judge_report.judge_pass(case("raise_nothing", "src/**"), judgment(verdict=None)) is None
 
 
 def test_the_report_refuses_holdout_rows(tmp_path):
@@ -391,11 +379,11 @@ def test_the_report_refuses_holdout_rows(tmp_path):
 def test_the_report_gives_the_means_the_proposal_and_the_cost(capsys):
     sec = case(min_severity="high") | {"case_id": "sec-1", "category": "security"}
     sty = case("raise_nothing", "src/**") | {"case_id": "sty-1", "category": "style_only"}
-    rows = [graded_row("sec-1", 0, judgment(5, 5, 5, verdict=False)), graded_row("sec-1", 1, judgment(3, 3, 3)),
-            graded_row("sty-1", 0, judgment(None, 5, None, verdict=None), passed=False)]
+    rows = [graded_row("sec-1", 0, judgment(5, 2, 5)), graded_row("sec-1", 1, judgment(3, 3, 3)),
+            graded_row("sty-1", 0, judgment(None, 5, None), passed=False)]
     collected = judge_report.collect({"results": {"results": rows}}, [sec, sty])
     summary = judge_report.summarise(collected)
-    assert summary["mean"]["correctness"] == 4 and summary["mean"]["coverage"] == pytest.approx(13 / 3)
+    assert summary["mean"]["correctness"] == 4 and summary["mean"]["coverage"] == pytest.approx(10 / 3)
     assert summary["security_misses"] == 1
     assert summary["style_only_pass_rate"] == 0
     assert summary["cost"] == pytest.approx(0.03)
@@ -410,7 +398,7 @@ def test_the_scores_file_holds_only_the_sample_at_repeat_0():
         graded_row("a", 0, judgment(1, 1, 1)), graded_row("a", 1, judgment(2, 2, 2)), graded_row("b", 0, judgment())]}}, [a, b])
     out = judge_report.sample_scores(collected, ["a"])
     assert out["model"] == "z-ai/glm" and out["rubric"] == "v1"
-    assert out["cases"] == {"a": {"correctness": 1, "coverage": 1, "actionability": 1, "same_claim": True}}
+    assert out["cases"] == {"a": {"correctness": 1, "coverage": 1, "actionability": 1}}
     with pytest.raises(ValueError, match="no judgment for c"):
         judge_report.sample_scores(collected, ["c"])
 
@@ -418,6 +406,7 @@ def test_the_scores_file_holds_only_the_sample_at_repeat_0():
 # (a), (f) ── the real judge model, run by hand ───────────────────────────────────────────────────
 live = pytest.mark.skipif(os.environ.get("JUDGE_LIVE") != "1", reason="calls the real judge model: set JUDGE_LIVE=1")
 OTHER_CLAIM = "The log message in start_queued has a typo and should use a named constant."
+OTHER_FIX = "Fix the typo and add a LOG_MESSAGE constant."  # not the fix for CLAIM, which would bring it back
 
 
 def live_judge(c, r):
@@ -435,18 +424,18 @@ def test_a_live_a_fabricated_finding_scores_correctness_at_most_2():
 
 
 @live
-def test_f_live_a_different_claim_in_the_window_is_not_the_same_claim_for_a_true_bug():
-    assert live_judge(case(min_severity="low"), review(finding(OTHER_CLAIM, line=4)))["same_claim"]["verdict"] is False
+def test_f_live_a_different_claim_in_the_window_does_not_cover_a_true_bug():
+    assert live_judge(case(min_severity="low"), review(finding(OTHER_CLAIM, line=4, suggestion=OTHER_FIX)))["coverage"]["score"] <= 2
 
 
 @live
-def test_f_live_a_different_claim_in_the_window_is_not_the_same_claim_for_a_false_bug():
-    assert live_judge(case("skip_false_bug"), review(finding(OTHER_CLAIM, line=4)))["same_claim"]["verdict"] is False
+def test_f_live_a_different_claim_in_the_window_is_not_the_false_claim_coming_back():
+    assert live_judge(case("skip_false_bug"), review(finding(OTHER_CLAIM, line=4, suggestion=OTHER_FIX)))["coverage"]["score"] >= 3
 
 
 @live
-def test_f_live_the_real_claim_elsewhere_is_the_same_claim():
-    assert live_judge(case(min_severity="low"), review(finding(CLAIM, line=40)))["same_claim"]["verdict"] is True
+def test_f_live_the_real_claim_elsewhere_covers_a_true_bug():
+    assert live_judge(case(min_severity="low"), review(finding(CLAIM, line=40)))["coverage"]["score"] >= 4
 
 
 # The owner's sheet ───────────────────────────────────────────────────────────────────────────────
@@ -469,6 +458,6 @@ def test_the_labels_template_asks_only_for_what_needs_a_judgement():
     empty_clean = case("raise_nothing", "src/**") | {"case_id": "b"}
     full = case(min_severity="low") | {"case_id": "c"}
     cases = labelling.template([(empty_true, review()), (empty_clean, review()), (full, review(finding()))])["cases"]
-    assert cases["a"] == {"correctness": None, "coverage": "TODO", "actionability": None, "same_claim": False, "note": ""}
-    assert cases["b"]["same_claim"] is None and cases["b"]["coverage"] == "TODO"
-    assert cases["c"]["correctness"] == "TODO" and cases["c"]["same_claim"] == "TODO"
+    assert cases["a"] == {"correctness": None, "coverage": "TODO", "actionability": None, "note": ""}
+    assert cases["b"]["coverage"] == "TODO"
+    assert cases["c"]["correctness"] == "TODO" and cases["c"]["actionability"] == "TODO"

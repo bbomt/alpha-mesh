@@ -29,10 +29,9 @@ def template(sampled: list[tuple[dict, dict]]) -> dict:
     """One entry per case, with TODO only where a judgement is needed (the rubric fixes the rest)."""
     cases = {}
     for case, review in sampled:
-        empty, nothing = not review["findings"], case["expected"]["action"] == "raise_nothing"
+        empty = not review["findings"]
         cases[case["case_id"]] = {
-            "correctness": None if empty else TODO, "coverage": TODO, "actionability": None if empty else TODO,
-            "same_claim": None if nothing else False if empty else TODO, "note": ""}
+            "correctness": None if empty else TODO, "coverage": TODO, "actionability": None if empty else TODO, "note": ""}
     return {"rubric": llm_rubric.RUBRIC_VERSION, "repeat": judge_sample.REPEAT, "cases": cases}
 
 
@@ -40,7 +39,7 @@ def sheet(sampled: list[tuple[dict, dict]], diffs: dict[str, str]) -> str:
     """Cases on one commit are adjacent and share one copy of its diff."""
     out = [f"# Hand-scoring the judge's sample: {len(sampled)} cases\n",
            f"Score each case in `eval/judge/human_labels.json`, using `eval/judge/rubric.{llm_rubric.RUBRIC_VERSION}.md`: "
-           "1 to 5 per dimension, and `same_claim` true or false. Replace every `TODO`; `null` is already filled in where "
+           "1 to 5 per dimension. Replace every `TODO`; `null` is already filled in where "
            "the rubric says so. Add a `note` when a score was a close call.\n"]
     shown = set()
     for case, review in sorted(sampled, key=lambda s: (s[0]["raised_sha"], s[0]["case_id"])):

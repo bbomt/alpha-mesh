@@ -3,9 +3,6 @@ the final thresholds after agent tuning.
 
     uv run python eval/scripts/judge_report.py eval/runs/<run>/results.json
     uv run python eval/scripts/judge_report.py eval/runs/<run>/results.json --write-scores   # eval/judge/judge_scores.json
-
-Besides the means it gives a second pass rate per action: the line-window check (case_rules.check) asks "is a finding
-near this line?", the judge asks "is it the same claim?".
 """
 
 import argparse
@@ -21,17 +18,7 @@ import judge_sample  # noqa: E402
 SCORES = case_rules.EVAL / "judge" / "judge_scores.json"
 PROPOSAL = {"correctness": 4.0, "coverage": 3.8}  # provisional (PMAT-311 section 3); also zero security misses, style_only 100%
 DIMENSIONS = ("correctness", "coverage", "actionability")
-
-
-def judge_pass(case: dict, judgment: dict) -> bool | None:
-    """The case's expected action by the judge's same-claim verdict; None for raise_nothing (no claim to compare)."""
-    expected, verdict = case["expected"], judgment["same_claim"]["verdict"]
-    if expected["action"] == "raise_nothing":
-        return None
-    if expected["action"] == "skip_false_bug":
-        return verdict is False
-    severity = judgment["same_claim"].get("finding_severity")
-    return verdict is True and case_rules.RANK[severity] >= case_rules.RANK[expected["min_severity"]]
+MISSED = 2  # a coverage score at or below this: the rubric's "circles the problem" or "misses it"
 
 
 def _component(row: dict, name: str) -> dict:
@@ -60,13 +47,6 @@ def _mean(values: list) -> float | None:
 
 def summarise(collected: list[dict]) -> dict:
     judged = [e for e in collected if e["judgment"]]
-    actions: dict[str, dict] = {}
-    for e in judged:
-        action = e["case"]["expected"]["action"]
-        row = actions.setdefault(action, {"runs": 0, "line_pass": 0, "judge_pass": 0})
-        row["runs"] += 1
-        row["line_pass"] += bool(e["line_pass"])
-        row["judge_pass"] += bool(judge_pass(e["case"], e["judgment"]))
     style = [e for e in judged if e["case"]["category"] == "style_only"]
     return {
         "runs": len(collected),
@@ -76,8 +56,7 @@ def summarise(collected: list[dict]) -> dict:
         "by_group": {g: {d: _mean([e["judgment"][d]["score"] for e in judged
                                    if judge_sample.group(e["case"]) == g and e["judgment"][d]["score"] is not None])
                          for d in DIMENSIONS} for g in sorted({judge_sample.group(e["case"]) for e in judged})},
-        "actions": actions,
-        "security_misses": sum(e["case"]["category"] == "security" and judge_pass(e["case"], e["judgment"]) is False
+        "security_misses": sum(e["case"]["category"] == "security" and e["judgment"]["coverage"]["score"] <= MISSED
                                for e in judged),
         "style_only_pass_rate": _mean([bool(e["line_pass"]) for e in style]),
         "models": Counter(e["judgment"].get("model_reported") or e["judgment"].get("model_requested") for e in judged),
@@ -102,10 +81,6 @@ def print_summary(s: dict) -> None:
     print("By group (correctness / coverage / actionability):")
     for group, row in s["by_group"].items():
         print(f"  {group:22} " + " / ".join(fmt(row[d]) for d in DIMENSIONS))
-    print("Pass rate per action, line window vs same claim:")
-    for action, row in sorted(s["actions"].items()):
-        claim = "n/a" if action == "raise_nothing" else f"{row['judge_pass']}/{row['runs']}"
-        print(f"  {action:16} line window {row['line_pass']}/{row['runs']}, same claim {claim}")
 
 
 def sample_scores(collected: list[dict], sample: list[str]) -> dict:
@@ -115,8 +90,7 @@ def sample_scores(collected: list[dict], sample: list[str]) -> dict:
         raise ValueError(", ".join(f"no judgment for {c}" for c in missing))
     any_judgment = first[sample[0]]
     return {"model": any_judgment["model_requested"], "rubric": any_judgment["rubric"],
-            "cases": {c: {**{d: first[c][d]["score"] for d in DIMENSIONS}, "same_claim": first[c]["same_claim"]["verdict"]}
-                      for c in sample}}
+            "cases": {c: {d: first[c][d]["score"] for d in DIMENSIONS} for c in sample}}
 
 
 def main(argv=None) -> int:

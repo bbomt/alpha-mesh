@@ -262,21 +262,22 @@ changing the test to rerun the draw on the old cases), or redraw knowingly and s
 
 A second model (`JUDGE_MODEL`) grades each review on three dimensions, 1 to 5, each with its reason first: **correctness**
 (are the findings real?), **coverage** (did it catch what matters, against the case's `expected` and `notes`?) and
-**actionability** (could a developer act on it?). It also gives a **same-claim** verdict: did a finding make the case's
-claim? That separates what the line window can't: a different bug near the line counts for the window, not for the judge.
+**actionability** (could a developer act on it?). Coverage compares the claim itself, so a different bug near the line
+counts for the line window but not for the judge.
 
 **It never gates.** `judge_results` always passes, so a case's pass or fail, `baseline.json` and the comparison don't
 change. A judge error is recorded, not failed. A review with no findings has `null` correctness and actionability.
 
 It is an LLM judge in a python assert, not Promptfoo's built-in `llm-rubric` (owner, PMAT-311), because everything sent to
 a model has to go through `ReviewSession`, so an excluded file's content never reaches it
-(`tests/test_canary.py`), and one call has to return all three scores and the verdict. Hold-out cases never reach it.
+(`tests/test_canary.py`), and one call has to return all three scores. It refuses hold-out cases.
+`promptfooconfig.yaml` shows how it fits with the other asserts.
 
 Set `JUDGE_MODEL`, `JUDGE_URL` and `JUDGE_TOKEN` in `.env`. A missing one stops the run before any review.
 
 ```bash
 eval/scripts/run_eval.sh --stored ~/.mesh/eval-runs/PMAT-310-base2 --run judge1   # judge stored reviews; the agent doesn't run
-uv run python eval/scripts/judge_report.py eval/runs/judge1/results.json           # means, proposal, line window vs same claim, cost
+uv run python eval/scripts/judge_report.py eval/runs/judge1/results.json           # means, proposal, cost
 JUDGE_LIVE=1 uv run pytest eval/tests/test_judge.py -k live                        # the checks that need the real model
 ```
 
@@ -302,6 +303,8 @@ record the iteration here. Changing `JUDGE_MODEL` or the rubric means aligning a
 dated slug works, but responses report the alias either way, so the API can't confirm the build. OpenRouter also routes
 calls to different upstream providers, three in three calls in one test. Each judgment records the requested and
 reported model, the provider, its tokens and cost.
+
+A security miss in `judge_report.py` is a security case with coverage 2 or below.
 
 **Family:** `.env` has `CODE_REVIEW_MODEL=z-ai/glm-5.3-flash`, the judge's own family (owner decision to keep it for now,
 as the stored run's reviewer is Nemotron). The warning at the start of a run checks the run's model and `CODE_REVIEW_MODEL`;
@@ -419,7 +422,7 @@ findings are on the ticket.
   that model. Compare agent versions on the full set; compare models on the synthetic and public cases.
   Each case's `model` field records its source; no per-model split is reported.
 - **Line matching is a proxy:** the same claim cited outside the window (at a call site, say) is missed, and a different
-  bug inside the window counts as the same one. The judge's same-claim verdict is reported beside it (`judge_report.py`).
+  bug inside the window counts as the same one. The judge's coverage score compares the claim (`judge_report.py`).
 - **The PR description is today's**, fetched at run time; it may have been edited since `raised_sha`.
 - **Mined cases leave out large commits** (`--max-files 22`): 3 real and 19 false findings on 7 commits.
 - **Long reviews can time out in Promptfoo.** The repeats of one commit queue on its lock, so the last

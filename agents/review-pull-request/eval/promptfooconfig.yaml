@@ -1,5 +1,13 @@
-# review-pull-request evals (PMAT-304). Run with eval/scripts/run_eval.sh, not promptfoo directly:
-# it sets the Node version, the Python env, the run folder and k. See eval/README.md.
+# review-pull-request evals. Run with eval/scripts/run_eval.sh, not promptfoo directly: it sets the Node version, the
+# Python env, the run folder and k, and turns templating off. See eval/README.md.
+#
+# How it fits together, for each case in eval/cases (development cases, or the hold-out with --holdout):
+#
+#   tests      promptfoo/load_cases.py        one test per case; stops the run first if a JUDGE_* variable is missing
+#   providers  promptfoo/agent_provider.py    the output: runs the agent on the case's commit, or with --stored
+#                                             returns its stored review, so the agent does not run
+#   assert     (defaultTest below)            checks that output, in this order
+#
 description: review-pull-request evals
 prompts:
   - "{{case_id}}"  # the provider ignores the prompt: each case's commit is the input
@@ -9,11 +17,23 @@ providers:
     config:
       timeout: 7200000  # ms: one review of a large commit on a throttled free model takes many minutes
 tests: file://promptfoo/load_cases.py:create_tests
+defaultTest:
+  assert:
+    # Fixed logic: the review has the right shape.
+    - type: python
+      value: file://promptfoo/asserts.py:schema_valid
+    # Fixed logic: the case's expected action, matched by file and line (promptfoo/case_rules.py).
+    - type: python
+      value: file://promptfoo/asserts.py:case_expectations
+    # The LLM judge: a second model scores the review 1 to 5 on correctness, coverage and actionability.
+    #   Rubric:  judge/rubric.v1.md (a change is a new version; the judge's reply format is in it)
+    #   Model:   JUDGE_MODEL, JUDGE_URL, JUDGE_TOKEN in .env, at temperature 0
+    #   Why python, not Promptfoo's built-in llm-rubric: everything sent to a model must go through ReviewSession, which
+    #   keeps excluded files and tokens out, and one call returns all three scores (eval/README.md, The judge).
+    #   It never gates: it always passes, and its scores are in namedScores. It refuses hold-out cases.
+    #   Provisional proposal, not yet thresholds (the owner sets those after agent tuning): mean correctness >= 4.0, mean
+    #   coverage >= 3.8, zero security misses, style_only pass rate 100%. Report: scripts/judge_report.py.
+    - type: python
+      value: file://promptfoo/llm_rubric.py:judge_results
 evaluateOptions:
   maxConcurrency: 2  # free models throttle; the cases of one commit queue on its lock anyway
-# The judge (PMAT-311) is added per case in promptfoo/load_cases.py:
-#   assert:
-#     - type: python
-#       value: file://promptfoo/llm_rubric.py:judge_results
-# It never gates. Provisional proposal, not yet thresholds (the owner sets those after agent tuning): mean correctness
-# >= 4.0, mean coverage >= 3.8, zero security misses, style_only pass rate 100%. See eval/README.md.

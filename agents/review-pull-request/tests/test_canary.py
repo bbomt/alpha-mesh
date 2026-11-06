@@ -410,8 +410,7 @@ def test_the_stream_harness_detects_a_leak_when_protection_is_off(capsys):
 # Paths into the judge's prompt: the diff, the stored review's findings, and the case's own text.
 
 JUDGE_REPLY = json.dumps({"correctness": {"why": "w", "score": 3}, "coverage": {"why": "w", "score": 3},
-                          "actionability": {"why": "w", "score": 3},
-                          "same_claim": {"why": "w", "verdict": False, "finding": None}})
+                          "actionability": {"why": "w", "score": 3}})
 LOOKS_LIKE_A_KEY = "sk-" + "canarycanarycanarycanary"
 JUDGE_REVIEW = {"findings": [
     {"file": "src/app.py", "line": 1, "severity": "low", "summary": "The visible finding.", "suggestion": None},

@@ -2,7 +2,7 @@
 # Run the evals (PMAT-304): every development case in eval/cases, reviewed at its raised_sha, k times.
 #
 #   eval/scripts/run_eval.sh [--model <model>] [--k <n>] [--run <name>] [--holdout] [promptfoo eval args...]
-#   eval/scripts/run_eval.sh --stored <run dir> [--run <name>] [promptfoo eval args...]
+#   eval/scripts/run_eval.sh --stored <run dir> [--k <n>] [--run <name>] [promptfoo eval args...]
 #
 # --stored runs the judge on that run's stored reviews without running the agent (PMAT-311). Its results go to a
 # new run folder with no run.json, so they can never become the baseline.
@@ -16,7 +16,7 @@ set -euo pipefail
 
 EVAL="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 AGENT="$(dirname "$EVAL")"
-MODEL="" K=3 RUN="" HOLDOUT="" STORED=""
+MODEL="" K="" RUN="" HOLDOUT="" STORED=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --model) MODEL="$2"; shift 2 ;;
@@ -32,9 +32,10 @@ if [[ -n "$STORED" ]]; then
   [[ -f "$STORED/results.json" && -f "$STORED/run.json" ]] || { echo "ERROR: $STORED has no results.json and run.json" >&2; exit 1; }
   STORED="$(cd "$STORED" && pwd)"
   MODEL="$("$AGENT/.venv/bin/python" -c 'import json, sys; print(json.load(open(sys.argv[1]))["model"])' "$STORED/run.json")"
-  K="$("$AGENT/.venv/bin/python" -c 'import json, sys; print(json.load(open(sys.argv[1]))["k"])' "$STORED/run.json")"
+  [[ -n "$K" ]] || K="$("$AGENT/.venv/bin/python" -c 'import json, sys; print(json.load(open(sys.argv[1]))["k"])' "$STORED/run.json")"
   RUN="${RUN:-judge-$(basename "$STORED")-$(date +%Y%m%d-%H%M)}"
 fi
+K="${K:-3}"
 [[ -n "$MODEL" ]] || MODEL="$(grep -E '^CODE_REVIEW_MODEL=' "$AGENT/../../.env" | cut -d= -f2- | tr -d '"' || true)"
 [[ -n "$MODEL" ]] || { echo "ERROR: no model: pass --model or set CODE_REVIEW_MODEL in .env" >&2; exit 1; }
 RUN="${RUN:-$(date +%Y%m%d-%H%M)-${MODEL//[^A-Za-z0-9.-]/_}}"

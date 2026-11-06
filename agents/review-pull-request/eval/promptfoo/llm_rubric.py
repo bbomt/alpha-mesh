@@ -2,9 +2,10 @@
 
 An LLM-as-a-judge check with a rubric (judge/rubric.v1.md), written as a python assert instead of Promptfoo's
 built-in llm-rubric (owner, 2026-11-06) because it has to go through ReviewSession: an excluded file's content never
-reaches a model, by any path. It also returns three scores and the same-claim verdict from one call.
+reaches a model, by any path. It also returns its three scores from one call.
 
-The judge never gates: judge_results always passes, and a judge error is recorded, not failed. Thresholds are
+The judge never gates: judge_results always passes, and a judge error is recorded, not failed. Hold-out cases are
+refused here, so nothing about them reaches it: rubric iterations must not use them. Thresholds are
 provisional until the owner sets them (eval/README.md). JUDGE_MODEL, JUDGE_URL and JUDGE_TOKEN come from .env.
 """
 
@@ -19,7 +20,7 @@ import httpx
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 
-from case_rules import EVAL
+from case_rules import EVAL, holdout_ids
 from review_pull_request import config as config_module
 from review_pull_request import llm
 from review_pull_request.github import _get_github_token
@@ -161,22 +162,7 @@ def _score(reply: dict, dimension: str, nullable: bool):
     return score
 
 
-def _same_claim(reply: dict, case: dict, findings: list[dict]) -> dict:
-    part = reply.get("same_claim")
-    if not isinstance(part, dict):
-        raise JudgeReplyError("same_claim: missing")
-    if case["expected"]["action"] == "raise_nothing":
-        return {"why": part.get("why"), "verdict": None, "finding": None, "finding_severity": None}
-    verdict, index = part.get("verdict"), part.get("finding")
-    if not isinstance(verdict, bool):
-        raise JudgeReplyError(f"same_claim: verdict must be true or false, got {verdict!r}")
-    if verdict and (not isinstance(index, int) or isinstance(index, bool) or not 0 <= index < len(findings)):
-        raise JudgeReplyError(f"same_claim: finding must be a finding's number, got {index!r}")
-    return {"why": part.get("why"), "verdict": verdict, "finding": index if verdict else None,
-            "finding_severity": findings[index]["severity"] if verdict else None}
-
-
-def _parse(text: str, case: dict, findings: list[dict]) -> dict:
+def _parse(text: str, findings: list[dict]) -> dict:
     fenced = re.fullmatch(r"\s*```(?:json)?\s*(.*?)\s*```\s*", text or "", re.DOTALL)
     try:
         reply = json.loads(fenced.group(1) if fenced else text)
@@ -189,7 +175,6 @@ def _parse(text: str, case: dict, findings: list[dict]) -> dict:
         nullable = dimension != "coverage" and not findings
         score = _score(reply, dimension, nullable)
         judgment[dimension] = {"why": (reply.get(dimension) or {}).get("why"), "score": score}
-    judgment["same_claim"] = _same_claim(reply, case, findings)
     return judgment
 
 
@@ -204,17 +189,18 @@ def judge_review(case: dict, review: dict) -> dict:
     findings = [f for f in review["findings"] if not session.policy.is_excluded(f["file"])]
     reply = session.review_llm.chat([{"role": "system", "content": RUBRIC.read_text()},
                                      {"role": "user", "content": _prompt(case, findings, diff.text)}])
-    return {**_parse(reply.content, case, findings), "rubric": RUBRIC_VERSION, "model_requested": config.model, **meta}
+    return {**_parse(reply.content, findings), "rubric": RUBRIC_VERSION, "model_requested": config.model, **meta}
 
 
 def judge_results(output, context) -> dict:
     """The assert: always passes (no gate yet); the scores are in namedScores and metadata.judgment."""
-    review = json.loads(output) if isinstance(output, str) else output
+    review, case = json.loads(output) if isinstance(output, str) else output, context["vars"]["case"]
+    if case["case_id"] in holdout_ids():
+        return {"pass": True, "score": 1, "reason": "not judged: a hold-out case"}
     try:
-        judgment = judge_review(context["vars"]["case"], review)
+        judgment = judge_review(case, review)
     except (JudgeReplyError, LLMError, RuntimeError, httpx.HTTPError) as e:
         return {"pass": True, "score": 1, "reason": f"judge_error: {e}", "metadata": {"judge_error": str(e)}}
     scores = {d: judgment[d]["score"] for d in DIMENSIONS if judgment[d]["score"] is not None}
-    claim = judgment["same_claim"]["verdict"]
     return {"pass": True, "score": 1, "namedScores": scores, "metadata": {"judgment": judgment},
-            "reason": f"judge {RUBRIC_VERSION}: {scores}, same_claim {claim}: " + json.dumps(judgment)}
+            "reason": f"judge {RUBRIC_VERSION}: {scores}: " + json.dumps(judgment)}

@@ -33,9 +33,6 @@ def agreement(human: dict, judge: dict) -> dict:
                  if human[c][dimension] is not None and judge[c][dimension] is not None]
         out[dimension] = {"n": len(pairs), "kappa": kappa(pairs),
                           "within_1": sum(abs(x - y) <= 1 for x, y in pairs) / len(pairs) if pairs else None}
-    claims = [(human[c]["same_claim"], judge[c]["same_claim"]) for c in human
-              if human[c]["same_claim"] is not None and judge[c]["same_claim"] is not None]
-    out["same_claim"] = {"n": len(claims), "agree": sum(x == y for x, y in claims) / len(claims) if claims else None}
     return out
 
 
@@ -43,8 +40,6 @@ def _unfinished(labels: dict) -> list[str]:
     bad = []
     for case_id, label in labels.items():
         bad += [f"{case_id}: {d}" for d in DIMENSIONS if label.get(d, "missing") not in (None, 1, 2, 3, 4, 5)]
-        if label.get("same_claim", "missing") not in (None, True, False):
-            bad.append(f"{case_id}: same_claim")
     return bad
 
 
@@ -68,9 +63,6 @@ def main(argv=None) -> int:
         within = "n/a" if row["within_1"] is None else f"{row['within_1']:.0%}"
         k = "undefined" if row["kappa"] is None else f"{row['kappa']:.2f}"
         print(f"  {dimension:14} within ±1: {within:>4}   kappa: {k:>9}   (n={row['n']})")
-    claim = result["same_claim"]
-    print(f"  {'same_claim':14} agree:     {'n/a' if claim['agree'] is None else format(claim['agree'], '.0%'):>4}"
-          f"                      (n={claim['n']})")
     return 0
 
 
