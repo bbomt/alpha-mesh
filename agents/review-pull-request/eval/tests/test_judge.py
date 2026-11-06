@@ -44,8 +44,27 @@ def finding(summary=CLAIM, file="src/queue.py", line=3, severity="high", suggest
     return {"file": file, "line": line, "severity": severity, "summary": summary, "suggestion": suggestion}
 
 
-def review(*findings):
-    return {"findings": list(findings), "model": "nvidia/nemotron", "files": ["src/queue.py"], "incomplete": []}
+def review(*findings, files_read=("src/loop.py",)):
+    return {"findings": list(findings), "model": "nvidia/nemotron", "files": ["src/queue.py"], "incomplete": [],
+            "files_read": list(files_read)}
+
+
+LOOP_PY = "def start(key):\n    write_status(key)\n    open_tab(key)  # LOOP-PY-MARKER\n"
+
+
+class FileReader:
+    """The GitHub file reader at the case's commit."""
+
+    def __init__(self, *a, **k):
+        pass
+
+    def read_file(self, path, max_lines):
+        from review_pull_request.readers import NotFound
+
+        return LOOP_PY if path == "src/loop.py" else NotFound(f"Error: file not found: {path}")
+
+    def close(self):
+        pass
 
 
 def reply(correctness=4, coverage=4, actionability=4):
@@ -67,6 +86,7 @@ def judged():
                      exclusions=list(SENSITIVE_PATTERNS))
         with patch.object(llm_rubric, "judge_config", return_value=cfg), \
                 patch.object(llm_rubric, "get_diff", return_value=DIFF), \
+                patch.object(llm_rubric, "GitHubFileReader", FileReader), \
                 patch.object(llm_rubric, "github_token", return_value="gh-token"), \
                 patch.object(llm_rubric, "make_judge_chat_model", lambda meta: chat_model_factory(model)):
             return llm_rubric.judge_results(r, {"vars": {"case": c}}), seen
@@ -177,13 +197,42 @@ def test_d_a_stored_error_stays_an_error(tmp_path, monkeypatch):
 
 # The judge's contract ────────────────────────────────────────────────────────────────────────────
 def test_the_judge_grades_against_the_ground_truth_with_the_versioned_rubric_at_temperature_0(judged):
-    c = case(min_severity="low") | {"notes": "A note about the case."}
+    c = case(min_severity="low") | {"notes": "A note about the case.", "description": "Saves the queue earlier."}
     _, seen = judged(c, review(finding()), reply())
     system, user = seen[0][0]["content"], seen[0][1]["content"]
     assert system == llm_rubric.RUBRIC.read_text()
     assert llm_rubric.RUBRIC.name == "rubric.v1.md"
-    for part in (CLAIM, "A note about the case.", '"action": "raise_true_bug"', "Save after start.", "save_queue(queue)"):
+    for part in (CLAIM, "A note about the case.", '"action": "raise_true_bug"', "Save after start.", "save_queue(queue)",
+                 "Saves the queue earlier."):
         assert part in user
+
+
+def test_the_judge_gets_exactly_the_files_the_agent_read_and_no_tools(judged):
+    _, seen = judged(case(min_severity="low"), review(finding()), reply())
+    assert "LOOP-PY-MARKER" in seen[0][1]["content"]
+    _, seen = judged(case(min_severity="low"), review(finding(), files_read=()), reply())
+    assert "LOOP-PY-MARKER" not in seen[0][1]["content"]
+    assert "The agent read no files" in seen[0][1]["content"]
+
+
+def test_a_file_the_judge_cannot_fetch_is_named_not_silently_treated_as_unread(judged):
+    _, seen = judged(case(min_severity="low"), review(finding(), files_read=("src/gone.py",)), reply())
+    assert "src/gone.py" in seen[0][1]["content"] and "could not be fetched" in seen[0][1]["content"]
+
+
+def test_a_stored_review_without_files_read_is_an_error_not_an_unfair_score(judged):
+    r = review(finding())
+    del r["files_read"]
+    graded, seen = judged(case(min_severity="low"), r, reply())
+    assert graded["pass"] is True and "files_read" in graded["metadata"]["judge_error"]
+    assert not seen, "the judge must not score without the agent's context"
+
+
+def test_a_case_from_a_pr_gets_its_description_from_the_pr(judged):
+    with patch.object(llm_rubric, "get_pr_description", return_value="From the PR.") as fetch:
+        _, seen = judged(case(min_severity="low") | {"pr_number": 7}, review(finding()), reply())
+    assert "From the PR." in seen[0][1]["content"]
+    assert fetch.call_args.args[0] == "https://github.com/o/r/pull/7"
 
 
 def test_the_real_chat_model_runs_at_temperature_0_with_the_judge_settings():
@@ -410,7 +459,8 @@ OTHER_FIX = "Fix the typo and add a LOG_MESSAGE constant."  # not the fix for CL
 
 
 def live_judge(c, r):
-    with patch.object(llm_rubric, "get_diff", return_value=DIFF), patch.object(llm_rubric, "github_token", return_value=""):
+    with patch.object(llm_rubric, "get_diff", return_value=DIFF), patch.object(llm_rubric, "GitHubFileReader", FileReader), \
+            patch.object(llm_rubric, "github_token", return_value=""):
         graded = llm_rubric.judge_results(r, {"vars": {"case": c}})
     assert "judge_error" not in graded["metadata"], graded["metadata"]
     return graded["metadata"]["judgment"]
@@ -421,6 +471,22 @@ def test_a_live_a_fabricated_finding_scores_correctness_at_most_2():
     fabricated = finding("src/queue.py opens a SQL connection at line 3 and builds the query by string concatenation, "
                          "so a key can inject SQL.")
     assert live_judge(case(min_severity="low"), review(fabricated))["correctness"]["score"] <= 2
+
+
+UNREAD_CLAIM = ("loop.start in src/loop.py never writes the status file before opening the tab, so a failed start "
+                "leaves the ticket in neither place.")
+
+
+@live
+def test_a_live_a_claim_about_code_the_agent_did_not_read_counts_as_false():
+    r = review(finding(UNREAD_CLAIM, suggestion="Write the status first in loop.start."), files_read=())
+    assert live_judge(case("raise_nothing", "docs/**"), r)["correctness"]["score"] <= 2
+
+
+@live
+def test_a_live_a_claim_the_read_file_shows_is_wrong_counts_as_false():
+    r = review(finding(UNREAD_CLAIM, suggestion="Write the status first in loop.start."), files_read=("src/loop.py",))
+    assert live_judge(case("raise_nothing", "docs/**"), r)["correctness"]["score"] <= 2
 
 
 @live
@@ -444,9 +510,11 @@ def test_the_labelling_sheet_is_blind_and_shows_each_commits_diff_once():
 
     a, b = case(min_severity="low") | {"case_id": "a"}, case("skip_false_bug") | {"case_id": "b"}
     r = review(finding())
-    text = labelling.sheet([(a, r), (b, r)], {SHA: DIFF})
+    context = {"diff": DIFF, "description": "Saves the queue earlier.", "files": {"src/loop.py": LOOP_PY}}
+    text = labelling.sheet([(a, r), (b, r)], {SHA: context})
     assert "## a" in text and "## b" in text and CLAIM in text and "Save after start." in text
-    assert text.count("save_queue(queue)") == 1
+    assert text.count("save_queue(queue)") == 1 and text.count("LOOP-PY-MARKER") == 1
+    assert text.count("Saves the queue earlier.") == 1 and "src/loop.py" in text
     for leak in ("judge_results", "namedScores", "case_expectations", "line window"):
         assert leak not in text
 

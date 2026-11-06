@@ -407,16 +407,18 @@ def test_the_stream_harness_detects_a_leak_when_protection_is_off(capsys):
 
 
 # ── The judge (PMAT-311): a second external model, so a second path out ──────────────────────────
-# Paths into the judge's prompt: the diff, the stored review's findings, and the case's own text.
+# Paths into the judge's prompt: the diff, the stored review's findings, the files the agent read,
+# the PR description, and the case's own text.
 
 JUDGE_REPLY = json.dumps({"correctness": {"why": "w", "score": 3}, "coverage": {"why": "w", "score": 3},
                           "actionability": {"why": "w", "score": 3}})
 LOOKS_LIKE_A_KEY = "sk-" + "canarycanarycanarycanary"
-JUDGE_REVIEW = {"findings": [
+JUDGE_REVIEW = {"files_read": ["src/app.py", ".env", ".claude/settings.json", "config/active.json"], "findings": [
     {"file": "src/app.py", "line": 1, "severity": "low", "summary": "The visible finding.", "suggestion": None},
     {"file": ".env", "line": 1, "severity": "high", "summary": f"TOKEN={CANARY} is exposed", "suggestion": CANARY},
 ]}
 JUDGE_CASE = {"repo": "o/r", "base_sha": "b" * 40, "raised_sha": "a" * 40, "category": "logic",
+              "description": f"Adds an app. {GITHUB_TOKEN}",
               "notes": f"From a PR comment: {GITHUB_TOKEN} {LOOKS_LIKE_A_KEY}", "label_reason": LOOKS_LIKE_A_KEY,
               "expected": {"action": "raise_true_bug", "flag_file": "src/app.py", "min_severity": "low"},
               "finding": {"file": "src/app.py", "line": 1, "severity": "low", "summary": f"Claim {GITHUB_TOKEN}"}}
@@ -436,6 +438,7 @@ def _judge(exclusions=None):
 
     with patch.object(llm_rubric, "judge_config", return_value=cfg), \
             patch.object(llm_rubric, "get_diff", return_value=_diff_with_secrets()), \
+            patch.object(llm_rubric, "GitHubFileReader", FakeReader), \
             patch.object(llm_rubric, "github_token", return_value=GITHUB_TOKEN), \
             patch.object(llm_rubric, "make_judge_chat_model", lambda meta: chat_model_factory(model)):
         llm_rubric.judge_review(JUDGE_CASE, JUDGE_REVIEW)
@@ -447,6 +450,7 @@ def test_the_judge_never_receives_an_excluded_file_by_the_diff_or_a_stored_findi
 
     assert seen, "the fake judge was never called, so the test proves nothing"
     assert "x = 1" in seen[0] and "The visible finding." in seen[0], "the allowed content must still reach it"
+    assert "src/app.py" in seen[0].split("<files_read>")[1], "the file the agent read must still reach it"
     assert not [m for m in seen if CANARY in m]
 
 
@@ -454,6 +458,7 @@ def test_the_judge_never_receives_a_token_from_the_case_text():
     text = _judge()[0]
 
     assert "Claim [REDACTED]" in text, "the case's claim must still reach it, with the token removed"
+    assert "Adds an app. [REDACTED]" in text, "the PR description must still reach it, with the token removed"
     assert GITHUB_TOKEN not in text and LOOKS_LIKE_A_KEY not in text
 
 
