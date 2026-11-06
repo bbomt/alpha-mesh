@@ -1,4 +1,4 @@
-"""The review core at a chosen commit (PMAT-314): review_commit(o, r, B, X, desc) reviews exactly
+"""Running the agent at a chosen commit (PMAT-314): run_review_agent(o, r, B, X, desc) reviews exactly
 the compare diff B...X with files read at X, and posts nothing. GitHub is faked at the boundary."""
 
 from unittest.mock import patch
@@ -8,7 +8,7 @@ import pytest
 
 from review_pull_request.config import Config, SENSITIVE_PATTERNS
 from review_pull_request.incremental import COMPARE_MAX_FILES, get_diff
-from review_pull_request.review import main, review_commit
+from review_pull_request.review import main, run_review_agent
 from tests import test_golden_master as gm
 from tests.helpers import chat_model_factory
 
@@ -37,7 +37,7 @@ def test_the_core_reviews_the_compare_diff_base_to_x_with_files_read_at_x(monkey
     for p in patches:
         p.start()
     try:
-        code = review_commit(gm.OWNER, gm.REPO, gm.BASE, X, "Eval description.", config=cfg,
+        code = run_review_agent(gm.OWNER, gm.REPO, gm.BASE, X, "Eval description.", config=cfg,
                              token=gm.TOKEN, publish=published.append, all_excluded=lambda paths: 0)
     finally:
         patch.stopall()

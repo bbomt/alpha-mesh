@@ -49,7 +49,7 @@ def review(case: dict, repeat: int) -> dict:
     run_dir = _run_dir()
     key = hashlib.sha256(f"{case['repo']}@{case['raised_sha']}".encode()).hexdigest()[:16]
     (run_dir / "locks").mkdir(parents=True, exist_ok=True)
-    # The core's own run lock does not wait (and its key has no repeat), so the cases of one commit queue here.
+    # run_review_agent's own run lock does not wait (and its key has no repeat), so the cases of one commit queue here.
     with open(run_dir / "locks" / f"{key}.lock", "a+") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         try:

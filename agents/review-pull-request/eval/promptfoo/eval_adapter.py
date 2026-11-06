@@ -1,6 +1,6 @@
-"""The eval adapter (PMAT-304): a case -> the review core's inputs -> the review's findings.
+"""The eval adapter (PMAT-304): a case -> the inputs of run_review_agent -> the review's findings.
 
-`mesh review-pull-request` (the PR adapter) and this adapter call the same core, review_commit,
+`mesh review-pull-request` (the PR adapter) and this adapter call the same function, run_review_agent,
 with (owner, repo, base, head, description): here the case's base_sha, its raised_sha and the PR's
 description. Nothing is posted. The findings come from the review's final graph state (the data the
 report is rendered from), read back from the checkpointer this adapter passes in.
@@ -8,7 +8,7 @@ report is rendered from), read back from the checkpointer this adapter passes in
 
 from review_pull_request.checkpoints import thread_id
 from review_pull_request.graph import build_review_graph
-from review_pull_request.review import review_commit
+from review_pull_request.review import run_review_agent
 
 
 class ReviewFailed(Exception):
@@ -30,7 +30,7 @@ def review_case(case: dict, *, config, token: str, description: str, checkpointe
             excluded.extend(paths)
             return 0
 
-        code = review_commit(owner, repo, case["base_sha"], head, description, config=config, token=token,
+        code = run_review_agent(owner, repo, case["base_sha"], head, description, config=config, token=token,
                              publish=lambda report: None, all_excluded=all_excluded,
                              pr_number=case.get("pr_number"), checkpointer=checkpointer)
         if excluded:  # every changed file is excluded: nothing was reviewed, so nothing was raised

@@ -276,7 +276,7 @@ A PR is a repo plus a base and a head commit; what it shows is the three-dot dif
 `base_sha...raised_sha`, with files read at `raised_sha` and the PR's description.
 
 `mesh review-pull-request` (the PR adapter) and the **eval adapter** (`promptfoo/eval_adapter.py`) call the
-same review core, `review_commit(owner, repo, base, head, description)`. The eval adapter posts nothing. It
+same function, `run_review_agent(owner, repo, base, head, description)`. The eval adapter posts nothing. It
 reads the findings (file, line, severity, summary) from the review's final graph state, the data the PR
 comment is rendered from, so nothing parses markdown. The provider (`promptfoo/agent_provider.py`) returns
 them as JSON (`schema/review.schema.json`; extra fields are allowed, for later asserts).

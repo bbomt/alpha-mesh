@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from review_pull_request.config import Config, SENSITIVE_PATTERNS
-from review_pull_request.review import main, review_commit
+from review_pull_request.review import main, run_review_agent
 from tests.helpers import chat_model_factory
 
 CANARY = "CANARY-7f3a9c-do-not-leak"
@@ -152,29 +152,29 @@ def test_the_harness_itself_detects_a_leak_when_protection_is_off():
     assert any(CANARY in m for m in model.seen)
 
 
-def _run_core(diff, exclusions=None):
-    """The review core called directly, as the evals call it (no PR adapter in front)."""
+def _run_agent(diff, exclusions=None):
+    """run_review_agent called directly, as the evals call it (no PR adapter in front)."""
     cfg = Config(model="m", api_url="http://x", api_token="t",
                  exclusions=list(SENSITIVE_PATTERNS) if exclusions is None else exclusions)
     model = RecordingModel()
     with patch("review_pull_request.review.GitHubFileReader", FakeReader), \
             patch("review_pull_request.review.get_diff", return_value=diff), \
             patch("review_pull_request.session.make_chat_model", chat_model_factory(model)):
-        review_commit("o", "r", "b" * 40, "abc123", "Adds an app.", config=cfg, token=GITHUB_TOKEN,
+        run_review_agent("o", "r", "b" * 40, "abc123", "Adds an app.", config=cfg, token=GITHUB_TOKEN,
                       publish=lambda report: None, all_excluded=lambda paths: 0)
     return model
 
 
-def test_canary_never_reaches_the_model_through_the_review_core():
-    model = _run_core(_diff_with_secrets())
+def test_canary_never_reaches_the_model_through_run_review_agent():
+    model = _run_agent(_diff_with_secrets())
 
     assert model.seen, "the fake model was never called, so the test proves nothing"
     assert set(model.requested) == set(READ_ATTEMPTS), "every read attempt must actually be exercised"
     assert not [m for m in model.seen if CANARY in m]
 
 
-def test_the_core_harness_detects_a_leak_when_protection_is_off():
-    model = _run_core(_diff_with_secrets(), exclusions=[])
+def test_the_run_agent_harness_detects_a_leak_when_protection_is_off():
+    model = _run_agent(_diff_with_secrets(), exclusions=[])
 
     assert any(CANARY in m for m in model.seen)
 
