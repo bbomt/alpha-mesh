@@ -10,7 +10,7 @@
   "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
   "finding": {
     "file": "agents/review-pull-request/eval/schema/baseline.schema.json",
-    "line": 14,
+    "line": 12,
     "severity": "medium",
     "summary": "The 'date' field has no format validation. It should enforce ISO 8601 date-time format to ensure consistent, parseable timestamps.",
     "fix": "Add 'format': 'date-time' to the date property definition.",
@@ -26,5 +26,5 @@
     "action": "skip_false_bug",
     "flag_file": "agents/review-pull-request/eval/schema/baseline.schema.json"
   },
-  "notes": ""
+  "notes": "finding.line moved 14 -> 12: at raised_sha fee8a9a the `date` property the finding describes is at baseline.schema.json:12 (14 is `window`); the review cited the wrong line."
 }
