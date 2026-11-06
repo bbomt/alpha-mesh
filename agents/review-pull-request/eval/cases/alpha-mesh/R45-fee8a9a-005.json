@@ -10,7 +10,7 @@
   "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
   "finding": {
     "file": "agents/review-pull-request/eval/scripts/baseline.py",
-    "line": 102,
+    "line": 87,
     "severity": "high",
     "summary": "The `reason` field in label_changes can be empty string when neither 'label_reason' nor 'notes' exists in the case file. The baseline schema requires label_errors_fixed[i].reason to have minLength: 1, so this will cause schema validation to fail.",
     "fix": "Provide a default reason when both fields are missing, e.g., `reason = new.get('label_reason') or new.get('notes') or 'label or expected block changed'`",
@@ -26,5 +26,5 @@
     "action": "skip_false_bug",
     "flag_file": "agents/review-pull-request/eval/scripts/baseline.py"
   },
-  "notes": ""
+  "notes": "finding.line moved 102 -> 87: at raised_sha fee8a9a the `reason or \"\"` the finding describes is at baseline.py:87 (102 is the harness_error reason in build); the review cited the wrong line."
 }

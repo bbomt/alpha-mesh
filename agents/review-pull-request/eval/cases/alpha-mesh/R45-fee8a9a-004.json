@@ -10,7 +10,7 @@
   "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
   "finding": {
     "file": "agents/review-pull-request/eval/schema/baseline.schema.json",
-    "line": 55,
+    "line": 46,
     "severity": "high",
     "summary": "Required fields 'file_level_runs', 'reason', 'category', 'action' are listed in the required array but have no corresponding property definitions in the properties object. This means they are required but completely unconstrained (any value/type allowed), defeating validation.",
     "fix": "Add property definitions for all required fields. For example: 'file_level_runs': {'type': 'array', 'items': {'enum': ['pass', 'fail', 'error']}, 'minItems': 1}, 'reason': {'type': 'string', 'minLength': 1}, 'category': {'type': 'string', 'minLength': 1}, 'action': {'type': 'string', 'minLength': 1}",
@@ -27,5 +27,5 @@
     "flag_file": "agents/review-pull-request/eval/schema/baseline.schema.json",
     "min_severity": "high"
   },
-  "notes": ""
+  "notes": "finding.line moved 55 -> 46: at raised_sha fee8a9a the required list naming file_level_runs, reason, category and action is at baseline.schema.json:46 (55 is the first allOf's if); the review cited the wrong line."
 }

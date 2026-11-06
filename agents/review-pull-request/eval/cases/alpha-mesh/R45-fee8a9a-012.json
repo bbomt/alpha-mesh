@@ -10,7 +10,7 @@
   "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
   "finding": {
     "file": "agents/review-pull-request/eval/schema/case.schema.json",
-    "line": 186,
+    "line": 189,
     "severity": "medium",
     "summary": "The new allOf constraint requires finding.line for raise_true_bug and skip_false_bug actions, with a comment stating findings are 'matched by its line at raised_sha'. However, raised_sha remains nullable (type: [\"string\", \"null\"]) and is not required for these action types. A case could pass schema validation with finding.line set but raised_sha: null, which would fail at runtime since the evaluation harness runs at raised_sha commits per the PR description.",
     "fix": "Add \"raised_sha\" to the required array in the then clause of the new allOf entry, so both finding and raised_sha are required for raise_true_bug and skip_false_bug actions. This ensures the schema enforces the same precondition that the evaluation runtime requires.",
@@ -27,5 +27,5 @@
     "flag_file": "agents/review-pull-request/eval/schema/case.schema.json",
     "min_severity": "medium"
   },
-  "notes": ""
+  "notes": "finding.line moved 186 -> 189: at raised_sha fee8a9a the `allOf` the finding describes is at case.schema.json:189 (186 is the type of `notes`); the review cited the wrong line."
 }

@@ -10,7 +10,7 @@
   "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
   "finding": {
     "file": "agents/orchestrator/src/orchestrator/cli.py",
-    "line": 151,
+    "line": 152,
     "severity": "high",
     "summary": "When loop.start() fails (e.g., tmux refuses the tab), the ticket has already been removed from the queue (saved at line 150) and marked as active in status (via status.update in loop.start), but no tmux window was created. The function returns early, leaving the ticket in a zombie state: active in status but not actually running, and not in the queue to be retried. The ticket is effectively lost.",
     "fix": "Move status.save_queue(queue) to after the successful loop.start() call. Since loop.start() marks the ticket as active (with launch_dir) before creating the tmux window, a crash after start but before queue save would leave the ticket active but still in the queue. On restart, add a reconciliation step in start_queued() to skip tickets that are already active (check status.active() before starting). This prevents both double-start and ticket loss.",
@@ -27,5 +27,5 @@
     "flag_file": "agents/orchestrator/src/orchestrator/cli.py",
     "min_severity": "high"
   },
-  "notes": ""
+  "notes": "finding.line moved 151 -> 152: at raised_sha d2309a5 the `loop.start` call the finding describes is at cli.py:152 (151 is its `try`); the review cited the wrong line."
 }

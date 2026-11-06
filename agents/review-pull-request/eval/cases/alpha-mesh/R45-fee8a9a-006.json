@@ -10,7 +10,7 @@
   "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
   "finding": {
     "file": "agents/review-pull-request/eval/scripts/run_eval.sh",
-    "line": 30,
+    "line": 37,
     "severity": "high",
     "summary": "JSON constructed via printf without escaping. If MODEL (from .env or --model) contains quotes, backslashes, or newlines, the generated run.json will be invalid JSON, breaking downstream tools (baseline.py, compare_baseline.py) that parse it.",
     "fix": "Use jq to construct the JSON safely: jq -n --arg commit \"$COMMIT\" --arg model \"$MODEL\" --arg date \"$(date +%Y-%m-%d)\" --argjson k \"$K\" '{commit: $commit, model: $model, date: $date, k: $k, window: 3}' > \"$RUN_DIR/run.json\"",
@@ -27,5 +27,5 @@
     "flag_file": "agents/review-pull-request/eval/scripts/run_eval.sh",
     "min_severity": "high"
   },
-  "notes": ""
+  "notes": "finding.line moved 30 -> 37: at raised_sha fee8a9a the printf that builds run.json is at run_eval.sh:37 (30 is the nvm source line); the review cited the wrong line."
 }

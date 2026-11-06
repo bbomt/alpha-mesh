@@ -10,7 +10,7 @@
   "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
   "finding": {
     "file": "agents/review-pull-request/eval/promptfoo/eval_adapter.py",
-    "line": 53,
+    "line": 44,
     "severity": "medium",
     "summary": "The 'line' field from issues can be None (per the Issue dataclass in stage2.py: line: int | None). The adapter passes it through directly, which may cause type errors downstream if the eval system expects an integer.",
     "fix": "Keep line as-is (None is valid for file-level issues), but document that consumers must handle None. Alternatively, convert None to 0 or -1 with a comment if the eval schema requires an integer.",
@@ -26,5 +26,5 @@
     "action": "skip_false_bug",
     "flag_file": "agents/review-pull-request/eval/promptfoo/eval_adapter.py"
   },
-  "notes": ""
+  "notes": "finding.line moved 53 -> 44: at raised_sha fee8a9a the `\"line\": i[\"line\"]` the finding describes is at eval_adapter.py:44 (53 is the last line of _review); the review cited the wrong line."
 }

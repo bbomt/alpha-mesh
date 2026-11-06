@@ -10,7 +10,7 @@
   "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
   "finding": {
     "file": "agents/review-pull-request/eval/promptfoo/eval_adapter.py",
-    "line": 56,
+    "line": 48,
     "severity": "low",
     "summary": "Inconsistent excluded handling: for completed reviews, excluded=[] is hardcoded, but for the all-excluded early return, the actual excluded paths are returned. Consumers may not expect this asymmetry.",
     "fix": "Either always populate excluded from the review state (excluded_files in review_commit), or document that excluded is only non-empty when all files were excluded.",
@@ -26,5 +26,5 @@
     "action": "skip_false_bug",
     "flag_file": "agents/review-pull-request/eval/promptfoo/eval_adapter.py"
   },
-  "notes": ""
+  "notes": "finding.line moved 56 -> 48: at raised_sha fee8a9a the hardcoded excluded=[] the finding describes is at eval_adapter.py:48 (56 is past the end of the file); the review cited the wrong line."
 }

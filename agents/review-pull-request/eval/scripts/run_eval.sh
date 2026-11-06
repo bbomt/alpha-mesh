@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
-# Run the evals (PMAT-304): every case in eval/cases, reviewed at its raised_sha, k times.
+# Run the evals (PMAT-304): every development case in eval/cases, reviewed at its raised_sha, k times.
 #
-#   eval/scripts/run_eval.sh [--model <model>] [--k <n>] [--run <name>] [promptfoo eval args...]
+#   eval/scripts/run_eval.sh [--model <model>] [--k <n>] [--run <name>] [--holdout] [promptfoo eval args...]
+#
+# --holdout runs the hold-out cases instead, into results-holdout.json, and prints only their totals. Use it
+# only when deciding whether to ship an agent change (eval/README.md).
 #
 # Rerunning with the same --run resumes: finished reviews are reused, stopped ones continue from the
 # last finished file. Writes eval/runs/<name>/ (gitignored): results.json, run.json, checkpoints.
@@ -10,12 +13,13 @@ set -euo pipefail
 
 EVAL="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 AGENT="$(dirname "$EVAL")"
-MODEL="" K=3 RUN=""
+MODEL="" K=3 RUN="" HOLDOUT=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --model) MODEL="$2"; shift 2 ;;
     --k) K="$2"; shift 2 ;;
     --run) RUN="$2"; shift 2 ;;
+    --holdout) HOLDOUT=1; shift ;;
     *) break ;;
   esac
 done
@@ -41,7 +45,17 @@ fi
 
 echo "Run: $RUN_DIR (model $MODEL, k=$K, commit ${COMMIT:0:7})" >&2
 cd "$EVAL"
+RESULTS="$RUN_DIR/results.json"
+if [[ -n "$HOLDOUT" ]]; then
+  RESULTS="$RUN_DIR/results-holdout.json"  # apart, so baseline.py and compare_baseline.py never read it
+  set -- --no-table "$@"                   # Promptfoo's table would show the failures
+fi
+STATUS=0
 # Templating off: Promptfoo renders string vars as Nunjucks, which can run code; the provider ignores the prompt.
-EVAL_RUN_DIR="$RUN_DIR" EVAL_MODEL="$MODEL" PROMPTFOO_PYTHON="$AGENT/.venv/bin/python" \
+EVAL_RUN_DIR="$RUN_DIR" EVAL_MODEL="$MODEL" EVAL_HOLDOUT="$HOLDOUT" PROMPTFOO_PYTHON="$AGENT/.venv/bin/python" \
   PROMPTFOO_DISABLE_TEMPLATING=true PROMPTFOO_DISABLE_TELEMETRY=1 PROMPTFOO_DISABLE_UPDATE=1 PROMPTFOO_CONFIG_DIR="$RUN_DIR/.promptfoo" \
-  promptfoo eval -c promptfooconfig.yaml --repeat "$K" --no-cache -o "$RUN_DIR/results.json" "$@"
+  promptfoo eval -c promptfooconfig.yaml --repeat "$K" --no-cache -o "$RESULTS" "$@" || STATUS=$?
+if [[ -n "$HOLDOUT" ]]; then
+  "$AGENT/.venv/bin/python" "$EVAL/scripts/holdout_report.py" "$RESULTS"
+fi
+exit "$STATUS"

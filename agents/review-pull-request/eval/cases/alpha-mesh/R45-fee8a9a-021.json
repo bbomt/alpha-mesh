@@ -10,7 +10,7 @@
   "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
   "finding": {
     "file": "agents/review-pull-request/eval/scripts/baseline.py",
-    "line": 85,
+    "line": 73,
     "severity": "low",
     "summary": "The git diff subprocess call doesn't check its return code. If 'since' is an invalid commit or git fails, stdout may be empty and label changes will be silently missed.",
     "fix": "Check the return code of the git diff call and raise an error on failure, similar to how git show is handled.",
@@ -27,5 +27,5 @@
     "flag_file": "agents/review-pull-request/eval/scripts/baseline.py",
     "min_severity": "low"
   },
-  "notes": ""
+  "notes": "finding.line moved 85 -> 73: at raised_sha fee8a9a the git diff call whose return code is not checked is at baseline.py:73 (85 is a changes.append); the review cited the wrong line."
 }

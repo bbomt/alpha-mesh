@@ -10,7 +10,7 @@
   "model": "nvidia/nemotron-3.5-super-vl:free",
   "finding": {
     "file": "agents/orchestrator/src/orchestrator/cli.py",
-    "line": 159,
+    "line": 158,
     "severity": "high",
     "summary": "start_queued returns after the first exception from loop.start, so a ticket that consistently fails to start (e.g. bad folder, tmux unavailable) blocks all subsequent queued tickets indefinitely — the queue starves.",
     "fix": "Instead of returning, continue to the next queued ticket, or implement a retry limit/backoff so one failing ticket cannot starve the queue. Consider skipping the failed ticket and trying the next one, then retrying failed tickets on subsequent ticks.",
@@ -26,5 +26,5 @@
     "action": "skip_false_bug",
     "flag_file": "agents/orchestrator/src/orchestrator/cli.py"
   },
-  "notes": ""
+  "notes": "finding.line moved 159 -> 158: at raised_sha c3e9e57 the `return` after the exception the finding describes is at cli.py:158 (159 is the started event); the review cited the wrong line."
 }

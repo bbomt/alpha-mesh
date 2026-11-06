@@ -10,7 +10,7 @@
   "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
   "finding": {
     "file": "agents/review-pull-request/eval/promptfoo/agent_provider.py",
-    "line": 42,
+    "line": 53,
     "severity": "high",
     "summary": "fcntl.flock(lock, fcntl.LOCK_EX) blocks indefinitely with no timeout. If a process crashes while holding the lock, all other processes will hang forever waiting for the lock.",
     "fix": "Add a timeout mechanism using fcntl.LOCK_EX | fcntl.LOCK_NB with a retry loop and timeout, or use a library like filelock that supports timeouts.",
@@ -26,5 +26,5 @@
     "action": "skip_false_bug",
     "flag_file": "agents/review-pull-request/eval/promptfoo/agent_provider.py"
   },
-  "notes": ""
+  "notes": "finding.line moved 42 -> 53: at raised_sha fee8a9a the fcntl.flock(lock, fcntl.LOCK_EX) the finding describes is at agent_provider.py:53 (42 is sqlite3.connect's path.parent.mkdir); the review cited the wrong line."
 }

@@ -95,6 +95,21 @@ def label_changes(since: str, cases_dir: Path, repo_root: Path) -> list[dict]:
     return changes
 
 
+def pass_rates(entries: dict, by_id: dict, group) -> dict:
+    """"<group(case)>/<action>" -> counts over the scored cases, for the README's tables."""
+    out: dict[str, dict] = {}
+    for case_id, entry in sorted(entries.items()):
+        if entry["status"] == "harness_error":
+            continue
+        row = out.setdefault(f"{group(by_id[case_id])}/{entry['action']}",
+                             {"cases": 0, "runs_passed": 0, "runs": 0, "passed_all": 0})
+        row["cases"] += 1
+        row["runs_passed"] += entry["runs"].count("pass")
+        row["runs"] += len(entry["runs"])
+        row["passed_all"] += entry["status"] == "pass"
+    return out
+
+
 def build(results: dict, cases: list[dict], meta: dict, *, analysis: dict, label_changes: list[dict]) -> dict:
     by_id = {c["case_id"]: c for c in cases}
     entries, missing = {}, []
@@ -132,6 +147,9 @@ def build(results: dict, cases: list[dict], meta: dict, *, analysis: dict, label
             "by_class": {"model_failure": sum(e["failure_class"] == "model_failure" for e in entries.values()),
                          "label_error": len(labelled),
                          "harness_error": sum(e["failure_class"] == "harness_error" for e in entries.values())},
+            "by_category": pass_rates(entries, by_id,
+                                      lambda c: "public" if c.get("source") == "public_pr" else c["category"]),
+            "by_severity": pass_rates(entries, by_id, lambda c: (c.get("finding") or {}).get("severity") or "none"),
         },
         "label_errors_fixed": fixed,
         "cases": entries,
@@ -160,9 +178,10 @@ def main(argv=None) -> int:
         return 1
     results = json.loads((args.run_dir / "results.json").read_text())
     analysis = json.loads(ANALYSIS.read_text()) if ANALYSIS.exists() else {}
-    changes = label_changes(meta["commit"], case_rules.CASES_DIR, REPO_ROOT)
+    held = case_rules.holdout_ids()
+    changes = [c for c in label_changes(meta["commit"], case_rules.CASES_DIR, REPO_ROOT) if c["case_id"] not in held]
     try:
-        baseline = build(results, case_rules.load_cases(), meta | {"cases_commit": git("rev-parse", "HEAD")},
+        baseline = build(results, case_rules.development_cases(), meta | {"cases_commit": git("rev-parse", "HEAD")},
                          analysis=analysis, label_changes=changes)
         jsonschema.validate(baseline, SCHEMA)
     except NotAnalysed as e:

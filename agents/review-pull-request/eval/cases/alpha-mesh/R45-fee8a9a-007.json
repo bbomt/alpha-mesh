@@ -10,7 +10,7 @@
   "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
   "finding": {
     "file": "agents/review-pull-request/eval/promptfoo/agent_provider.py",
-    "line": 15,
+    "line": 14,
     "severity": "medium",
     "summary": "The code imports and uses fcntl which is Unix-only. This will fail on Windows (ImportError or AttributeError), limiting portability of the evaluation harness.",
     "fix": "Use a cross-platform file locking library like 'filelock' (pip install filelock) which works on both Unix and Windows, or add a Windows-compatible fallback.",
@@ -26,5 +26,5 @@
     "action": "skip_false_bug",
     "flag_file": "agents/review-pull-request/eval/promptfoo/agent_provider.py"
   },
-  "notes": ""
+  "notes": "finding.line moved 15 -> 14: at raised_sha fee8a9a the `import fcntl` the finding describes is at agent_provider.py:14 (15 is `import hashlib`); the review cited the wrong line."
 }

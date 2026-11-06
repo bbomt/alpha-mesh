@@ -112,8 +112,10 @@ a real bug here that no one raised. Use these for instructive comparison.
 | `schema/case.schema.json` | the JSON Schema every case file must match |
 | `promptfooconfig.yaml`, `promptfoo/` | the harness: provider, eval adapter, loader, asserts, `case_rules.py` |
 | `scripts/run_eval.sh`, `scripts/baseline.py`, `scripts/compare_baseline.py` | run, baseline, compare |
+| `scripts/split_holdout.py`, `scripts/holdout_report.py` | draw the hold-out, report its totals |
 | `schema/review.schema.json`, `schema/baseline.schema.json` | the provider's output, the baseline's guard |
-| `baseline.json`, `error_analysis.json` | the committed baseline and the error analysis behind it |
+| `baseline.json`, `error_analysis.json` | the committed baseline and the error analysis behind it (development cases only) |
+| `holdout.json` | the hold-out's seed and case IDs |
 | `runs/` | eval runs (gitignored) |
 | `tests/` | acceptance tests with a fake `gh`, a fake GitHub and a fake model |
 
@@ -157,36 +159,107 @@ another case's file at the same repo and `raised_sha`: a file cannot be both cle
 
 ### Baseline
 
-**Stale until PMAT-318.** `baseline.json` and `error_analysis.json` describe the old dataset (57 cases, 49 of them the
-legacy cases deleted in PMAT-310), so `compare_baseline.py` is not meaningful for now. The new cases' failures have
-deliberately not been read or classed: PMAT-318 first splits off the hold-out, then runs the error analysis and writes
-the baseline on the development cases only.
-
 <!-- BASELINE-HEADLINE -->
-`baseline.json`: run `base1`, agent `929b5da`, `nvidia/nemotron-3.5-super-vl:free`, k=3, window ±3 lines,
-57 cases on 20 commits (60 reviews, 2026-10-30 to 2026-11-03), all scored (no harness errors left).
+`baseline.json`: run `base2`, agent `665c767`, `nvidia/nemotron-3.5-super-vl:free`, k=3, window ±3 lines, the 65
+development cases (195 runs, 2026-11-04), all scored (no harness errors). The hold-out's score is
+[reported apart](#hold-out-set).
 
 | | Pass rate (per run) | pass^3 (per case) |
 | :-- | --: | --: |
-| **All 57 cases** | **71%** | **54%** |
-| Legacy cases (49, `false_positive`) | 73% | 59% |
-| ID-based cases (8) | 54% | 25% |
-| `skip_false_bug` (55, precision traps) | 72% | |
-| `raise_true_bug` (2, recall) | 33% | 0% |
-| Old file-only rule, for comparison | 43% | |
+| **All 65 development cases** | **71%** | **52%** |
+| `raise_true_bug` (36, recall) | 70% | 56% |
+| `skip_false_bug` (20, precision traps) | 63% | 35% |
+| `raise_nothing` (9, clean code) | 93% | 78% |
+| Old file-only rule, for comparison | 68% | |
 
-- **Failure taxonomy:** 26 `model_failure` (7 stable, 19 flaky), 0 `harness_error`, **2 `label_error`s fixed**
-  (`label_errors_fixed`: `R36-812f904-001` and `-002`, whose mined lines were 13 off at `raised_sha`).
-- Of the 26, 18 re-raise the dismissed claim, 5 are the line-matching limit only (a *different* claim inside the
-  window: `353ced23f55e`, `4f838bf0a2d6`, `aeb554baee1a`, `b7167609ac34`, `ff0bb8f41a32`), and 3 are mixed.
-  Each reason is in `error_analysis.json`. The judge (PMAT-311) is what separates the two.
-- Each of the two real bugs is raised in 1 of 3 runs only: recall is the weakest point, on a tiny sample.
+| Category | Expected action | Cases | Runs passed | Rate | Passed all 3 |
+| :-- | :-- | --: | --: | --: | --: |
+| concurrency | `raise_true_bug` | 3 | 9/9 | 100% | 3/3 |
+| degenerate | `raise_nothing` | 2 | 6/6 | 100% | 2/2 |
+| improvable | `raise_true_bug` | 3 | 4/9 | 44% | 1/3 |
+| logic (synthetic) | `raise_true_bug` | 6 | 18/18 | 100% | 6/6 |
+| logic (public) | `raise_true_bug` | 8 | 18/24 | 75% | 5/8 |
+| mined | `raise_true_bug` | 10 | 10/30 | 33% | 0/10 |
+| mined | `skip_false_bug` | 20 | 38/60 | 63% | 7/20 |
+| refactor | `raise_nothing` | 3 | 7/9 | 78% | 1/3 |
+| security | `raise_true_bug` | 6 | 17/18 | 94% | 5/6 |
+| style_only | `raise_nothing` | 4 | 12/12 | 100% | 4/4 |
+
+| Severity of the case's finding | Expected action | Cases | Runs passed | Rate | Passed all 3 |
+| :-- | :-- | --: | --: | --: | --: |
+| high | `raise_true_bug` | 9 | 19/27 | 70% | 5/9 |
+| medium | `raise_true_bug` | 15 | 35/45 | 78% | 9/15 |
+| low | `raise_true_bug` | 12 | 22/36 | 61% | 6/12 |
+| high | `skip_false_bug` | 5 | 13/15 | 87% | 3/5 |
+| medium | `skip_false_bug` | 9 | 14/27 | 52% | 2/9 |
+| low | `skip_false_bug` | 6 | 11/18 | 61% | 2/6 |
+| none | `raise_nothing` | 9 | 25/27 | 93% | 7/9 |
+
+- **Failure taxonomy:** 31 `model_failure` (8 stable, 23 flaky), 0 `harness_error`, **24 `label_error`s fixed**
+  (`label_errors_fixed`: 24 mined cases whose line was not the line of the code they describe at `raised_sha`). The fixes followed the code, not the results, and moved individual cases both ways: 34 cases passed all
+  3 repeats before them and 34 after.
+- **The 31:** of the 13 `skip_false_bug` failures, 8 re-raise the dismissed claim and 5 are the line-matching limit only
+  (a *different* claim inside the window). The 16 `raise_true_bug` failures are mostly misses; in 5 the claim is raised
+  in some repeats but at a line outside the window or below the required severity (`R36-d2309a5-001`, `R45-fee8a9a-004`,
+  `-006`, `pub-mikro-orm-481`, `sec-002`). The 2 `raise_nothing` failures flag behaviour a refactor did not change. Each
+  reason is in `error_analysis.json`.
+- **Recall on mined bugs is lower than 33%.** 8 of its 10 passing runs pass only because a *different* claim is inside
+  the window: from reading them, the agent raised the real claim at the line and severity the case requires twice in 30
+  runs. The window also favours `run_eval.sh`, where three cases sit within lines 34 to 39. The judge (PMAT-311) is
+  what separates these.
+
+### Hold-out set
+
+`holdout.json` lists 15 of the 80 cases (19%) that tuning never sees, so they can still check a change that was tuned
+on the other 65, the **development cases**. Normal runs, the baseline, `compare_baseline.py` and PMAT-312's gate use the
+development cases only.
+
+**Run it only when deciding whether to ship an agent change.** Seeing its score after each experiment would make it
+another tuning target.
+
+```bash
+eval/scripts/run_eval.sh --holdout --model nvidia/nemotron-3.5-super-vl:free --run <name>
+uv run python eval/scripts/holdout_report.py eval/runs/<name>/results-holdout.json   # the totals again
+```
+
+The run writes `results-holdout.json`, apart from `results.json`, and prints totals only. **A failing hold-out case stays
+unread until the set is retired**: no error analysis, no entry in `error_analysis.json`, and `baseline.py` does not ask
+for one. So don't open `results-holdout.json`, the run's console log or `promptfoo view` for a run that holds these
+cases, including run `base2` (it reviewed all 80).
+
+| Hold-out, run `base2` (agent `665c767`, k=3) | Runs passed | Rate |
+| :-- | --: | --: |
+| **All 15 cases** (11 passed all 3 repeats) | **35/45** | **78%** |
+| True bugs (10 cases) | 20/30 | 67% |
+| False and clean cases (5 cases) | 15/15 | 100% |
+
+This is a coarse check, good for catching a large drop, not a small one. Per-category rates on it are too small to read.
+
+**How it was drawn** (`scripts/split_holdout.py`, seed 318, chosen before any failure was read; it never reads results):
+
+- Per source and category, so that public cases, which share the category `logic` with synthetic ones, are on both
+  sides. Each takes about 25% of its cases, at least 1, in whole units.
+- A unit is a PR, so cases from one PR never split; a case with no PR (synthetic) is its own unit.
+- Units are taken in the order of a hash of seed and unit. One that would pass the target is skipped.
+- The 8 ID-based cases of the old `base1` baseline (PRs 36 and 37) are left out: their failures were read.
+- `sec-001` and `deg-001` to `-003`, whose results a smoke run showed, are drawn last.
+
+**What this means for the set:**
+
+- **19%, not 25%.** After PRs 36 and 37, only two mined PRs are left: PR 45 (22 cases) passes the target of 8, so only
+  PR 41 (2 cases) can go. The seed has no say in that.
+- **Exactly 10 true bugs**, the minimum, and 5 false or clean cases.
+- **Not fully blind.** The worker that wrote the synthetic cases knows them all, and picked the public ones by reading
+  their review comments. `deg-003` is in the set because every degenerate case's result was seen.
+
+A new case changes the draw, so `test_5_...` fails on purpose: keep the list by adding the new case to development (and
+changing the test to rerun the draw on the old cases), or redraw knowingly and say so on the ticket.
 
 ### Terms
 
 | Term | What it is | Changes when |
 | :-- | :-- | :-- |
-| **Golden dataset** (labelled dataset, eval set) | The cases: input + **ground truth** (`real_issue` / `false_positive`, and the `expected` block) | A **label error** is found and fixed |
+| **Golden dataset** (labelled dataset, eval set) | The cases: input + **ground truth** (`real_issue` / `false_positive`, and the `expected` block), split into **development cases** and a **hold-out** | A **label error** is found and fixed |
 | **Ground truth** | The correct answer for a case, decided independently of the agent: the label (a fix commit citing the finding ID, or a dismissal) and the `expected` block derived from it | Only through a label-error fix |
 | **Run** | One `promptfoo eval`: the agent's output and pass / fail / error for every case, k times | Every run |
 | **Error analysis** | Reading every failing case of a run and classifying **why** it failed. It describes the result and changes nothing in the agent | Once per new failure |
@@ -224,7 +297,7 @@ From `agents/review-pull-request`. Prerequisites: `gh auth login`, the repo's `.
 session; the machine default stays). No AWS is needed.
 
 ```bash
-eval/scripts/run_eval.sh --model nvidia/nemotron-3.5-super-vl:free --run base1        # k=3, every case
+eval/scripts/run_eval.sh --model nvidia/nemotron-3.5-super-vl:free --run base1        # k=3, every development case
 eval/scripts/run_eval.sh --model nvidia/nemotron-3.5-super-vl:free --run base1        # again: resumes
 eval/scripts/run_eval.sh --k 1 --run smoke --filter-pattern '^R37-1fbb920-001$'       # one case (.env model)
 uv run python eval/scripts/compare_baseline.py eval/runs/base1/results.json           # vs baseline.json
@@ -239,7 +312,7 @@ the agent changed since, or with another model or k (`scripts/run_meta.py`).
 
 ### Error analysis
 
-After a run, read every failing case (`compare_baseline.py` lists the new ones; `baseline.py` refuses to
+After a run, read every failing development case (`compare_baseline.py` lists the new ones; `baseline.py` refuses to
 write until each failing case is classed) and record why it failed in `error_analysis.json`:
 
 ```json
@@ -252,7 +325,10 @@ write until each failing case is classed) and record why it failed in `error_ana
 - `label_error`: the ground truth is wrong, not the agent. Fix the case: a wrong label with
   `eval_cases.py label <ID> real_issue --reason "..."`, or a wrong `expected` or `finding.line` by hand,
   with the reason in `notes`. A mined line is the one the review cited, which can be off: the case is
-  matched at the line where the described code is at `raised_sha`.
+  matched at the line where the described code is at `raised_sha`. A line fix moves it to exactly that line, even from
+  within ±3 (owner, PMAT-318), whichever way it moves the score.
+- A correct finding that isn't worth fixing counts as false, unless it has a concrete trigger reachable in this repo
+  (owner, PMAT-318). So re-raising one stays a `model_failure`.
 - `harness_error`: the pipeline failed (crash, no result, findings misread). Classed automatically; open a
   ticket. Left out of the pass rate and listed separately.
 - Never quietly delete a failing case.
@@ -289,7 +365,6 @@ findings are on the ticket.
   call site, say) is missed, and a different bug inside the window counts as the same one.
 - **The PR description is today's**, fetched at run time; it may have been edited since `raised_sha`.
 - **Mined cases leave out large commits** (`--max-files 22`): 3 real and 19 false findings on 7 commits.
-- **No hold-out set yet** (PMAT-318), and so no baseline for the current cases.
 - **Long reviews can time out in Promptfoo.** The repeats of one commit queue on its lock, so the last
   repeat of a large review (86 files: about an hour each) can wait past the provider's 2-hour timeout and
   become a `harness_error`. Rerunning the same `--run` finishes it from the checkpoints.

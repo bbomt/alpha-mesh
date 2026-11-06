@@ -10,7 +10,7 @@
   "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
   "finding": {
     "file": "agents/review-pull-request/eval/promptfoo/agent_provider.py",
-    "line": 17,
+    "line": 29,
     "severity": "low",
     "summary": "Global _savers dictionary caches SqliteSaver instances indefinitely with no cleanup. While limited to 3 repeats (3 connections), in long-running processes this could accumulate connections if the pattern is reused.",
     "fix": "Add a cleanup function to close all savers, or use weakref.WeakValueDictionary to allow garbage collection when savers are no longer referenced.",
@@ -26,5 +26,5 @@
     "action": "skip_false_bug",
     "flag_file": "agents/review-pull-request/eval/promptfoo/agent_provider.py"
   },
-  "notes": ""
+  "notes": "finding.line moved 17 -> 29: at raised_sha fee8a9a the module-level _savers dictionary is at agent_provider.py:29 (17 is `import sqlite3`); the review cited the wrong line."
 }
