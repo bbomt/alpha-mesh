@@ -34,7 +34,7 @@ def review_case(case: dict, *, config, token: str, description: str, checkpointe
                              publish=lambda report: None, all_excluded=all_excluded,
                              pr_number=case.get("pr_number"), checkpointer=checkpointer)
         if excluded:  # every changed file is excluded: nothing was reviewed, so nothing was raised
-            return _review(case, config, files=[], incomplete=[], excluded=excluded, findings=[])
+            return _review(case, config, files=[], incomplete=[], excluded=excluded, findings=[], files_read=[])
         state = graph.get_state(run_config)
         if not state.values or state.next:
             raise ReviewFailed(f"the review of {case['repo']}@{head[:7]} left no result (exit code {code}); "
@@ -45,7 +45,15 @@ def review_case(case: dict, *, config, token: str, description: str, checkpointe
                  "suggestion": i["suggestion"]} for f in state.values["files"] for i in results[f]["issues"]]
     return _review(case, config, files=state.values["files"],
                    incomplete=[f for f in state.values["files"] if results[f]["incomplete"]],
-                   excluded=[], findings=findings)
+                   excluded=[], findings=findings, **_files_read(results))
+
+
+def _files_read(results: dict) -> dict:
+    """The paths read in the whole review, or nothing if a result was saved before files_read existed:
+    [] would say the agent read nothing, and the judge counts claims about unread code as false."""
+    if any("files_read" not in r for r in results.values()):
+        return {}
+    return {"files_read": sorted({p for r in results.values() for p in r["files_read"]})}
 
 
 def _review(case, config, **fields) -> dict:

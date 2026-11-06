@@ -98,6 +98,7 @@ class FileReviewResult:
     issues: list[Issue] = field(default_factory=list)
     tool_calls_made: int = 0
     incomplete: bool = False  # the file could not be fully reviewed (do not report it as clean)
+    files_read: list[str] = field(default_factory=list)  # paths whose content the model was shown
 
 
 _SEVERITY_ALIASES = {
@@ -211,6 +212,7 @@ def run_file_review(chunk, overview: str, session) -> FileReviewResult:
     paths_read: set[str] = set()  # paths already shown to the model in this review
     misses: dict[str, list[str]] = {}  # path that came back "not found" -> suggested paths
     result = _run_file_review(chunk, overview, session, paths_read, misses)
+    result.files_read = sorted(paths_read)
     seen = paths_read | {normalise(chunk.file_path)}
     for path, suggestions in misses.items():
         if not seen.intersection(suggestions):
