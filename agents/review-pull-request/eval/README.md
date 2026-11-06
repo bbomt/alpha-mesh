@@ -166,9 +166,9 @@ development cases (195 runs, 2026-11-04), all scored (no harness errors). The ho
 
 | | Pass rate (per run) | pass^3 (per case) |
 | :-- | --: | --: |
-| **All 65 development cases** | **70%** | **52%** |
-| `raise_true_bug` (36, recall) | 68% | 56% |
-| `skip_false_bug` (20, precision traps) | 65% | 35% |
+| **All 65 development cases** | **71%** | **52%** |
+| `raise_true_bug` (36, recall) | 70% | 56% |
+| `skip_false_bug` (20, precision traps) | 63% | 35% |
 | `raise_nothing` (9, clean code) | 93% | 78% |
 | Old file-only rule, for comparison | 68% | |
 
@@ -179,33 +179,32 @@ development cases (195 runs, 2026-11-04), all scored (no harness errors). The ho
 | improvable | `raise_true_bug` | 3 | 4/9 | 44% | 1/3 |
 | logic (synthetic) | `raise_true_bug` | 6 | 18/18 | 100% | 6/6 |
 | logic (public) | `raise_true_bug` | 8 | 18/24 | 75% | 5/8 |
-| mined | `raise_true_bug` | 10 | 7/30 | 23% | 0/10 |
-| mined | `skip_false_bug` | 20 | 39/60 | 65% | 7/20 |
+| mined | `raise_true_bug` | 10 | 10/30 | 33% | 0/10 |
+| mined | `skip_false_bug` | 20 | 38/60 | 63% | 7/20 |
 | refactor | `raise_nothing` | 3 | 7/9 | 78% | 1/3 |
 | security | `raise_true_bug` | 6 | 17/18 | 94% | 5/6 |
 | style_only | `raise_nothing` | 4 | 12/12 | 100% | 4/4 |
 
 | Severity of the case's finding | Expected action | Cases | Runs passed | Rate | Passed all 3 |
 | :-- | :-- | --: | --: | --: | --: |
-| high | `raise_true_bug` | 9 | 18/27 | 67% | 5/9 |
-| medium | `raise_true_bug` | 15 | 33/45 | 73% | 9/15 |
+| high | `raise_true_bug` | 9 | 19/27 | 70% | 5/9 |
+| medium | `raise_true_bug` | 15 | 35/45 | 78% | 9/15 |
 | low | `raise_true_bug` | 12 | 22/36 | 61% | 6/12 |
 | high | `skip_false_bug` | 5 | 13/15 | 87% | 3/5 |
-| medium | `skip_false_bug` | 9 | 15/27 | 56% | 2/9 |
+| medium | `skip_false_bug` | 9 | 14/27 | 52% | 2/9 |
 | low | `skip_false_bug` | 6 | 11/18 | 61% | 2/6 |
 | none | `raise_nothing` | 9 | 25/27 | 93% | 7/9 |
 
-- **Failure taxonomy:** 31 `model_failure` (8 stable, 23 flaky), 0 `harness_error`, **18 `label_error`s fixed**
-  (`label_errors_fixed`: 18 `R45-fee8a9a` cases whose mined line was not the line of the code they describe at
-  `raised_sha`). The fixes followed the code, not the results, and moved individual cases both ways: 34 cases passed all
+- **Failure taxonomy:** 31 `model_failure` (8 stable, 23 flaky), 0 `harness_error`, **24 `label_error`s fixed**
+  (`label_errors_fixed`: 24 mined cases whose line was not the line of the code they describe at `raised_sha`). The fixes followed the code, not the results, and moved individual cases both ways: 34 cases passed all
   3 repeats before them and 34 after.
 - **The 31:** of the 13 `skip_false_bug` failures, 8 re-raise the dismissed claim and 5 are the line-matching limit only
   (a *different* claim inside the window). The 16 `raise_true_bug` failures are mostly misses; in 5 the claim is raised
   in some repeats but at a line outside the window or below the required severity (`R36-d2309a5-001`, `R45-fee8a9a-004`,
   `-006`, `pub-mikro-orm-481`, `sec-002`). The 2 `raise_nothing` failures flag behaviour a refactor did not change. Each
   reason is in `error_analysis.json`.
-- **Recall on mined bugs is lower than 23%.** 6 of its 7 passing runs pass only because a *different* claim is inside
-  the window: from reading them, the agent raised the real claim at the line and severity the case requires once in 30
+- **Recall on mined bugs is lower than 33%.** 8 of its 10 passing runs pass only because a *different* claim is inside
+  the window: from reading them, the agent raised the real claim at the line and severity the case requires twice in 30
   runs. The window also favours `run_eval.sh`, where three cases sit within lines 34 to 39. The judge (PMAT-311) is
   what separates these.
 

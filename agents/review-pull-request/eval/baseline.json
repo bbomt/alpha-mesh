@@ -4,28 +4,28 @@
   "date": "2026-11-04",
   "k": 3,
   "window": 3,
-  "cases_commit": "5e5bff8feac6539db374159cd910c30dc63df4bb",
+  "cases_commit": "af1d3ce8e5a6f02c473d983b24ed293cee934ebc",
   "summary": {
     "cases": 65,
     "scored_cases": 65,
-    "pass_rate": 0.7026,
+    "pass_rate": 0.7128,
     "pass_k": 0.5231,
     "file_level_pass_rate": 0.6821,
     "by_class": {
       "model_failure": 31,
-      "label_error": 18,
+      "label_error": 24,
       "harness_error": 0
     },
     "by_category": {
       "mined/skip_false_bug": {
         "cases": 20,
-        "runs_passed": 39,
+        "runs_passed": 38,
         "runs": 60,
         "passed_all": 7
       },
       "mined/raise_true_bug": {
         "cases": 10,
-        "runs_passed": 7,
+        "runs_passed": 10,
         "runs": 30,
         "passed_all": 0
       },
@@ -81,13 +81,13 @@
     "by_severity": {
       "medium/skip_false_bug": {
         "cases": 9,
-        "runs_passed": 15,
+        "runs_passed": 14,
         "runs": 27,
         "passed_all": 2
       },
       "medium/raise_true_bug": {
         "cases": 15,
-        "runs_passed": 33,
+        "runs_passed": 35,
         "runs": 45,
         "passed_all": 9
       },
@@ -99,7 +99,7 @@
       },
       "high/raise_true_bug": {
         "cases": 9,
-        "runs_passed": 18,
+        "runs_passed": 19,
         "runs": 27,
         "passed_all": 5
       },
@@ -124,6 +124,26 @@
     }
   },
   "label_errors_fixed": [
+    {
+      "case_id": "R36-812f904-003",
+      "reason": "finding.line moved 41 -> 45: at raised_sha 812f904 the `tuple(line.split(\" \", 1))` the finding describes is at status.py:45 (41 is the `def queued` line); the review cited the wrong line."
+    },
+    {
+      "case_id": "R36-c3e9e57-001",
+      "reason": "finding.line moved 159 -> 158: at raised_sha c3e9e57 the `return` after the exception the finding describes is at cli.py:158 (159 is the started event); the review cited the wrong line."
+    },
+    {
+      "case_id": "R36-d2309a5-001",
+      "reason": "finding.line moved 151 -> 152: at raised_sha d2309a5 the `loop.start` call the finding describes is at cli.py:152 (151 is its `try`); the review cited the wrong line."
+    },
+    {
+      "case_id": "R37-1fbb920-001",
+      "reason": "finding.line moved 123 -> 124: at raised_sha 1fbb920 the `if` that fails on a missing .env outside dry-run is at config.py:124 (123 reads dry_run); the review cited the wrong line."
+    },
+    {
+      "case_id": "R37-1fbb920-002",
+      "reason": "finding.line moved 25 -> 24: at raised_sha 1fbb920 the `ENV_FILE` line the finding describes is at config.py:24 (25 is blank); the review cited the wrong line."
+    },
     {
       "case_id": "R45-fee8a9a-001",
       "reason": "finding.line moved 42 -> 53: at raised_sha fee8a9a the fcntl.flock(lock, fcntl.LOCK_EX) the finding describes is at agent_provider.py:53 (42 is sqlite3.connect's path.parent.mkdir); the review cited the wrong line."
@@ -159,6 +179,10 @@
     {
       "case_id": "R45-fee8a9a-011",
       "reason": "finding.line moved 14 -> 12: at raised_sha fee8a9a the `date` property the finding describes is at baseline.schema.json:12 (14 is `window`); the review cited the wrong line."
+    },
+    {
+      "case_id": "R45-fee8a9a-012",
+      "reason": "finding.line moved 186 -> 189: at raised_sha fee8a9a the `allOf` the finding describes is at case.schema.json:189 (186 is the type of `notes`); the review cited the wrong line."
     },
     {
       "case_id": "R45-fee8a9a-013",
@@ -235,7 +259,7 @@
     "R36-812f904-003": {
       "runs": [
         "fail",
-        "pass",
+        "fail",
         "fail"
       ],
       "file_level_runs": [
@@ -243,9 +267,9 @@
         "fail",
         "fail"
       ],
-      "status": "flaky",
+      "status": "stable_failure",
       "failure_class": "model_failure",
-      "reason": "Re-raises the dismissed claim (queued() returns 1-tuples for malformed lines) at lines 44 and 43; repeat 1 raises it too, at line 48, outside the window, so it passes.",
+      "reason": "Re-raises the dismissed claim (queued() returns 1-tuples for malformed lines) in every repeat, at lines 44, 48 and 43.",
       "category": "mined",
       "action": "skip_false_bug"
     },
@@ -268,7 +292,7 @@
     },
     "R36-d2309a5-001": {
       "runs": [
-        "fail",
+        "pass",
         "pass",
         "fail"
       ],
@@ -279,7 +303,7 @@
       ],
       "status": "flaky",
       "failure_class": "model_failure",
-      "reason": "Raises the real bug's claim in every repeat but cites the wrong line in two: repeat 0 at line 155 and repeat 2 at line 164, both outside the window; repeat 1 at line 150 passes.",
+      "reason": "Raises the real bug's claim in every repeat. Repeats 0 (line 155) and 1 (line 150) pass; repeat 2 cites line 164, outside the window.",
       "category": "mined",
       "action": "raise_true_bug"
     },
@@ -523,18 +547,18 @@
     },
     "R45-fee8a9a-012": {
       "runs": [
+        "pass",
         "fail",
-        "fail",
-        "fail"
+        "pass"
       ],
       "file_level_runs": [
         "pass",
         "fail",
         "pass"
       ],
-      "status": "stable_failure",
+      "status": "flaky",
       "failure_class": "model_failure",
-      "reason": "Misses the real bug (raised_sha stays nullable and not required) in every repeat. Repeats 0 and 2 raise a different claim about the same allOf at line 192, outside the window.",
+      "reason": "Misses the real bug (raised_sha stays nullable and not required) in every repeat. Repeats 0 and 2 pass only because a different claim about the same allOf (line 192) is inside the window.",
       "category": "mined",
       "action": "raise_true_bug"
     },
