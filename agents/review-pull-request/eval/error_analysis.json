@@ -13,7 +13,6 @@
   "R45-fee8a9a-007": {"failure_class": "model_failure", "reason": "Repeat 2 re-raises the dismissed claim (fcntl is Unix-only) at line 14."},
   "R45-fee8a9a-008": {"failure_class": "model_failure", "reason": "Matcher limit: repeat 1 raises a different claim (the PR description is today's) at line 59, not the dismissed load_config claim."},
   "R45-fee8a9a-009": {"failure_class": "model_failure", "reason": "Repeats 0 and 2 re-raise the dismissed claim (case_expectations does not handle exceptions) at lines 20 and 23."},
-  "R45-fee8a9a-011": {"failure_class": "model_failure", "reason": "Matcher limit: repeat 1 raises a different claim (summary fields have no types) at line 17, not the dismissed date format claim."},
   "R45-fee8a9a-012": {"failure_class": "model_failure", "reason": "Misses the real bug (raised_sha stays nullable and not required) in every repeat. Repeats 0 and 2 raise a different claim about the same allOf at line 192, outside the window."},
   "R45-fee8a9a-013": {"failure_class": "model_failure", "reason": "Misses the real bug (label_changes gets the agent commit) in every repeat. Repeat 1 passes only because a different claim (malformed JSON, line 145) is inside the window."},
   "R45-fee8a9a-014": {"failure_class": "model_failure", "reason": "Misses the real bug (grep on JSON is fragile to its format). Repeat 2 raises a different claim on the same grep (regex metacharacters, line 34) and repeat 0 another (printf, line 37), and both pass inside the window; repeat 1 has only a low finding there."},

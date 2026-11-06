@@ -166,9 +166,9 @@ development cases (195 runs, 2026-11-04), all scored (no harness errors). The ho
 
 | | Pass rate (per run) | pass^3 (per case) |
 | :-- | --: | --: |
-| **All 65 development cases** | **70%** | **51%** |
+| **All 65 development cases** | **70%** | **52%** |
 | `raise_true_bug` (36, recall) | 68% | 56% |
-| `skip_false_bug` (20, precision traps) | 63% | 30% |
+| `skip_false_bug` (20, precision traps) | 65% | 35% |
 | `raise_nothing` (9, clean code) | 93% | 78% |
 | Old file-only rule, for comparison | 68% | |
 
@@ -180,7 +180,7 @@ development cases (195 runs, 2026-11-04), all scored (no harness errors). The ho
 | logic (synthetic) | `raise_true_bug` | 6 | 18/18 | 100% | 6/6 |
 | logic (public) | `raise_true_bug` | 8 | 18/24 | 75% | 5/8 |
 | mined | `raise_true_bug` | 10 | 7/30 | 23% | 0/10 |
-| mined | `skip_false_bug` | 20 | 38/60 | 63% | 6/20 |
+| mined | `skip_false_bug` | 20 | 39/60 | 65% | 7/20 |
 | refactor | `raise_nothing` | 3 | 7/9 | 78% | 1/3 |
 | security | `raise_true_bug` | 6 | 17/18 | 94% | 5/6 |
 | style_only | `raise_nothing` | 4 | 12/12 | 100% | 4/4 |
@@ -191,15 +191,15 @@ development cases (195 runs, 2026-11-04), all scored (no harness errors). The ho
 | medium | `raise_true_bug` | 15 | 33/45 | 73% | 9/15 |
 | low | `raise_true_bug` | 12 | 22/36 | 61% | 6/12 |
 | high | `skip_false_bug` | 5 | 13/15 | 87% | 3/5 |
-| medium | `skip_false_bug` | 9 | 14/27 | 52% | 1/9 |
+| medium | `skip_false_bug` | 9 | 15/27 | 56% | 2/9 |
 | low | `skip_false_bug` | 6 | 11/18 | 61% | 2/6 |
 | none | `raise_nothing` | 9 | 25/27 | 93% | 7/9 |
 
-- **Failure taxonomy:** 32 `model_failure` (8 stable, 24 flaky), 0 `harness_error`, **16 `label_error`s fixed**
-  (`label_errors_fixed`: 16 `R45-fee8a9a` cases whose mined line was more than 3 lines from the code they describe at
-  `raised_sha`). The fixes followed the code, not the results, and moved the score both ways: 34 cases passed all 3
-  repeats before them and 33 after.
-- **The 32:** of the 14 `skip_false_bug` failures, 8 re-raise the dismissed claim and 6 are the line-matching limit only
+- **Failure taxonomy:** 31 `model_failure` (8 stable, 23 flaky), 0 `harness_error`, **18 `label_error`s fixed**
+  (`label_errors_fixed`: 18 `R45-fee8a9a` cases whose mined line was not the line of the code they describe at
+  `raised_sha`). The fixes followed the code, not the results, and moved individual cases both ways: 34 cases passed all
+  3 repeats before them and 34 after.
+- **The 31:** of the 13 `skip_false_bug` failures, 8 re-raise the dismissed claim and 5 are the line-matching limit only
   (a *different* claim inside the window). The 16 `raise_true_bug` failures are mostly misses; in 5 the claim is raised
   in some repeats but at a line outside the window or below the required severity (`R36-d2309a5-001`, `R45-fee8a9a-004`,
   `-006`, `pub-mikro-orm-481`, `sec-002`). The 2 `raise_nothing` failures flag behaviour a refactor did not change. Each
@@ -326,8 +326,8 @@ write until each failing case is classed) and record why it failed in `error_ana
 - `label_error`: the ground truth is wrong, not the agent. Fix the case: a wrong label with
   `eval_cases.py label <ID> real_issue --reason "..."`, or a wrong `expected` or `finding.line` by hand,
   with the reason in `notes`. A mined line is the one the review cited, which can be off: the case is
-  matched at the line where the described code is at `raised_sha`. Move a line that is more than ±3 from that code,
-  whichever way it moves the score; a line within ±3 still has the code inside the window, so it stays.
+  matched at the line where the described code is at `raised_sha`. A line fix moves it to exactly that line, even from
+  within ±3 (owner, PMAT-318), whichever way it moves the score.
 - A correct finding that isn't worth fixing counts as false, unless it has a concrete trigger reachable in this repo
   (owner, PMAT-318). So re-raising one stays a `model_failure`.
 - `harness_error`: the pipeline failed (crash, no result, findings misread). Classed automatically; open a

@@ -4,24 +4,24 @@
   "date": "2026-11-04",
   "k": 3,
   "window": 3,
-  "cases_commit": "99a43f03573d733a2fabf2c93ac012554a2c8e11",
+  "cases_commit": "5e5bff8feac6539db374159cd910c30dc63df4bb",
   "summary": {
     "cases": 65,
     "scored_cases": 65,
-    "pass_rate": 0.6974,
-    "pass_k": 0.5077,
+    "pass_rate": 0.7026,
+    "pass_k": 0.5231,
     "file_level_pass_rate": 0.6821,
     "by_class": {
-      "model_failure": 32,
-      "label_error": 16,
+      "model_failure": 31,
+      "label_error": 18,
       "harness_error": 0
     },
     "by_category": {
       "mined/skip_false_bug": {
         "cases": 20,
-        "runs_passed": 38,
+        "runs_passed": 39,
         "runs": 60,
-        "passed_all": 6
+        "passed_all": 7
       },
       "mined/raise_true_bug": {
         "cases": 10,
@@ -81,9 +81,9 @@
     "by_severity": {
       "medium/skip_false_bug": {
         "cases": 9,
-        "runs_passed": 14,
+        "runs_passed": 15,
         "runs": 27,
-        "passed_all": 1
+        "passed_all": 2
       },
       "medium/raise_true_bug": {
         "cases": 15,
@@ -145,12 +145,20 @@
       "reason": "finding.line moved 30 -> 37: at raised_sha fee8a9a the printf that builds run.json is at run_eval.sh:37 (30 is the nvm source line); the review cited the wrong line."
     },
     {
+      "case_id": "R45-fee8a9a-007",
+      "reason": "finding.line moved 15 -> 14: at raised_sha fee8a9a the `import fcntl` the finding describes is at agent_provider.py:14 (15 is `import hashlib`); the review cited the wrong line."
+    },
+    {
       "case_id": "R45-fee8a9a-008",
       "reason": "finding.line moved 43 -> 57: at raised_sha fee8a9a the `except SystemExit` around load_config is at agent_provider.py:57 (43 is the SqliteSaver line); the review cited the wrong line."
     },
     {
       "case_id": "R45-fee8a9a-010",
       "reason": "finding.line moved 53 -> 44: at raised_sha fee8a9a the `\"line\": i[\"line\"]` the finding describes is at eval_adapter.py:44 (53 is the last line of _review); the review cited the wrong line."
+    },
+    {
+      "case_id": "R45-fee8a9a-011",
+      "reason": "finding.line moved 14 -> 12: at raised_sha fee8a9a the `date` property the finding describes is at baseline.schema.json:12 (14 is `window`); the review cited the wrong line."
     },
     {
       "case_id": "R45-fee8a9a-013",
@@ -499,7 +507,7 @@
     "R45-fee8a9a-011": {
       "runs": [
         "pass",
-        "fail",
+        "pass",
         "pass"
       ],
       "file_level_runs": [
@@ -507,9 +515,9 @@
         "fail",
         "pass"
       ],
-      "status": "flaky",
-      "failure_class": "model_failure",
-      "reason": "Matcher limit: repeat 1 raises a different claim (summary fields have no types) at line 17, not the dismissed date format claim.",
+      "status": "pass",
+      "failure_class": null,
+      "reason": null,
       "category": "mined",
       "action": "skip_false_bug"
     },
