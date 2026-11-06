@@ -10,7 +10,7 @@ the diff, how to render and publish) comes from the run's ReviewContext, which i
 import sys
 import warnings
 from dataclasses import asdict, dataclass
-from typing import Any, Callable, TypedDict
+from typing import Any, Callable, NotRequired, TypedDict
 
 from langchain_core._api.beta_decorator import LangChainBetaWarning
 from langgraph.graph import END, START, StateGraph
@@ -30,6 +30,8 @@ class FileResult(TypedDict):
     incomplete: bool
     missing: list[str]          # unrecovered not-found paths from this file's review
     model: str                  # model that produced this result
+    files_read: NotRequired[list[str]]  # paths whose content the model was shown, never the content;
+                                        # absent from a result saved before PMAT-322
 
 
 class ReviewState(TypedDict):
@@ -80,7 +82,7 @@ def review_next_file(state: ReviewState, runtime: Runtime[ReviewContext]) -> dic
     file_result = FileResult(file_path=path, summary=result.summary,
                              issues=[asdict(i) for i in result.issues],
                              tool_calls_made=result.tool_calls_made, incomplete=result.incomplete,
-                             missing=missing, model=ctx.model)
+                             missing=missing, model=ctx.model, files_read=result.files_read)
     return {"results": {**state["results"], path: file_result}}
 
 

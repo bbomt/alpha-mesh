@@ -218,6 +218,26 @@ def test_read_file_log_line_names_the_file_under_review(capsys):
     assert "reviewing src/a.py" in err.split("read_file: pyproject.toml")[1].splitlines()[0]
 
 
+def test_files_read_holds_only_reads_that_returned_content():
+    reader = StubReader(files={"src/ok.py": "x = 1\n", "src/broken.py": ReadError("Error: failed to fetch")})
+    calls = [_tool_call("1", "./src/ok.py"), _tool_call("2", "src/ok.py"), _tool_call("3", "src/broken.py"),
+             _tool_call("4", "src/missing.py")]
+
+    assert _review(model=_scripted(calls), reader=reader).files_read == ["src/ok.py"]
+
+
+def test_files_read_is_kept_when_the_review_ends_incomplete():
+    first = _scripted([_tool_call("1", "src/ok.py")])
+    replies = iter([first(None, None)])
+
+    def model(messages, tools):
+        return next(replies, MockLLMResponse(content="not json"))
+
+    result = _review(model=model, reader=StubReader(files={"src/ok.py": "x = 1\n"}))
+
+    assert result.incomplete and result.files_read == ["src/ok.py"]
+
+
 def test_failed_read_can_be_retried_within_the_same_review():
     llm = FakeLLM(_scripted([_tool_call("1", "pyproject.toml")], [_tool_call("2", "pyproject.toml")]))
     outcomes = iter([ReadError("Error: GitHub API rate limit exceeded."), "FILE BODY"])
