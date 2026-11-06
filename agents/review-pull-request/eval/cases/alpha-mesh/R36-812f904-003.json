@@ -10,7 +10,7 @@
   "model": "nvidia/nemotron-3.5-super-vl:free",
   "finding": {
     "file": "agents/orchestrator/src/orchestrator/status.py",
-    "line": 41,
+    "line": 45,
     "severity": "medium",
     "summary": "queued() can return 1-tuples from blank or malformed lines in queue.txt (e.g. empty lines or lines without a space separator), because tuple(line.split(\" \", 1)) on a line with no space yields a single-element tuple. Callers that unpack as key, folder = queue.pop(0) (in cli.py start_queued() and the display rendering) will raise ValueError: not enough values to unpack, breaking queue processing and screen rendering.",
     "fix": "Filter out lines that do not contain a space before splitting, e.g. return [tuple(line.split(\" \", 1)) for line in p.read_text().splitlines() if \" \" in line] if p.exists() else []",
@@ -26,5 +26,5 @@
     "action": "skip_false_bug",
     "flag_file": "agents/orchestrator/src/orchestrator/status.py"
   },
-  "notes": ""
+  "notes": "finding.line moved 41 -> 45: at raised_sha 812f904 the `tuple(line.split(\" \", 1))` the finding describes is at status.py:45 (41 is the `def queued` line); the review cited the wrong line."
 }

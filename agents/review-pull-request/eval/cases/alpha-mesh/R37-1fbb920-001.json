@@ -10,7 +10,7 @@
   "model": "nvidia/nemotron-3.5-super-vl:free",
   "finding": {
     "file": "agents/review-pull-request/src/review_pull_request/config.py",
-    "line": 123,
+    "line": 124,
     "severity": "high",
     "summary": "Non-dry-run execution now hard-fails (sys.exit(1)) if .env is missing. Previously load_dotenv() silently did nothing when .env was absent, allowing deployments that set environment variables directly (without a .env file) to work. This breaks those deployments.",
     "fix": "Make .env optional: remove the hard exit on missing .env, and only error later if a required env var is still unset after load_dotenv. This preserves backward compatibility for deployments that inject env vars externally while still surfacing clear errors when credentials are genuinely missing.",
@@ -26,5 +26,5 @@
     "action": "skip_false_bug",
     "flag_file": "agents/review-pull-request/src/review_pull_request/config.py"
   },
-  "notes": ""
+  "notes": "finding.line moved 123 -> 124: at raised_sha 1fbb920 the `if` that fails on a missing .env outside dry-run is at config.py:124 (123 reads dry_run); the review cited the wrong line."
 }
