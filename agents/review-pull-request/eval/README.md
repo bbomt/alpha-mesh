@@ -114,6 +114,9 @@ a real bug here that no one raised. Use these for instructive comparison.
 | `scripts/run_eval.sh`, `scripts/baseline.py`, `scripts/compare_baseline.py` | run, baseline, compare |
 | `scripts/split_holdout.py`, `scripts/holdout_report.py` | draw the hold-out, report its totals |
 | `schema/review.schema.json`, `schema/baseline.schema.json` | the provider's output, the baseline's guard |
+| `promptfoo/llm_rubric.py`, `judge/rubric.v1.md` | the judge and its versioned rubric ([The judge](#the-judge)) |
+| `judge/sample.json`, `judge/human_labels.json`, `judge/judge_scores.json` | the 25 hand-scored cases, the owner's scores, the judge's scores for them |
+| `scripts/judge_sample.py`, `scripts/judge_labelling_sheet.py`, `scripts/judge_report.py`, `scripts/judge_agreement.py` | draw the sample, write the scoring sheet, report a run's scores, compute judge–human agreement |
 | `baseline.json`, `error_analysis.json` | the committed baseline and the error analysis behind it (development cases only) |
 | `holdout.json` | the hold-out's seed and case IDs |
 | `runs/` | eval runs (gitignored) |
@@ -255,10 +258,64 @@ This is a coarse check, good for catching a large drop, not a small one. Per-cat
 A new case changes the draw, so `test_5_...` fails on purpose: keep the list by adding the new case to development (and
 changing the test to rerun the draw on the old cases), or redraw knowingly and say so on the ticket.
 
+### The judge
+
+A second model (`JUDGE_MODEL`) grades each review on three dimensions, 1 to 5, each with its reason first: **correctness**
+(are the findings real?), **coverage** (did it catch what matters, against the case's `expected` and `notes`?) and
+**actionability** (could a developer act on it?). It also gives a **same-claim** verdict: did a finding make the case's
+claim? That separates what the line window can't: a different bug near the line counts for the window, not for the judge.
+
+**It never gates.** `judge_results` always passes, so a case's pass or fail, `baseline.json` and the comparison don't
+change. A judge error is recorded, not failed. A review with no findings has `null` correctness and actionability.
+
+It is an LLM judge in a python assert, not Promptfoo's built-in `llm-rubric` (owner, PMAT-311), because everything sent to
+a model has to go through `ReviewSession`, so an excluded file's content never reaches it
+(`tests/test_canary.py`), and one call has to return all three scores and the verdict. Hold-out cases never reach it.
+
+Set `JUDGE_MODEL`, `JUDGE_URL` and `JUDGE_TOKEN` in `.env`. A missing one stops the run before any review.
+
+```bash
+eval/scripts/run_eval.sh --stored ~/.mesh/eval-runs/PMAT-310-base2 --run judge1   # judge stored reviews; the agent doesn't run
+uv run python eval/scripts/judge_report.py eval/runs/judge1/results.json           # means, proposal, line window vs same claim, cost
+JUDGE_LIVE=1 uv run pytest eval/tests/test_judge.py -k live                        # the checks that need the real model
+```
+
+A normal `run_eval.sh` run judges the agent's fresh reviews too. A `--stored` run has no `run.json`, so it can't become the baseline.
+
+**Aligning the judge (meta-evaluation):** the owner scores 25 development cases blind, and the judge's scores are compared
+with theirs (**judge–human agreement**: within ±1 point per dimension, and Cohen's kappa on pass/fail, score >= 4).
+
+```bash
+uv run python eval/scripts/judge_labelling_sheet.py ~/.mesh/eval-runs/PMAT-310-base2   # sheet and labels file; no scores shown
+uv run python eval/scripts/judge_report.py eval/runs/judge1/results.json --write-scores  # after the labels are committed
+uv run python eval/scripts/judge_agreement.py eval/judge/human_labels.json eval/judge/judge_scores.json
+```
+
+The sample (`scripts/judge_sample.py`, seed 311) is drawn from the case files only, per group, from the development
+cases. Under about 75% on a dimension: read the disagreements, tighten the rubric in a new version (`rubric.v2.md`), and
+record the iteration here. Changing `JUDGE_MODEL` or the rubric means aligning again.
+
+<!-- JUDGE-RESULTS -->
+**Judge–human agreement:** not yet measured; the owner's labels come first.
+
+**Pinning:** `z-ai/glm-5.3-flash` is an OpenRouter alias (canonical slug `z-ai/glm-5.3-flash-20260826`). A request for the
+dated slug works, but responses report the alias either way, so the API can't confirm the build. OpenRouter also routes
+calls to different upstream providers, three in three calls in one test. Each judgment records the requested and
+reported model, the provider, its tokens and cost.
+
+**Family:** `.env` has `CODE_REVIEW_MODEL=z-ai/glm-5.3-flash`, the judge's own family (owner decision to keep it for now,
+as the stored run's reviewer is Nemotron). The warning at the start of a run checks the run's model and `CODE_REVIEW_MODEL`;
+a run reviewed by that family is grading itself, and the judge must then move family and be aligned again.
+
 ### Terms
 
 | Term | What it is | Changes when |
 | :-- | :-- | :-- |
+| **The agent** | The review agent, the thing being evaluated | With its code |
+| **Running the agent** | `run_review_agent`: the slow step that produces a review | |
+| **Stored review** | A review saved from an earlier run | Never |
+| **The judge** | The separate model that scores a review | With `JUDGE_MODEL` or the rubric |
+| **Judge–human agreement** | How closely the judge's scores match the owner's on the same reviews | Each alignment |
 | **Golden dataset** (labelled dataset, eval set) | The cases: input + **ground truth** (`real_issue` / `false_positive`, and the `expected` block), split into **development cases** and a **hold-out** | A **label error** is found and fixed |
 | **Ground truth** | The correct answer for a case, decided independently of the agent: the label (a fix commit citing the finding ID, or a dismissal) and the `expected` block derived from it | Only through a label-error fix |
 | **Run** | One `promptfoo eval`: the agent's output and pass / fail / error for every case, k times | Every run |
@@ -361,8 +418,8 @@ findings are on the ticket.
 - **Selection bias.** Mined cases were selected by the model that raised them, so they favour or penalise
   that model. Compare agent versions on the full set; compare models on the synthetic and public cases.
   Each case's `model` field records its source; no per-model split is reported.
-- **Line matching is a proxy** until the judge (PMAT-311): the same claim cited outside the window (at a
-  call site, say) is missed, and a different bug inside the window counts as the same one.
+- **Line matching is a proxy:** the same claim cited outside the window (at a call site, say) is missed, and a different
+  bug inside the window counts as the same one. The judge's same-claim verdict is reported beside it (`judge_report.py`).
 - **The PR description is today's**, fetched at run time; it may have been edited since `raised_sha`.
 - **Mined cases leave out large commits** (`--max-files 22`): 3 real and 19 false findings on 7 commits.
 - **Long reviews can time out in Promptfoo.** The repeats of one commit queue on its lock, so the last

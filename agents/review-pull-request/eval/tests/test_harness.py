@@ -209,7 +209,8 @@ def test_the_loader_turns_every_case_into_a_test_and_refuses_an_invalid_one(tmp_
     tests = load_cases.create_tests()
     assert len(tests) == len(case_rules.development_cases())
     assert {a["value"] for a in tests[0]["assert"]} == {"file://promptfoo/asserts.py:schema_valid",
-                                                        "file://promptfoo/asserts.py:case_expectations"}
+                                                        "file://promptfoo/asserts.py:case_expectations",
+                                                        "file://promptfoo/llm_rubric.py:judge_results"}
     assert tests[0]["vars"]["case"]["case_id"] == tests[0]["description"]
 
     bad = tmp_path / "repo" / "bad.json"

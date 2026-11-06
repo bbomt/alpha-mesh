@@ -1,0 +1,181 @@
+{
+  "rubric": "v1",
+  "repeat": 0,
+  "cases": {
+    "R36-812f904-001": {
+      "correctness": "TODO",
+      "coverage": "TODO",
+      "actionability": "TODO",
+      "same_claim": "TODO",
+      "note": ""
+    },
+    "R36-812f904-002": {
+      "correctness": "TODO",
+      "coverage": "TODO",
+      "actionability": "TODO",
+      "same_claim": "TODO",
+      "note": ""
+    },
+    "R36-812f904-003": {
+      "correctness": "TODO",
+      "coverage": "TODO",
+      "actionability": "TODO",
+      "same_claim": "TODO",
+      "note": ""
+    },
+    "R36-c3e9e57-001": {
+      "correctness": "TODO",
+      "coverage": "TODO",
+      "actionability": "TODO",
+      "same_claim": "TODO",
+      "note": ""
+    },
+    "R36-d2309a5-001": {
+      "correctness": "TODO",
+      "coverage": "TODO",
+      "actionability": "TODO",
+      "same_claim": "TODO",
+      "note": ""
+    },
+    "R36-d2309a5-002": {
+      "correctness": "TODO",
+      "coverage": "TODO",
+      "actionability": "TODO",
+      "same_claim": "TODO",
+      "note": ""
+    },
+    "R37-1fbb920-001": {
+      "correctness": "TODO",
+      "coverage": "TODO",
+      "actionability": "TODO",
+      "same_claim": "TODO",
+      "note": ""
+    },
+    "R37-1fbb920-002": {
+      "correctness": "TODO",
+      "coverage": "TODO",
+      "actionability": "TODO",
+      "same_claim": "TODO",
+      "note": ""
+    },
+    "R45-02d37e7-001": {
+      "correctness": "TODO",
+      "coverage": "TODO",
+      "actionability": "TODO",
+      "same_claim": "TODO",
+      "note": ""
+    },
+    "R45-fee8a9a-004": {
+      "correctness": "TODO",
+      "coverage": "TODO",
+      "actionability": "TODO",
+      "same_claim": "TODO",
+      "note": ""
+    },
+    "R45-fee8a9a-015": {
+      "correctness": "TODO",
+      "coverage": "TODO",
+      "actionability": "TODO",
+      "same_claim": "TODO",
+      "note": ""
+    },
+    "pub-ansible-66192": {
+      "correctness": "TODO",
+      "coverage": "TODO",
+      "actionability": "TODO",
+      "same_claim": "TODO",
+      "note": ""
+    },
+    "pub-pyenv-1646": {
+      "correctness": "TODO",
+      "coverage": "TODO",
+      "actionability": "TODO",
+      "same_claim": "TODO",
+      "note": ""
+    },
+    "pub-trio-1832": {
+      "correctness": "TODO",
+      "coverage": "TODO",
+      "actionability": "TODO",
+      "same_claim": "TODO",
+      "note": ""
+    },
+    "con-003": {
+      "correctness": "TODO",
+      "coverage": "TODO",
+      "actionability": "TODO",
+      "same_claim": "TODO",
+      "note": ""
+    },
+    "deg-001": {
+      "correctness": null,
+      "coverage": "TODO",
+      "actionability": null,
+      "same_claim": null,
+      "note": ""
+    },
+    "imp-001": {
+      "correctness": null,
+      "coverage": "TODO",
+      "actionability": null,
+      "same_claim": false,
+      "note": ""
+    },
+    "log-002": {
+      "correctness": "TODO",
+      "coverage": "TODO",
+      "actionability": "TODO",
+      "same_claim": "TODO",
+      "note": ""
+    },
+    "log-005": {
+      "correctness": "TODO",
+      "coverage": "TODO",
+      "actionability": "TODO",
+      "same_claim": "TODO",
+      "note": ""
+    },
+    "ref-003": {
+      "correctness": null,
+      "coverage": "TODO",
+      "actionability": null,
+      "same_claim": null,
+      "note": ""
+    },
+    "sec-002": {
+      "correctness": "TODO",
+      "coverage": "TODO",
+      "actionability": "TODO",
+      "same_claim": "TODO",
+      "note": ""
+    },
+    "sec-005": {
+      "correctness": "TODO",
+      "coverage": "TODO",
+      "actionability": "TODO",
+      "same_claim": "TODO",
+      "note": ""
+    },
+    "sec-007": {
+      "correctness": "TODO",
+      "coverage": "TODO",
+      "actionability": "TODO",
+      "same_claim": "TODO",
+      "note": ""
+    },
+    "sty-002": {
+      "correctness": null,
+      "coverage": "TODO",
+      "actionability": null,
+      "same_claim": null,
+      "note": ""
+    },
+    "sty-004": {
+      "correctness": null,
+      "coverage": "TODO",
+      "actionability": null,
+      "same_claim": null,
+      "note": ""
+    }
+  }
+}

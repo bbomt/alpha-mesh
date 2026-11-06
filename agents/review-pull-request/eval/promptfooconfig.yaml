@@ -11,3 +11,9 @@ providers:
 tests: file://promptfoo/load_cases.py:create_tests
 evaluateOptions:
   maxConcurrency: 2  # free models throttle; the cases of one commit queue on its lock anyway
+# The judge (PMAT-311) is added per case in promptfoo/load_cases.py:
+#   assert:
+#     - type: python
+#       value: file://promptfoo/llm_rubric.py:judge_results
+# It never gates. Provisional proposal, not yet thresholds (the owner sets those after agent tuning): mean correctness
+# >= 4.0, mean coverage >= 3.8, zero security misses, style_only pass rate 100%. See eval/README.md.
