@@ -265,6 +265,13 @@ A second model (`JUDGE_MODEL`) grades each review on three dimensions, 1 to 5, e
 **actionability** (could a developer act on it?). Coverage compares the claim itself, so a different bug near the line
 counts for the line window but not for the judge.
 
+**It sees what the agent saw** (owner, PMAT-311): the diff, the PR description and the files the agent read
+(`files_read`, PMAT-322), fetched at the same commit with the agent's `max_file_lines`. It has no tools. A claim that
+depends on code the agent didn't read counts as false, even if it happens to be true, because the agent could only have
+guessed it; the owner scores by the same rule. A review with no `files_read` (a run before PMAT-322) gets a judge error,
+not a score. `files_read` is one list for the whole review, so the judge can't tell which file's review read what. The
+folder listing, the agent's overview and its instructions are left out.
+
 **It never gates.** `judge_results` always passes, so a case's pass or fail, `baseline.json` and the comparison don't
 change. A judge error is recorded, not failed. A review with no findings has `null` correctness and actionability.
 
@@ -276,7 +283,7 @@ a model has to go through `ReviewSession`, so an excluded file's content never r
 Set `JUDGE_MODEL`, `JUDGE_URL` and `JUDGE_TOKEN` in `.env`. A missing one stops the run before any review.
 
 ```bash
-eval/scripts/run_eval.sh --stored ~/.mesh/eval-runs/PMAT-310-base2 --run judge1   # judge stored reviews; the agent doesn't run
+eval/scripts/run_eval.sh --stored ~/.mesh/eval-runs/PMAT-322-base3 --run judge1   # judge stored reviews; the agent doesn't run
 uv run python eval/scripts/judge_report.py eval/runs/judge1/results.json           # means, proposal, cost
 JUDGE_LIVE=1 uv run pytest eval/tests/test_judge.py -k live                        # the checks that need the real model
 ```
@@ -287,7 +294,7 @@ A normal `run_eval.sh` run judges the agent's fresh reviews too. A `--stored` ru
 with theirs (**judge–human agreement**: within ±1 point per dimension, and Cohen's kappa on pass/fail, score >= 4).
 
 ```bash
-uv run python eval/scripts/judge_labelling_sheet.py ~/.mesh/eval-runs/PMAT-310-base2   # sheet and labels file; no scores shown
+uv run python eval/scripts/judge_labelling_sheet.py ~/.mesh/eval-runs/PMAT-322-base3   # sheet and labels file; no scores shown
 uv run python eval/scripts/judge_report.py eval/runs/judge1/results.json --write-scores  # after the labels are committed
 uv run python eval/scripts/judge_agreement.py eval/judge/human_labels.json eval/judge/judge_scores.json
 ```

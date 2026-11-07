@@ -4,6 +4,10 @@ An LLM-as-a-judge check with a rubric (judge/rubric.v1.md), written as a python 
 built-in llm-rubric (owner, 2026-11-06) because it has to go through ReviewSession: an excluded file's content never
 reaches a model, by any path. It also returns its three scores from one call.
 
+The judge sees what the agent saw (owner, PMAT-311): the diff, the PR description and the files the agent read, fetched
+at the same commit with the agent's own line limit. It has no tools. A review with no files_read can't be judged fairly,
+so it is a recorded judge error, not a score.
+
 The judge never gates: judge_results always passes, and a judge error is recorded, not failed. Hold-out cases are
 refused here, so nothing about them reaches it: rubric iterations must not use them. Thresholds are
 provisional until the owner sets them (eval/README.md). JUDGE_MODEL, JUDGE_URL and JUDGE_TOKEN come from .env.
@@ -23,10 +27,14 @@ from langchain_openai import ChatOpenAI
 from case_rules import EVAL, holdout_ids
 from review_pull_request import config as config_module
 from review_pull_request import llm
+from review_pull_request.git import get_pr_description
 from review_pull_request.github import _get_github_token
 from review_pull_request.incremental import get_diff
 from review_pull_request.llm import LLMError
+from review_pull_request.policy import PathPolicy
+from review_pull_request.readers import PolicyFileReader, ReadError
 from review_pull_request.session import ReviewSession, _sent, http_transport
+from review_pull_request.tools import GitHubFileReader
 from review_pull_request.watchdog import WatchdogTransport
 
 RUBRIC_VERSION = "v1"  # a change to the rubric is a new file and a new version
@@ -143,13 +151,42 @@ def make_judge_chat_model(meta: dict):
     return factory
 
 
-def _prompt(case: dict, findings: list[dict], diff: str) -> str:
+def file_reader(case: dict, token: str):
+    """What the agent read from: the repo at the case's commit."""
+    owner, repo = case["repo"].split("/")
+    return GitHubFileReader(owner, repo, case["raised_sha"], token)
+
+
+def agent_context(case: dict, review: dict, reader, policy: PathPolicy, max_lines: int, token: str) -> dict:
+    """The PR description and the files the agent read: {"description", "files": {path: content or ReadError}}.
+    `reader` is a PolicyFileReader, and an excluded path is dropped: the agent could not have read it either."""
+    if "files_read" not in review:
+        raise RuntimeError("the review has no files_read, so the judge can't see what the agent saw: "
+                           "use a run from PMAT-322 or later")
+    description = case.get("description")  # as agent_provider: a fixture commit states its own, a PR's is today's
+    if description is None:
+        description = get_pr_description(f"https://github.com/{case['repo']}/pull/{case['pr_number']}", token) \
+            if case.get("pr_number") else ""
+    paths = [p for p in review["files_read"] if not policy.is_excluded(p)]
+    return {"description": description, "files": {p: reader.read_file(p, max_lines) for p in paths}}
+
+
+def _files_read(files: dict) -> str:
+    if not files:
+        return "The agent read no files."
+    return "\n".join(f'<file path="{path}">could not be fetched</file>' if isinstance(content, ReadError)
+                     else f'<file path="{path}">\n{content}\n</file>' for path, content in files.items())
+
+
+def _prompt(case: dict, findings: list[dict], diff: str, context: dict) -> str:
     truth = {"expected": case["expected"], "finding": case.get("finding"), "category": case["category"],
              "notes": case.get("notes"), "label_reason": case.get("label_reason")}
     numbered = [{"number": i, **f} for i, f in enumerate(findings)]
     return (f"<case>\n{json.dumps(truth, indent=1)}\n</case>\n\n"
             f"<findings>\n{json.dumps(numbered, indent=1)}\n</findings>\n\n"
-            f"<diff>\n{diff}\n</diff>")
+            f"<pr_description>\n{context['description']}\n</pr_description>\n\n"
+            f"<diff>\n{diff}\n</diff>\n\n"
+            f"<files_read>\n{_files_read(context['files'])}\n</files_read>")
 
 
 def _score(reply: dict, dimension: str, nullable: bool):
@@ -181,14 +218,19 @@ def _parse(text: str, findings: list[dict]) -> dict:
 def judge_review(case: dict, review: dict) -> dict:
     """One judgment of one stored or fresh review. Everything reaches the model through ReviewSession."""
     config, token, meta = judge_config(), github_token(), {}
-    # The judge never reads a file, so it has no reader. Its session redacts these as well as its own token.
-    session = ReviewSession.create(config, inner_reader=None, chat_model_factory=make_judge_chat_model(meta),
+    # Its session redacts these as well as its own token.
+    session = ReviewSession.create(config, inner_reader=file_reader(case, token),
+                                   chat_model_factory=make_judge_chat_model(meta),
                                    secrets=[token, os.environ.get("CODE_REVIEW_TOKEN", "")])
+    try:
+        context = agent_context(case, review, session.reader, session.policy, config.max_file_lines, token)
+    finally:
+        session.reader.close()
     owner, repo = case["repo"].split("/")
     diff = session.safe_diff(get_diff(owner, repo, case["base_sha"], case["raised_sha"], token))
     findings = [f for f in review["findings"] if not session.policy.is_excluded(f["file"])]
     reply = session.review_llm.chat([{"role": "system", "content": RUBRIC.read_text()},
-                                     {"role": "user", "content": _prompt(case, findings, diff.text)}])
+                                     {"role": "user", "content": _prompt(case, findings, diff.text, context)}])
     return {**_parse(reply.content, findings), "rubric": RUBRIC_VERSION, "model_requested": config.model, **meta}
 
 

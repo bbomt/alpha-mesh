@@ -174,7 +174,7 @@ def test_d_a_stored_review_is_scored_without_running_the_agent(tmp_path, monkeyp
     assert seen, "the judge must have read it"
 
 
-def test_d_the_judge_fetches_only_the_diff_never_the_agent(judged):
+def test_d_the_judge_never_runs_the_agent(judged):
     with patch("review_pull_request.review.run_review_agent", side_effect=AssertionError("the agent ran")):
         graded, _ = judged(case(min_severity="low"), review(finding()), reply())
     assert "judge_error" not in graded["metadata"]
