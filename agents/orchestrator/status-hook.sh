@@ -17,11 +17,13 @@ flock 9
 [ -f "$file" ] || echo '{}' > "$file"
 
 jq --arg state "$state" --arg ticket "$ticket" --arg at "$(date -Is)" --argjson input "$input" '
-  . + {ticket: $ticket, state: $state, updated: $at,
+  . + {ticket: $ticket,
        session_id: $input.session_id, cwd: $input.cwd,
        transcript_path: $input.transcript_path,
-       event: $input.hook_event_name,
-       notification_type: $input.notification_type, message: $input.message}
-  | .history = ((.history // []) + [{state: $state, at: $at, event: $input.hook_event_name}])
+       event: $input.hook_event_name}
+  # A compact or /clear starts no turn, so no Stop would correct the state: what the worker is doing stays as it was.
+  | if $input.hook_event_name == "SessionStart" and ($input.source == "compact" or $input.source == "clear") then .
+    else . + {state: $state, updated: $at, notification_type: $input.notification_type, message: $input.message} end
+  | .history = ((.history // []) + [{state: .state, at: $at, event: $input.hook_event_name}])
   | if $input.hook_event_name == "SessionStart" then .session_start_input = $input else . end
 ' "$file" > "$file.tmp" && mv "$file.tmp" "$file"
