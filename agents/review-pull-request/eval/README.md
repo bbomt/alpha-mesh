@@ -341,6 +341,11 @@ reads the findings (file, line, severity, summary) from the review's final graph
 comment is rendered from, so nothing parses markdown. The provider (`promptfoo/agent_provider.py`) returns
 them as JSON (`schema/review.schema.json`; extra fields are allowed, for later asserts).
 
+`files_read` lists the repo-relative paths whose content the agent's model was shown, across the whole review.
+It holds paths only, never content, and a not-found, refused or failed read doesn't count. A read stops at
+`max_file_lines`, so the path alone doesn't say how much of a file was shown. A review that resumed from a
+checkpoint saved before this field existed leaves it out, because `[]` would say the agent read nothing.
+
 - **One review per commit and repeat.** Several cases share a commit. Within one repeat they share one review
   (they queue on a lock per commit, which also runs the repeats of a commit one after another); each repeat
   is a fresh review, so pass^k measures something.

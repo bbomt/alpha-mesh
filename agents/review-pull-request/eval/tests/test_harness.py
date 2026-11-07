@@ -4,6 +4,7 @@ The provider runs the real agent against a recording fake GitHub (tests.test_gol
 and a scripted model, the same boundaries test_run_review_agent fakes. Nothing reaches GitHub or a model.
 """
 
+import dataclasses
 import json
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -17,8 +18,11 @@ import asserts
 import case_rules
 import load_cases
 from review_pull_request.config import Config, SENSITIVE_PATTERNS
+from review_pull_request.llm import LLMError
+from review_pull_request.stage2 import run_file_review
 from tests import test_golden_master as gm
 from tests.helpers import chat_model_factory
+from tests.test_canary import _store_text
 
 X = "5" * 40  # raised_sha: a commit before the PR's head (gm.HEAD)
 
@@ -222,3 +226,120 @@ def test_the_run_script_turns_promptfoos_templating_off():
     this is the second layer (checked by hand against promptfoo 0.125.1, which has no Python API to test it)."""
     script = (case_rules.EVAL / "scripts" / "run_eval.sh").read_text()
     assert "PROMPTFOO_DISABLE_TEMPLATING=true" in script
+
+
+# PMAT-322: files_read ───────────────────────────────────────────────────────────────────────────
+
+HELPER_CANARY = "HELPER-CONTENT-CANARY-7f3a"
+
+
+def model_reading(paths_by_file, on_call=None):
+    """Overview text; per file, asks for the paths given for it in one go, then answers with no findings."""
+    def model(messages, tools):
+        if tools is None:
+            return SimpleNamespace(content="Overview.", tool_calls=[])
+        user = next(m["content"] for m in messages if m["role"] == "user")
+        target = next(p for p in ("src/cart.py", "src/util.py") if f"a/{p}" in user)
+        if on_call:
+            on_call(target)
+        if not any(m["role"] == "tool" for m in messages) and paths_by_file.get(target):
+            return SimpleNamespace(content=None, tool_calls=[
+                SimpleNamespace(id=f"{target}-{i}", name="read_file", arguments={"path": p, "reason": "check"})
+                for i, p in enumerate(paths_by_file[target])])
+        return SimpleNamespace(content=json.dumps({"summary": "Reviewed.", "issues": []}), tool_calls=[])
+    return model
+
+
+@pytest.fixture
+def helper_file(monkeypatch):
+    monkeypatch.setitem(gm.FILES, "src/helper.py", f"{HELPER_CANARY} = 1\n")
+
+
+def test_files_read_holds_only_the_file_whose_content_the_model_saw(run, helper_file):
+    result, github = run(TRUE_BUG, model_reading({"src/cart.py": ["src/helper.py", "src/missing.py", ".env"]}))
+
+    assert result["output"]["files_read"] == ["src/helper.py"]
+    assert [p for p, _ in github.reads] == ["src/helper.py", "src/missing.py"], "the excluded file must not be fetched"
+    assert asserts.schema_valid(result["output"], {"vars": {"case": TRUE_BUG}})["pass"]
+
+
+def test_files_read_is_one_sorted_list_for_the_review_and_keeps_a_read_served_from_the_cache(run, helper_file):
+    result, github = run(TRUE_BUG, model_reading({"src/cart.py": ["src/util.py", "src/helper.py"],
+                                                  "src/util.py": ["src/helper.py"]}))
+
+    assert result["output"]["files_read"] == ["src/helper.py", "src/util.py"]
+    assert [p for p, _ in github.reads].count("src/helper.py") == 1  # the second review's read was cached
+
+
+def test_files_read_is_empty_when_the_model_read_nothing(run):
+    result, _ = run(TRUE_BUG, model_reading({}))
+
+    assert result["output"]["files_read"] == []
+
+
+def test_a_review_of_only_excluded_files_has_an_empty_files_read(run, monkeypatch):
+    monkeypatch.setitem(gm.DIFFS, f"{gm.BASE}...{X}", gm._file_diff(".env", "TOKEN=x"))
+
+    result, _ = run(case("raise_nothing", ".env"), model_reading({}))
+
+    assert result["output"]["excluded"] == [".env"] and result["output"]["files_read"] == []
+
+
+def _stored_and_returned_text(tmp_path, result) -> tuple[str, str]:
+    return _store_text(tmp_path / "run" / "checkpoints-repeat-0.sqlite"), json.dumps(result)
+
+
+READS_HELPER = {"src/cart.py": ["src/helper.py"]}
+
+
+def test_the_store_and_the_results_hold_the_read_path_and_never_the_files_content(run, helper_file, tmp_path):
+    result, _ = run(TRUE_BUG, model_reading(READS_HELPER))
+    store, returned = _stored_and_returned_text(tmp_path, result)
+
+    assert "src/helper.py" in store and "src/helper.py" in returned, "the scan saw no paths, so it proves nothing"
+    assert HELPER_CANARY not in store
+    assert HELPER_CANARY not in returned
+
+
+def test_the_content_scan_finds_content_saved_as_files_read(run, helper_file, tmp_path):
+    def leaky(*args):
+        return dataclasses.replace(run_file_review(*args), files_read=[gm.FILES["src/helper.py"]])
+
+    with patch("review_pull_request.graph.run_file_review", leaky):
+        result, _ = run(TRUE_BUG, model_reading(READS_HELPER))
+    store, returned = _stored_and_returned_text(tmp_path, result)
+
+    assert HELPER_CANARY in store
+    assert HELPER_CANARY in returned
+
+
+def test_a_review_saved_before_files_read_existed_resumes_and_leaves_the_field_out(run, helper_file):
+    def old_file_result(**fields):  # what the code before PMAT-322 saved
+        return {k: v for k, v in fields.items() if k != "files_read"}
+
+    def fail_on_util(chunk, *args):
+        if chunk.file_path == "src/util.py":
+            raise LLMError("stopped part way")
+        return run_file_review(chunk, *args)
+
+    with patch("review_pull_request.graph.FileResult", old_file_result), \
+            patch("review_pull_request.graph.run_file_review", fail_on_util):
+        stopped, _ = run(TRUE_BUG, model_reading(READS_HELPER))
+    assert "left no result" in stopped["error"]
+
+    reviewed = []
+    resumed, _ = run(TRUE_BUG, model_reading({"src/util.py": ["src/helper.py"]}, on_call=reviewed.append))
+
+    assert "error" not in resumed, resumed
+    assert set(reviewed) == {"src/util.py"}, "the file saved before the change must not be reviewed again"
+    assert resumed["output"]["files"] == ["src/cart.py", "src/util.py"]
+    # [] would say the agent read nothing, and the judge counts claims about unread code as false.
+    assert "files_read" not in resumed["output"]
+    assert asserts.schema_valid(resumed["output"], {"vars": {"case": TRUE_BUG}})["pass"]
+
+
+def test_the_schema_refuses_a_files_read_that_is_not_a_list_of_paths():
+    good = {"head_sha": X, "model": "m", "files": [], "incomplete": [], "excluded": [], "findings": []}
+    jsonschema.validate({**good, "files_read": ["a.py"]}, case_rules.REVIEW_SCHEMA)
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate({**good, "files_read": [{"path": "a.py", "content": "x"}]}, case_rules.REVIEW_SCHEMA)

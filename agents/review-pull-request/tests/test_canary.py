@@ -346,7 +346,7 @@ def test_c5_the_state_holds_only_the_listed_fields():
 
     assert set(ReviewState.__annotations__) == {"files", "overview", "overview_model", "results", "report"}
     assert set(FileResult.__annotations__) == {"file_path", "summary", "issues", "tool_calls_made",
-                                               "incomplete", "missing", "model"}
+                                               "incomplete", "missing", "model", "files_read"}
 
 
 # --- PMAT-278: the graph's event stream is a new path out of the run ---------------------------

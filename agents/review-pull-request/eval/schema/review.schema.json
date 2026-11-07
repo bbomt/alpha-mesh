@@ -11,6 +11,11 @@
     "files": {"type": "array", "items": {"type": "string"}},
     "incomplete": {"type": "array", "items": {"type": "string"}},
     "excluded": {"type": "array", "items": {"type": "string"}},
+    "files_read": {
+      "description": "Repo-relative paths whose content the agent's model was shown; paths only. Absent only if the review resumed from a checkpoint saved before this field existed.",
+      "type": "array",
+      "items": {"type": "string"}
+    },
     "findings": {
       "type": "array",
       "items": {
