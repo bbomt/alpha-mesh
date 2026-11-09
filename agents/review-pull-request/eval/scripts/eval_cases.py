@@ -257,7 +257,8 @@ def mine(repo: str, limit: int, *, prs: list[int] | None = None, max_files: int 
             case["label_date"] = existing["label_date"]  # the label did not change: no date churn
         if existing:
             case["finding"] = existing["finding"]  # an ID names one finding; its line may have been fixed by hand
-        case["category"] = "mined"
+        if existing and "category" in existing:  # classed by hand; a new case has none until it is (PMAT-321)
+            case["category"] = existing["category"]
         case["expected"] = derive_expected(case["label"], case["finding"])
         if existing and "expected" in existing and existing["expected"] != derive_expected(existing["label"],
                                                                                             existing["finding"]):

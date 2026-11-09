@@ -21,7 +21,7 @@
   "label_by": "rule",
   "label_date": "2026-11-04",
   "label_reason": "the output is the provider's own (eval_adapter), never free text; a malformed one is reported by the schema_valid assert, and an assert exception is reported by Promptfoo as a failed assertion with the traceback.",
-  "category": "mined",
+  "category": "logic",
   "expected": {
     "action": "skip_false_bug",
     "flag_file": "agents/review-pull-request/eval/promptfoo/asserts.py"

@@ -21,7 +21,7 @@
   "label_by": "rule",
   "label_date": "2026-11-04",
   "label_reason": "the repo is Linux-only and the review core already uses fcntl for its run lock (checkpoints.py lock_thread).",
-  "category": "mined",
+  "category": "improvable",
   "expected": {
     "action": "skip_false_bug",
     "flag_file": "agents/review-pull-request/eval/promptfoo/agent_provider.py"

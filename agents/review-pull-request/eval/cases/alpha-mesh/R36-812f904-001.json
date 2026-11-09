@@ -21,7 +21,7 @@
   "label_by": "rule",
   "label_date": "2026-10-28",
   "label_reason": "`loop.start` writes the ticket's status file (with `launch_dir`) before opening the tab, so a failed start never leaves the ticket in neither place; since d2309a5/c3e9e57 a refused tab undoes the start and puts the ticket back at the front of the queue. Re-adding it while it is active would start it twice.",
-  "category": "mined",
+  "category": "logic",
   "expected": {
     "action": "skip_false_bug",
     "flag_file": "agents/orchestrator/src/orchestrator/cli.py"

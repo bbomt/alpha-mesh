@@ -21,7 +21,7 @@
   "label_by": "rule",
   "label_date": "2026-11-04",
   "label_reason": "Commit 8e72d7b in the PR cites finding R41-72f59a5-001.",
-  "category": "mined",
+  "category": "logic",
   "expected": {
     "action": "raise_true_bug",
     "flag_file": "agents/review-pull-request/scripts/parity/diff_parity.sh",

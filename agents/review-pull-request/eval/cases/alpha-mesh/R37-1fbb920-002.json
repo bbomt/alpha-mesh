@@ -21,7 +21,7 @@
   "label_by": "rule",
   "label_date": "2026-10-28",
   "label_reason": "`Path(__file__).resolve().parents[4]` is the explicit computation PMAT-231 specifies, the same as `IGNORE_FILE` on the line above; the agent only runs from the source tree via `uv`, and `test_env_file_default_is_alpha_mesh_root` fails if the depth changes.",
-  "category": "mined",
+  "category": "improvable",
   "expected": {
     "action": "skip_false_bug",
     "flag_file": "agents/review-pull-request/src/review_pull_request/config.py"

@@ -21,7 +21,7 @@
   "label_by": "rule",
   "label_date": "2026-11-04",
   "label_reason": "flock locks are released by the OS when the holder dies (any way, SIGKILL included), so a crashed process cannot leave the lock held; waiting behind a live review is the intended queueing (agent_provider.py docstring).",
-  "category": "mined",
+  "category": "concurrency",
   "expected": {
     "action": "skip_false_bug",
     "flag_file": "agents/review-pull-request/eval/promptfoo/agent_provider.py"

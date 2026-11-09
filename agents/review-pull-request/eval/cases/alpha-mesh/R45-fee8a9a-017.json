@@ -21,7 +21,7 @@
   "label_by": "rule",
   "label_date": "2026-11-04",
   "label_reason": "a duplicate SqliteSaver for one path would be harmless (sqlite handles several connections, timeout 60 s); the cache is only an optimisation.",
-  "category": "mined",
+  "category": "concurrency",
   "expected": {
     "action": "skip_false_bug",
     "flag_file": "agents/review-pull-request/eval/promptfoo/agent_provider.py"
