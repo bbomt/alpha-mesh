@@ -18,7 +18,7 @@ import case_rules  # noqa: E402
 import judge_sample  # noqa: E402
 import llm_rubric  # noqa: E402
 from review_pull_request.policy import PathPolicy  # noqa: E402
-from review_pull_request.readers import PolicyFileReader, ReadError  # noqa: E402
+from review_pull_request.readers import PolicyFileReader  # noqa: E402
 from review_pull_request.safe_diff import SafeDiff  # noqa: E402
 
 LABELS = case_rules.EVAL / "judge" / "human_labels.json"
@@ -42,10 +42,7 @@ def _agent_saw(context: dict) -> list[str]:
            "\n<details><summary>Diff</summary>\n", "```diff", context["diff"], "```\n", "</details>",
            "\n**Files the agent read:**" + ("" if context["files"] else " none.")]
     for path, content in context["files"].items():
-        if isinstance(content, ReadError):
-            out.append(f"\n`{path}`: could not be fetched.")
-        else:
-            out += [f"\n<details><summary><code>{path}</code></summary>\n", "````", content, "````\n", "</details>"]
+        out += [f"\n<details><summary><code>{path}</code></summary>\n", "````", content, "````\n", "</details>"]
     return out
 
 

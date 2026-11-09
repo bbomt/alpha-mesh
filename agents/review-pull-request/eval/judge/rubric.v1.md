@@ -26,9 +26,6 @@ runs on Linux is technically true, and it is a false finding. So is "this crashe
 every caller passes a list. "This crashes if `items` is None", where a caller shown in the diff or in a file the
 agent read passes the result of a lookup that can return None, is a real finding, because the trigger is reachable.
 
-A file marked "could not be fetched" was read by the agent but is not available to you. If a finding depends on
-it, do not count that finding as false, and say so.
-
 - 5: every finding is real and correctly located.
 - 4: all real, with a minor location error or overstatement.
 - 3: mostly real; one finding is false or not worth fixing.

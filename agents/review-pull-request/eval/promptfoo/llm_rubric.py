@@ -5,8 +5,9 @@ built-in llm-rubric (owner, 2026-11-06) because it has to go through ReviewSessi
 reaches a model, by any path. It also returns its three scores from one call.
 
 The judge sees what the agent saw (owner, PMAT-311): the diff, the PR description and the files the agent read, fetched
-at the same commit with the agent's own line limit. It has no tools. A review with no files_read can't be judged fairly,
-so it is a recorded judge error, not a score.
+at the same commit with the agent's own line limit. It has no tools. A review with no files_read, or a file the agent
+read that can't be fetched again, can't be judged fairly, so it is a recorded judge error, not a score. Refetching
+repeats the agent's tool calls; a trace of its calls and results will replace it (PMAT-325).
 
 The judge never gates: judge_results always passes, and a judge error is recorded, not failed. Hold-out cases are
 refused here, so nothing about them reaches it: rubric iterations must not use them. Thresholds are
@@ -158,8 +159,9 @@ def file_reader(case: dict, token: str):
 
 
 def agent_context(case: dict, review: dict, reader, policy: PathPolicy, max_lines: int, token: str) -> dict:
-    """The PR description and the files the agent read: {"description", "files": {path: content or ReadError}}.
-    `reader` is a PolicyFileReader, and an excluded path is dropped: the agent could not have read it either."""
+    """The PR description and the files the agent read: {"description", "files": {path: content}}.
+    `reader` is a PolicyFileReader, and an excluded path is dropped: the agent could not have read it either.
+    A file the agent read that can't be fetched now is an error: judging without it would not be the agent's context."""
     if "files_read" not in review:
         raise RuntimeError("the review has no files_read, so the judge can't see what the agent saw: "
                            "use a run from PMAT-322 or later")
@@ -168,14 +170,17 @@ def agent_context(case: dict, review: dict, reader, policy: PathPolicy, max_line
         description = get_pr_description(f"https://github.com/{case['repo']}/pull/{case['pr_number']}", token) \
             if case.get("pr_number") else ""
     paths = [p for p in review["files_read"] if not policy.is_excluded(p)]
-    return {"description": description, "files": {p: reader.read_file(p, max_lines) for p in paths}}
+    files = {p: reader.read_file(p, max_lines) for p in paths}
+    failed = [p for p, content in files.items() if isinstance(content, ReadError)]
+    if failed:
+        raise RuntimeError(f"could not fetch {', '.join(failed)}, which the agent read: not judged, rerun later")
+    return {"description": description, "files": files}
 
 
 def _files_read(files: dict) -> str:
     if not files:
         return "The agent read no files."
-    return "\n".join(f'<file path="{path}">could not be fetched</file>' if isinstance(content, ReadError)
-                     else f'<file path="{path}">\n{content}\n</file>' for path, content in files.items())
+    return "\n".join(f'<file path="{path}">\n{content}\n</file>' for path, content in files.items())
 
 
 def _prompt(case: dict, findings: list[dict], diff: str, context: dict) -> str:

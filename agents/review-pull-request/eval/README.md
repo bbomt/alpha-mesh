@@ -268,8 +268,10 @@ counts for the line window but not for the judge.
 **It sees what the agent saw** (owner, PMAT-311): the diff, the PR description and the files the agent read
 (`files_read`, PMAT-322), fetched at the same commit with the agent's `max_file_lines`. It has no tools. A claim that
 depends on code the agent didn't read counts as false, even if it happens to be true, because the agent could only have
-guessed it; the owner scores by the same rule. A review with no `files_read` (a run before PMAT-322) gets a judge error,
-not a score. `files_read` is one list for the whole review, so the judge can't tell which file's review read what. The
+guessed it; the owner scores by the same rule. A review with no `files_read` (a run before PMAT-322), or a file the
+agent read that can't be fetched again, gets a judge error, not a score. Fetching the files again repeats the agent's
+tool calls: at a fixed commit that returns what it read, but a trace of every tool call and result (PMAT-325) will
+replace it, so the judge gets the agent's context even when tools aren't deterministic. `files_read` is one list for the whole review, so the judge can't tell which file's review read what. The
 folder listing, the agent's overview and its instructions are left out.
 
 **It never gates.** `judge_results` always passes, so a case's pass or fail, `baseline.json` and the comparison don't

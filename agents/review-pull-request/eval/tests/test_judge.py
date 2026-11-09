@@ -215,9 +215,11 @@ def test_the_judge_gets_exactly_the_files_the_agent_read_and_no_tools(judged):
     assert "The agent read no files" in seen[0][1]["content"]
 
 
-def test_a_file_the_judge_cannot_fetch_is_named_not_silently_treated_as_unread(judged):
-    _, seen = judged(case(min_severity="low"), review(finding(), files_read=("src/gone.py",)), reply())
-    assert "src/gone.py" in seen[0][1]["content"] and "could not be fetched" in seen[0][1]["content"]
+def test_a_file_the_agent_read_that_cannot_be_fetched_again_is_an_error_not_a_score(judged):
+    """Judging without it would not be the agent's context, and unread would make its findings false (owner)."""
+    graded, seen = judged(case(min_severity="low"), review(finding(), files_read=("src/loop.py", "src/gone.py")), reply())
+    assert graded["pass"] is True and "src/gone.py" in graded["metadata"]["judge_error"]
+    assert "namedScores" not in graded and not seen
 
 
 def test_a_stored_review_without_files_read_is_an_error_not_an_unfair_score(judged):
