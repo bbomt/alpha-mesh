@@ -363,3 +363,17 @@ def test_the_schema_refuses_a_files_read_that_is_not_a_list_of_paths():
     jsonschema.validate({**good, "files_read": ["a.py"]}, case_rules.REVIEW_SCHEMA)
     with pytest.raises(jsonschema.ValidationError):
         jsonschema.validate({**good, "files_read": [{"path": "a.py", "content": "x"}]}, case_rules.REVIEW_SCHEMA)
+
+
+def test_the_trace_path_survives_the_run_folder_being_a_symlink(run, tmp_path, monkeypatch):
+    """A long run's folder is a symlink to ~/.mesh/eval-runs/<run> (outside the worktree, which is deleted
+    after merge): the output must name the real file, not the path through the link."""
+    real = tmp_path / "mesh-eval-runs" / "run"
+    real.mkdir(parents=True)
+    (tmp_path / "worktree").mkdir()
+    (tmp_path / "worktree" / "run").symlink_to(real)
+    monkeypatch.setenv("EVAL_RUN_DIR", str(tmp_path / "worktree" / "run"))
+
+    result, _ = run(TRUE_BUG, model_reading({}))
+
+    assert Path(result["output"]["trace"]).parent == real / "traces" / "repeat-0"

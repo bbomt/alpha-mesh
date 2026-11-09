@@ -70,7 +70,9 @@ def review(case: dict, repeat: int) -> dict:
         print(f"[eval] {case['case_id']}: {case['repo']}@{case['raised_sha'][:7]} repeat {repeat}", file=sys.stderr)
         return review_case(case, config=config, token=token, description=description,
                            checkpointer=_saver(run_dir / f"checkpoints-repeat-{repeat}.sqlite"),
-                           trace_path=run_dir / "traces" / f"repeat-{repeat}" / f"{key}.jsonl")
+                           # resolved: the output names the trace, and a run folder linked from a worktree
+                           # outlives the worktree
+                           trace_path=run_dir.resolve() / "traces" / f"repeat-{repeat}" / f"{key}.jsonl")
 
 
 def call_api(prompt, options, context):
