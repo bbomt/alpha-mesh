@@ -301,8 +301,9 @@ uv run python eval/scripts/judge_report.py eval/runs/judge1/results.json --write
 uv run python eval/scripts/judge_agreement.py eval/judge/human_labels.json eval/judge/judge_scores.json
 ```
 
-The sample (`scripts/judge_sample.py`, seed 311) is drawn from the case files only, per group, from the development
-cases. Under about 75% on a dimension: read the disagreements, tighten the rubric in a new version (`rubric.v2.md`), and
+The sample (`scripts/judge_sample.py`, seed 311) was drawn from the case files only, per group, from the development
+cases. **It is frozen:** your labels are on these 25 cases, so it is never redrawn, even when categories change (PMAT-321)
+or cases are added; the script refuses, and a test pins the list. A new sample means new labels. Under about 75% on a dimension: read the disagreements, tighten the rubric in a new version (`rubric.v2.md`), and
 record the iteration here. Changing `JUDGE_MODEL` or the rubric means aligning again.
 
 <!-- JUDGE-RESULTS -->

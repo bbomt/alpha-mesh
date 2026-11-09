@@ -6,6 +6,9 @@ Drawn from the case files alone, in the order of a hash of seed and case ID, so 
 from the development cases only: scoring a case means reading its review, so a hold-out case is never in it.
 Mined cases share few commits, so each next one comes from the commit with the fewest so far, to read fewer
 reviews twice.
+
+The sample is frozen once drawn (owner, 2026-11-09): the owner's labels are on these cases, so it is never redrawn,
+even when categories change (PMAT-321) or cases are added. A new sample means new labels.
 """
 
 import hashlib
@@ -53,6 +56,10 @@ def draw(cases: list[dict]) -> list[str]:
 
 
 def main() -> int:
+    if SAMPLE.exists():
+        print(f"ERROR: {SAMPLE} is frozen: the owner's labels are on these cases. A new sample needs new labels; "
+              "delete the file only if that is the intent.", file=sys.stderr)
+        return 1
     SAMPLE.parent.mkdir(exist_ok=True)
     SAMPLE.write_text(json.dumps({"seed": SEED, "repeat": REPEAT, "cases": draw(case_rules.development_cases())},
                                  indent=2) + "\n")

@@ -331,27 +331,25 @@ def test_e_the_committed_sample_holds_25_development_cases_and_no_holdout_case()
     assert set(sample) <= {c["case_id"] for c in case_rules.development_cases()}
 
 
-def test_e_the_committed_sample_is_the_draw_and_follows_the_agreed_split():
-    cases = case_rules.development_cases()
-    assert json.loads(judge_sample.SAMPLE.read_text())["cases"] == judge_sample.draw(cases)
-    by_id = {c["case_id"]: c for c in cases}
-    counts = {}
-    for case_id in judge_sample.draw(cases):
-        group = judge_sample.group(by_id[case_id])
-        counts[group] = counts.get(group, 0) + 1
-    assert counts == judge_sample.QUOTA
+# The sample is frozen (owner, 2026-11-09): the owner's labels are on it, so a change to the cases (PMAT-321 recategorises
+# the mined ones; mining adds cases) must never redraw it. Its split and spread were checked when it was drawn (9997bcb).
+FROZEN_SAMPLE_SHA256 = "2ac731c5a688008195f974537d7eef2d2e8b9c8fc3eedd5fabcab8de25fbd474"
 
 
-def test_e_mined_cases_spread_over_commits_as_evenly_as_they_can():
-    by_id = {c["case_id"]: c for c in case_rules.development_cases()}
-    per_commit = {}
-    for case_id in judge_sample.draw(list(by_id.values())):
-        c = by_id[case_id]
-        if c["category"] == "mined":
-            per_commit[c["raised_sha"]] = per_commit.get(c["raised_sha"], 0) + 1
-    # 11 cases, 6 commits, and two commits hold only one development case each that can go in: with the other
-    # four at 2 each that is 10 cases, so one commit must give 3. Nothing evener exists.
-    assert sorted(per_commit.values()) == [1, 1, 2, 2, 2, 3]
+def test_e_the_committed_sample_is_frozen_and_is_the_labelled_set():
+    import hashlib
+
+    sample = json.loads(judge_sample.SAMPLE.read_text())
+    assert hashlib.sha256(json.dumps(sample["cases"]).encode()).hexdigest() == FROZEN_SAMPLE_SHA256
+    assert sample["seed"] == judge_sample.SEED and sample["repeat"] == judge_sample.REPEAT
+    labels = json.loads((case_rules.EVAL / "judge" / "human_labels.json").read_text())
+    assert set(labels["cases"]) == set(sample["cases"])
+
+
+def test_e_the_draw_refuses_to_replace_the_frozen_sample(capsys):
+    before = judge_sample.SAMPLE.read_text()
+    assert judge_sample.main() == 1
+    assert "frozen" in capsys.readouterr().err and judge_sample.SAMPLE.read_text() == before
 
 
 def test_e_the_draw_never_reads_results():
