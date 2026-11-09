@@ -142,6 +142,19 @@ def test_a_review_stopped_part_way_and_resumed_has_each_tool_call_once(tmp_path)
     assert [t["input"]["path"] for t in _tools(path)] == [*READS["src/a.py"], *READS["src/b.py"]]
 
 
+def test_a_resume_after_a_kill_mid_write_ignores_the_torn_line(tmp_path):
+    """Killed during _write: the last line is cut short. The resume must still open and append."""
+    path = tmp_path / "trace.jsonl"
+    saver = SqliteSaver(sqlite3.connect(tmp_path / "cp.sqlite", check_same_thread=False))
+    assert _review(path, ScriptedModel(fail_on="src/b.py"), saver) == 1
+    with path.open("a") as f:
+        f.write('{"type": "span", "id": "torn')  # no newline: the process died here
+
+    assert _review(path, ScriptedModel(), saver) == 0
+
+    assert list(trace.load(path)) == ["src/a.py", "src/b.py"]
+
+
 def test_a_fresh_review_replaces_an_old_trace(tmp_path):
     path = tmp_path / "trace.jsonl"
     path.write_text('{"type": "trace", "id": "an-earlier-review"}\n')

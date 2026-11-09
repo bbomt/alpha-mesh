@@ -77,6 +77,9 @@ class Trace:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         if fresh and self.path.exists():
             self.path.unlink()
+        if self.path.exists() and not self.path.read_bytes().endswith(b"\n"):
+            with self.path.open("a") as f:  # a run killed mid-write left a torn line: end it
+                f.write("\n")
         head = _read(self.path)[:1]
         if head and head[0].get("type") == "trace":
             self.id = head[0]["id"]
@@ -122,7 +125,13 @@ class TracingLLM:
 def _read(path: Path) -> list[dict]:
     if not path.exists():
         return []
-    return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+    records = []
+    for line in path.read_text().splitlines():
+        try:
+            records.append(json.loads(line))
+        except ValueError:  # blank, or torn by a run killed mid-write (that span was not written)
+            pass
+    return records
 
 
 def load(path) -> dict[str, dict]:
