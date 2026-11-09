@@ -2,6 +2,7 @@
 restart) against real tmux on its own server, a stand-in `claude` that runs the real status hook, and fake
 Jira and gh. The owner's tmux and Jira are never touched."""
 
+import json
 import os
 import shutil
 import subprocess
@@ -98,11 +99,40 @@ def check(world) -> None:
     assert cli.main(["--repo-dir", world["repo"]], once=True) == 0
 
 
+def fire_hook(key: str, state: str, **hook_input: str) -> None:
+    """Fires the real hook directly, for what the stub's tab doesn't do by itself."""
+    hook_input = {"session_id": status.read(key)["session_id"], "cwd": "/wt", **hook_input}
+    subprocess.run([str(HOOK), state], input=json.dumps(hook_input), text=True, check=True,
+                   env={**os.environ, "ORCH_TICKET": key})
+
+
 def test_a_tab_whose_process_has_a_shell_child_is_running_a_background_task(world):
     # Claude runs a background command as a child shell (bash, or bwrap when sandboxed) that outlives the turn.
     tmux("new-window", "-d", "-n", "PMAT-2", "bash -c 'bash -c \"sleep 30; true\" & wait'")
     tmux("new-window", "-d", "-n", "PMAT-3", "sleep 30")
     assert wait_for(lambda: tmux_mod.background() & {"PMAT-2", "PMAT-3"}, "the child shell to start") == {"PMAT-2"}
+
+
+@pytest.mark.parametrize("before", ["idle", "waiting"])
+def test_a_compact_at_the_prompt_changes_nothing_and_the_next_comment_still_arrives(world, before):
+    record, tickets = world["record"], world["tickets"]
+    tickets["PMAT-1"] = Ticket(labels=["ALPHA-MESH"], done=False)
+    assert cli.main(["PMAT-1", "--repo-dir", world["repo"]], once=True) == 0
+    wait_for(at_prompt("PMAT-1"), "the worker's hooks to report idle")
+    if before == "waiting":
+        fire_hook("PMAT-1", "waiting", hook_event_name="Notification", notification_type="idle_prompt",
+                  message="Claude is waiting for your input")
+    notification = status.read("PMAT-1").get("notification_type")
+
+    fire_hook("PMAT-1", "started", hook_event_name="SessionStart", source="compact")
+    s = status.read("PMAT-1")
+    assert s["session_start_input"]["source"] == "compact"
+    assert (s["state"], s.get("notification_type")) == (before, notification)
+
+    tickets["PMAT-1"] = Ticket(labels=["ALPHA-MESH"], done=False, comment_id="9")
+    check(world)
+    typed = wait_for(lambda: lines(record / "PMAT-1.typed"), "the comment to be typed")
+    assert typed == [loop.REPLY.format(key="PMAT-1", after="the ones from before you started", comment="9")]
 
 
 def test_start_comment_resume_and_close_end_to_end(world, monkeypatch):
