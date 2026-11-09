@@ -21,7 +21,7 @@
   "label_by": "rule",
   "label_date": "2026-11-04",
   "label_reason": "one SqliteSaver per repeat (k of them) for the life of a Promptfoo run; nothing reuses the process afterwards.",
-  "category": "mined",
+  "category": "improvable",
   "expected": {
     "action": "skip_false_bug",
     "flag_file": "agents/review-pull-request/eval/promptfoo/agent_provider.py"

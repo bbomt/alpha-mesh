@@ -21,7 +21,7 @@
   "label_by": "rule",
   "label_date": "2026-11-04",
   "label_reason": "not a bug. A missing baseRefOid already fails loudly: compare `...head` returns 404, so the review prints \"ERROR: failed to get diff\" and exits 1 without posting. gh always returns baseRefOid, and an upfront check would mean editing about 15 existing tests whose get_pr_info mocks omit it (PMAT-314 keeps existing tests unedited).",
-  "category": "mined",
+  "category": "logic",
   "expected": {
     "action": "skip_false_bug",
     "flag_file": "agents/review-pull-request/src/review_pull_request/review.py"

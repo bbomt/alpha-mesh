@@ -126,8 +126,11 @@ for reference.
 
 Besides the finding and its label, every case has:
 
-- `category`: `mined` for mined cases. Hand-written cases use `logic`, `security`, `style_only`, `refactor`,
-  `concurrency`, `improvable` or `degenerate`.
+- `category`: the kind of bug: `logic`, `security`, `style_only`, `refactor`, `concurrency`, `improvable` or
+  `degenerate`. `source` says where the case came from. A mined case is classed by hand, from the code at `raised_sha`,
+  as the kind of bug its finding claims (a false positive too: a dismissed claim of a race is `concurrency`). `mine`
+  writes a new case without one and keeps it on a rerun, so the schema test fails until the new case is classed
+  (PMAT-321).
 - `notes`: free text for people, saying why the case exists. The harness never reads it; the judge may.
 - `expected`: what a good review of `raised_sha` does, never expected text. Every case passes or fails.
   `action` and `flag_file` are required:
@@ -179,11 +182,19 @@ development cases (195 runs, 2026-11-04), all scored (no harness errors). The ho
 | improvable | `raise_true_bug` | 3 | 4/9 | 44% | 1/3 |
 | logic (synthetic) | `raise_true_bug` | 6 | 18/18 | 100% | 6/6 |
 | logic (public) | `raise_true_bug` | 8 | 18/24 | 75% | 5/8 |
-| mined | `raise_true_bug` | 10 | 10/30 | 33% | 0/10 |
-| mined | `skip_false_bug` | 20 | 38/60 | 63% | 7/20 |
+| mined: all | `raise_true_bug` | 10 | 10/30 | 33% | 0/10 |
+| mined: logic | `raise_true_bug` | 10 | 10/30 | 33% | 0/10 |
+| mined: all | `skip_false_bug` | 20 | 38/60 | 63% | 7/20 |
+| mined: logic | `skip_false_bug` | 10 | 17/30 | 57% | 4/10 |
+| mined: improvable | `skip_false_bug` | 7 | 15/21 | 71% | 2/7 |
+| mined: concurrency | `skip_false_bug` | 2 | 3/6 | 50% | 0/2 |
+| mined: style_only | `skip_false_bug` | 1 | 3/3 | 100% | 1/1 |
 | refactor | `raise_nothing` | 3 | 7/9 | 78% | 1/3 |
 | security | `raise_true_bug` | 6 | 17/18 | 94% | 5/6 |
 | style_only | `raise_nothing` | 4 | 12/12 | 100% | 4/4 |
+
+Mined cases keep their own rows (`mined:<category>` in `by_category`), like public ones. The `mined: all` rows are their
+sum; the rates are those of the baseline before mined cases had categories (PMAT-321 only moved the grouping).
 
 | Severity of the case's finding | Expected action | Cases | Runs passed | Rate | Passed all 3 |
 | :-- | :-- | --: | --: | --: | --: |
@@ -238,7 +249,9 @@ This is a coarse check, good for catching a large drop, not a small one. Per-cat
 **How it was drawn** (`scripts/split_holdout.py`, seed 318, chosen before any failure was read; it never reads results):
 
 - Per source and category, so that public cases, which share the category `logic` with synthetic ones, are on both
-  sides. Each takes about 25% of its cases, at least 1, in whole units.
+  sides. Each takes about 25% of its cases, at least 1, in whole units. Mined cases are one group per source: they
+  were drawn so before they had categories, and drawing them per category would move cases between the sets
+  (PMAT-321). New mined cases need the owner's decision on how they join the split.
 - A unit is a PR, so cases from one PR never split; a case with no PR (synthetic) is its own unit.
 - Units are taken in the order of a hash of seed and unit. One that would pass the target is skipped.
 - The 8 ID-based cases of the old `base1` baseline (PRs 36 and 37) are left out: their failures were read.

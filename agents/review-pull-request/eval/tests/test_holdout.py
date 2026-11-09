@@ -76,9 +76,9 @@ def test_the_draw_keeps_a_pr_together_and_never_groups_cases_without_one():
 
 
 def test_the_draw_skips_a_pr_too_big_for_the_share_and_leaves_out_cases_that_are_not_blind():
-    big = [fake(f"big{i}", "mined", source="pr_comment", pr_number=45) for i in range(22)]
-    small = [fake("s1", "mined", source="pr_comment", pr_number=41), fake("s2", "mined", source="pr_comment", pr_number=41)]
-    used = [fake(next(iter(sorted(BASE1_ID_BASED))), "mined", source="pr_comment", pr_number=36)]
+    big = [fake(f"big{i}", "logic", source="pr_comment", pr_number=45) for i in range(22)]
+    small = [fake("s1", "improvable", source="pr_comment", pr_number=41), fake("s2", "improvable", source="pr_comment", pr_number=41)]
+    used = [fake(next(iter(sorted(BASE1_ID_BASED))), "logic", source="pr_comment", pr_number=36)]
     for seed in range(50):
         assert split_holdout.draw(big + small + used, seed) == ["s1", "s2"]
 
@@ -181,7 +181,7 @@ def test_the_holdout_report_scores_only_the_holdout_from_a_run_of_every_case():
 def case_file(case_id):
     return {"case_id": case_id, "repo": "org/repo", "pr_number": 1, "base_sha": "b" * 40, "raised_sha": SHA,
             "finding": {"file": "src/a.py", "line": 10, "severity": "medium"}, "label": "real_issue",
-            "label_reason": "Fixed.", "category": "mined", "notes": "",
+            "label_reason": "Fixed.", "category": "logic", "notes": "",
             "expected": {"action": "raise_true_bug", "flag_file": "src/a.py", "min_severity": "medium"}}
 
 

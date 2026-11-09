@@ -28,7 +28,7 @@ def case(case_id, action="skip_false_bug", line=10, label="false_positive", labe
     expected = {"action": action, "flag_file": "src/a.py"} | ({"min_severity": "medium"} if action == "raise_true_bug" else {})
     return {"case_id": case_id, "repo": "org/repo", "pr_number": 1, "base_sha": "b" * 40, "raised_sha": SHA,
             "finding": {"file": "src/a.py", "line": line, "severity": "medium"}, "label": label,
-            "label_reason": label_reason, "category": "mined", "expected": expected, "notes": ""}
+            "label_reason": label_reason, "category": "logic", "expected": expected, "notes": ""}
 
 
 def review(*lines):
@@ -118,10 +118,10 @@ def valid_baseline():
                         "by_class": {"model_failure": 1, "label_error": 1, "harness_error": 0}},
             "label_errors_fixed": [{"case_id": "B", "reason": "src/a.py:40 calls it when --force is set."}],
             "cases": {"A": {"runs": ["pass", "pass"], "file_level_runs": ["pass", "fail"], "status": "pass",
-                            "failure_class": None, "reason": None, "category": "mined", "action": "skip_false_bug"},
+                            "failure_class": None, "reason": None, "category": "logic", "action": "skip_false_bug"},
                       "B": {"runs": ["pass", "fail"], "file_level_runs": ["fail", "fail"], "status": "flaky",
                             "failure_class": "model_failure", "reason": "Re-raises the dismissed claim at line 12.",
-                            "category": "mined", "action": "skip_false_bug"}}}
+                            "category": "logic", "action": "skip_false_bug"}}}
 
 
 def test_a_valid_baseline_passes_validation():

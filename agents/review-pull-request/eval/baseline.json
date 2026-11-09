@@ -17,17 +17,35 @@
       "harness_error": 0
     },
     "by_category": {
-      "mined/skip_false_bug": {
-        "cases": 20,
-        "runs_passed": 38,
-        "runs": 60,
-        "passed_all": 7
+      "mined:logic/skip_false_bug": {
+        "cases": 10,
+        "runs_passed": 17,
+        "runs": 30,
+        "passed_all": 4
       },
-      "mined/raise_true_bug": {
+      "mined:logic/raise_true_bug": {
         "cases": 10,
         "runs_passed": 10,
         "runs": 30,
         "passed_all": 0
+      },
+      "mined:improvable/skip_false_bug": {
+        "cases": 7,
+        "runs_passed": 15,
+        "runs": 21,
+        "passed_all": 2
+      },
+      "mined:concurrency/skip_false_bug": {
+        "cases": 2,
+        "runs_passed": 3,
+        "runs": 6,
+        "passed_all": 0
+      },
+      "mined:style_only/skip_false_bug": {
+        "cases": 1,
+        "runs_passed": 3,
+        "runs": 3,
+        "passed_all": 1
       },
       "concurrency/raise_true_bug": {
         "cases": 3,
@@ -236,7 +254,7 @@
       "status": "stable_failure",
       "failure_class": "model_failure",
       "reason": "Re-raises the dismissed claim (save_queue before loop.start loses the ticket) at lines 148, 148 and 150, in every repeat.",
-      "category": "mined",
+      "category": "logic",
       "action": "skip_false_bug"
     },
     "R36-812f904-002": {
@@ -253,7 +271,7 @@
       "status": "flaky",
       "failure_class": "model_failure",
       "reason": "Misses the real bug (initial start_queued() outside try/except) in every repeat. Repeat 2 passes only because a different claim (save_queue ordering, line 150) is inside the window.",
-      "category": "mined",
+      "category": "logic",
       "action": "raise_true_bug"
     },
     "R36-812f904-003": {
@@ -270,7 +288,7 @@
       "status": "stable_failure",
       "failure_class": "model_failure",
       "reason": "Re-raises the dismissed claim (queued() returns 1-tuples for malformed lines) in every repeat, at lines 44, 48 and 43.",
-      "category": "mined",
+      "category": "logic",
       "action": "skip_false_bug"
     },
     "R36-c3e9e57-001": {
@@ -287,7 +305,7 @@
       "status": "flaky",
       "failure_class": "model_failure",
       "reason": "Repeat 0 re-raises the dismissed claim (a ticket that keeps failing blocks the queue) at line 156.",
-      "category": "mined",
+      "category": "logic",
       "action": "skip_false_bug"
     },
     "R36-d2309a5-001": {
@@ -304,7 +322,7 @@
       "status": "flaky",
       "failure_class": "model_failure",
       "reason": "Raises the real bug's claim in every repeat. Repeats 0 (line 155) and 1 (line 150) pass; repeat 2 cites line 164, outside the window.",
-      "category": "mined",
+      "category": "logic",
       "action": "raise_true_bug"
     },
     "R36-d2309a5-002": {
@@ -321,7 +339,7 @@
       "status": "flaky",
       "failure_class": "model_failure",
       "reason": "Repeat 1 re-raises the dismissed claim (the early return stops the rest of the queue) at line 155. Repeat 0 raises a different claim (the ticket is lost) on the same line, which the matcher cannot tell apart.",
-      "category": "mined",
+      "category": "logic",
       "action": "skip_false_bug"
     },
     "R37-1fbb920-001": {
@@ -338,7 +356,7 @@
       "status": "pass",
       "failure_class": null,
       "reason": null,
-      "category": "mined",
+      "category": "logic",
       "action": "skip_false_bug"
     },
     "R37-1fbb920-002": {
@@ -355,7 +373,7 @@
       "status": "flaky",
       "failure_class": "model_failure",
       "reason": "Repeat 1 re-raises the dismissed claim (ENV_FILE's parents[4] couples config.py to the repo layout) at line 24.",
-      "category": "mined",
+      "category": "improvable",
       "action": "skip_false_bug"
     },
     "R45-02d37e7-001": {
@@ -372,7 +390,7 @@
       "status": "stable_failure",
       "failure_class": "model_failure",
       "reason": "Misses the real bug: no finding in baseline.json in any repeat, though the file was reviewed.",
-      "category": "mined",
+      "category": "logic",
       "action": "raise_true_bug"
     },
     "R45-fee8a9a-001": {
@@ -389,7 +407,7 @@
       "status": "flaky",
       "failure_class": "model_failure",
       "reason": "Matcher limit: repeat 0 raises a different claim (the lock is held across network calls) at line 52, not the dismissed claim that flock can hang for ever after a crash.",
-      "category": "mined",
+      "category": "concurrency",
       "action": "skip_false_bug"
     },
     "R45-fee8a9a-002": {
@@ -406,7 +424,7 @@
       "status": "pass",
       "failure_class": null,
       "reason": null,
-      "category": "mined",
+      "category": "logic",
       "action": "skip_false_bug"
     },
     "R45-fee8a9a-004": {
@@ -423,7 +441,7 @@
       "status": "stable_failure",
       "failure_class": "model_failure",
       "reason": "Misses the real bug at high severity: repeat 1 raises it at line 46 only at medium; repeats 0 and 2 have no finding in the file.",
-      "category": "mined",
+      "category": "logic",
       "action": "raise_true_bug"
     },
     "R45-fee8a9a-005": {
@@ -440,7 +458,7 @@
       "status": "pass",
       "failure_class": null,
       "reason": null,
-      "category": "mined",
+      "category": "logic",
       "action": "skip_false_bug"
     },
     "R45-fee8a9a-006": {
@@ -457,7 +475,7 @@
       "status": "stable_failure",
       "failure_class": "model_failure",
       "reason": "Raises the real bug (printf builds run.json unescaped) at line 37 in every repeat, but at medium or low, below the high severity the case requires.",
-      "category": "mined",
+      "category": "logic",
       "action": "raise_true_bug"
     },
     "R45-fee8a9a-007": {
@@ -474,7 +492,7 @@
       "status": "flaky",
       "failure_class": "model_failure",
       "reason": "Repeat 2 re-raises the dismissed claim (fcntl is Unix-only) at line 14.",
-      "category": "mined",
+      "category": "improvable",
       "action": "skip_false_bug"
     },
     "R45-fee8a9a-008": {
@@ -491,7 +509,7 @@
       "status": "flaky",
       "failure_class": "model_failure",
       "reason": "Matcher limit: repeat 1 raises a different claim (the PR description is today's) at line 59, not the dismissed load_config claim.",
-      "category": "mined",
+      "category": "improvable",
       "action": "skip_false_bug"
     },
     "R45-fee8a9a-009": {
@@ -508,7 +526,7 @@
       "status": "flaky",
       "failure_class": "model_failure",
       "reason": "Repeats 0 and 2 re-raise the dismissed claim (case_expectations does not handle exceptions) at lines 20 and 23.",
-      "category": "mined",
+      "category": "logic",
       "action": "skip_false_bug"
     },
     "R45-fee8a9a-010": {
@@ -525,7 +543,7 @@
       "status": "pass",
       "failure_class": null,
       "reason": null,
-      "category": "mined",
+      "category": "logic",
       "action": "skip_false_bug"
     },
     "R45-fee8a9a-011": {
@@ -542,7 +560,7 @@
       "status": "pass",
       "failure_class": null,
       "reason": null,
-      "category": "mined",
+      "category": "improvable",
       "action": "skip_false_bug"
     },
     "R45-fee8a9a-012": {
@@ -559,7 +577,7 @@
       "status": "flaky",
       "failure_class": "model_failure",
       "reason": "Misses the real bug (raised_sha stays nullable and not required) in every repeat. Repeats 0 and 2 pass only because a different claim about the same allOf (line 192) is inside the window.",
-      "category": "mined",
+      "category": "logic",
       "action": "raise_true_bug"
     },
     "R45-fee8a9a-013": {
@@ -576,7 +594,7 @@
       "status": "flaky",
       "failure_class": "model_failure",
       "reason": "Misses the real bug (label_changes gets the agent commit) in every repeat. Repeat 1 passes only because a different claim (malformed JSON, line 145) is inside the window.",
-      "category": "mined",
+      "category": "logic",
       "action": "raise_true_bug"
     },
     "R45-fee8a9a-014": {
@@ -593,7 +611,7 @@
       "status": "flaky",
       "failure_class": "model_failure",
       "reason": "Misses the real bug (grep on JSON is fragile to its format). Repeat 2 raises a different claim on the same grep (regex metacharacters, line 34) and repeat 0 another (printf, line 37), and both pass inside the window; repeat 1 has only a low finding there.",
-      "category": "mined",
+      "category": "logic",
       "action": "raise_true_bug"
     },
     "R45-fee8a9a-015": {
@@ -610,7 +628,7 @@
       "status": "flaky",
       "failure_class": "model_failure",
       "reason": "Misses the real bug (uncommitted changes only warn) in every repeat. Repeats 0 and 2 pass only because a different claim (printf, line 37) is inside the window.",
-      "category": "mined",
+      "category": "logic",
       "action": "raise_true_bug"
     },
     "R45-fee8a9a-016": {
@@ -627,7 +645,7 @@
       "status": "flaky",
       "failure_class": "model_failure",
       "reason": "Repeats 0 and 2 re-raise the dismissed claim (_savers never evicts) at line 29.",
-      "category": "mined",
+      "category": "improvable",
       "action": "skip_false_bug"
     },
     "R45-fee8a9a-017": {
@@ -644,7 +662,7 @@
       "status": "flaky",
       "failure_class": "model_failure",
       "reason": "Matcher limit: repeats 1 and 2 raise a different claim (commits share one saver's connection) at lines 40 and 43, not the dismissed claim that the cache's initialisation is not thread-safe.",
-      "category": "mined",
+      "category": "concurrency",
       "action": "skip_false_bug"
     },
     "R45-fee8a9a-018": {
@@ -661,7 +679,7 @@
       "status": "pass",
       "failure_class": null,
       "reason": null,
-      "category": "mined",
+      "category": "style_only",
       "action": "skip_false_bug"
     },
     "R45-fee8a9a-019": {
@@ -678,7 +696,7 @@
       "status": "pass",
       "failure_class": null,
       "reason": null,
-      "category": "mined",
+      "category": "improvable",
       "action": "skip_false_bug"
     },
     "R45-fee8a9a-020": {
@@ -695,7 +713,7 @@
       "status": "flaky",
       "failure_class": "model_failure",
       "reason": "Matcher limit: repeat 1 raises a different claim (case fields have no types, the real bug of R45-fee8a9a-004) at line 46, not the dismissed maxItems claim.",
-      "category": "mined",
+      "category": "improvable",
       "action": "skip_false_bug"
     },
     "R45-fee8a9a-021": {
@@ -712,7 +730,7 @@
       "status": "stable_failure",
       "failure_class": "model_failure",
       "reason": "Misses the real bug (git diff's return code is not checked) in every repeat; the findings in the file are about other lines.",
-      "category": "mined",
+      "category": "logic",
       "action": "raise_true_bug"
     },
     "R45-fee8a9a-022": {
@@ -729,7 +747,7 @@
       "status": "flaky",
       "failure_class": "model_failure",
       "reason": "Matcher limit: repeats 0 and 2 raise a different claim ($MODEL as a grep regex) at line 34, not the dismissed nvm claim.",
-      "category": "mined",
+      "category": "logic",
       "action": "skip_false_bug"
     },
     "con-001": {

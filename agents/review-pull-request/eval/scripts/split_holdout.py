@@ -31,12 +31,15 @@ def unit_of(case: dict) -> str:
 
 def draw(cases: list[dict], seed: int) -> list[str]:
     """The sorted hold-out case IDs: per source and category, about SHARE of its cases, in whole units.
+    Mined cases are one stratum per source: they were drawn so before they had categories (PMAT-321), and
+    drawing them per category would move cases between the sets.
 
     Units are ordered by a hash of seed and unit, not with `random`, so the result never depends on the
     Python version. A unit that would pass the category's target is skipped, and the next one tried."""
     strata = collections.defaultdict(lambda: collections.defaultdict(list))
     for case in cases:
-        strata[case["source"], case["category"]][unit_of(case)].append(case["case_id"])
+        stratum = (case["source"],) if case["source"] == "pr_comment" else (case["source"], case["category"])
+        strata[stratum][unit_of(case)].append(case["case_id"])
 
     drawn = []
     for units in strata.values():
