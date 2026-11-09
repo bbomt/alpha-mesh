@@ -21,7 +21,7 @@
   "label_by": "rule",
   "label_date": "2026-11-04",
   "label_reason": "intended: a label fix without evidence must fail the baseline guard (ticket scope 5); baseline.py prints the schema error naming the entry instead of writing the baseline.",
-  "category": "mined",
+  "category": "logic",
   "expected": {
     "action": "skip_false_bug",
     "flag_file": "agents/review-pull-request/eval/scripts/baseline.py"

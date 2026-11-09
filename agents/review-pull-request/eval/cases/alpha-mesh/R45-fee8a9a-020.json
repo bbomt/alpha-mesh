@@ -21,7 +21,7 @@
   "label_by": "rule",
   "label_date": "2026-11-04",
   "label_reason": "JSON Schema cannot tie runs to k, as the finding says; baseline.py builds runs from the results, one per repeat.",
-  "category": "mined",
+  "category": "improvable",
   "expected": {
     "action": "skip_false_bug",
     "flag_file": "agents/review-pull-request/eval/schema/baseline.schema.json"

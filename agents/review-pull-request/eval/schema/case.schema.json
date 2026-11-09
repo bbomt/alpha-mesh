@@ -76,7 +76,6 @@
     },
     "category": {
       "enum": [
-        "mined",
         "logic",
         "security",
         "style_only",

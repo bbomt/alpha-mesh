@@ -21,7 +21,7 @@
   "label_by": "rule",
   "label_date": "2026-10-28",
   "label_reason": "the failed ticket goes back to the front of the queue, so continuing in the same pass would retry it at once in a loop while tmux refuses; stopping until the next check is intended.",
-  "category": "mined",
+  "category": "logic",
   "expected": {
     "action": "skip_false_bug",
     "flag_file": "agents/orchestrator/src/orchestrator/cli.py"

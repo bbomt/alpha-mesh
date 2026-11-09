@@ -21,7 +21,7 @@
   "label_by": "rule",
   "label_date": "2026-11-04",
   "label_reason": "`excluded` is set only when every changed file is excluded (nothing reviewed, so nothing raised); a partly excluded diff reviews the rest, and the asserts never read the field.",
-  "category": "mined",
+  "category": "improvable",
   "expected": {
     "action": "skip_false_bug",
     "flag_file": "agents/review-pull-request/eval/promptfoo/eval_adapter.py"
