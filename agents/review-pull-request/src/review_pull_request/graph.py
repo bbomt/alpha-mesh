@@ -30,8 +30,8 @@ class FileResult(TypedDict):
     incomplete: bool
     missing: list[str]          # unrecovered not-found paths from this file's review
     model: str                  # model that produced this result
-    files_read: NotRequired[list[str]]  # paths whose content the model was shown, never the content;
-                                        # absent from a result saved before PMAT-322
+    files_read: NotRequired[list[str]]  # no longer written (PMAT-325: the trace holds it); read only from
+                                        # results saved by PMAT-322's code. Remove once those checkpoints expire.
 
 
 class ReviewState(TypedDict):
@@ -82,7 +82,7 @@ def review_next_file(state: ReviewState, runtime: Runtime[ReviewContext]) -> dic
     file_result = FileResult(file_path=path, summary=result.summary,
                              issues=[asdict(i) for i in result.issues],
                              tool_calls_made=result.tool_calls_made, incomplete=result.incomplete,
-                             missing=missing, model=ctx.model, files_read=result.files_read)
+                             missing=missing, model=ctx.model)  # files_read is in the trace (PMAT-325)
     return {"results": {**state["results"], path: file_result}}
 
 

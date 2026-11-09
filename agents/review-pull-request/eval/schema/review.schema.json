@@ -12,9 +12,13 @@
     "incomplete": {"type": "array", "items": {"type": "string"}},
     "excluded": {"type": "array", "items": {"type": "string"}},
     "files_read": {
-      "description": "Repo-relative paths whose content the agent's model was shown; paths only. Absent only if the review resumed from a checkpoint saved before this field existed.",
+      "description": "Repo-relative paths whose content the agent's model was shown; paths only, taken from the trace. Absent only if a file of the review has no span in the trace (reviewed before the trace existed).",
       "type": "array",
       "items": {"type": "string"}
+    },
+    "trace": {
+      "description": "Path of the review's trace (PMAT-325): every tool call and its result as the model got them. Null when every changed file was excluded, so nothing was reviewed.",
+      "type": ["string", "null"]
     },
     "findings": {
       "type": "array",

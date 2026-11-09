@@ -4,8 +4,8 @@ The provider runs the real review core against a recording fake GitHub (tests.te
 and a scripted model, the same boundaries test_review_core fakes. Nothing reaches GitHub or a model.
 """
 
-import dataclasses
 import json
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -20,6 +20,7 @@ import load_cases
 from review_pull_request.config import Config, SENSITIVE_PATTERNS
 from review_pull_request.llm import LLMError
 from review_pull_request.stage2 import run_file_review
+from review_pull_request.trace import load as load_trace
 from tests import test_golden_master as gm
 from tests.helpers import chat_model_factory
 from tests.test_canary import _store_text
@@ -294,38 +295,55 @@ def _stored_and_returned_text(tmp_path, result) -> tuple[str, str]:
 READS_HELPER = {"src/cart.py": ["src/helper.py"]}
 
 
-def test_the_store_and_the_results_hold_the_read_path_and_never_the_files_content(run, helper_file, tmp_path):
+def test_the_store_holds_no_read_and_the_results_hold_the_path_never_the_files_content(run, helper_file, tmp_path):
     result, _ = run(TRUE_BUG, model_reading(READS_HELPER))
     store, returned = _stored_and_returned_text(tmp_path, result)
 
-    assert "src/helper.py" in store and "src/helper.py" in returned, "the scan saw no paths, so it proves nothing"
+    assert "src/cart.py" in store and "src/helper.py" in returned, "the scan saw no paths, so it proves nothing"
+    assert "files_read" not in store and "src/helper.py" not in store  # PMAT-325: the trace holds the reads
     assert HELPER_CANARY not in store
     assert HELPER_CANARY not in returned
 
 
-def test_the_content_scan_finds_content_saved_as_files_read(run, helper_file, tmp_path):
-    def leaky(*args):
-        return dataclasses.replace(run_file_review(*args), files_read=[gm.FILES["src/helper.py"]])
+def test_the_content_scan_finds_content_returned_as_files_read(run, helper_file, tmp_path):
+    def leaky(path):
+        spans = load_trace(path)
+        spans["src/cart.py"]["span"]["output"]["files_read"] = [gm.FILES["src/helper.py"]]
+        return spans
 
-    with patch("review_pull_request.graph.run_file_review", leaky):
+    with patch("eval_adapter.load_trace", leaky):
         result, _ = run(TRUE_BUG, model_reading(READS_HELPER))
-    store, returned = _stored_and_returned_text(tmp_path, result)
+    _, returned = _stored_and_returned_text(tmp_path, result)
 
-    assert HELPER_CANARY in store
     assert HELPER_CANARY in returned
 
 
-def test_a_review_saved_before_files_read_existed_resumes_and_leaves_the_field_out(run, helper_file):
-    def old_file_result(**fields):  # what the code before PMAT-322 saved
-        return {k: v for k, v in fields.items() if k != "files_read"}
+def test_the_output_names_the_trace_which_holds_what_the_model_was_shown(run, helper_file, tmp_path):
+    result, _ = run(TRUE_BUG, model_reading(READS_HELPER))
 
+    path = Path(result["output"]["trace"])
+    assert path.parent == tmp_path / "run" / "traces" / "repeat-0"
+    tools = load_trace(path)["src/cart.py"]["tools"]
+    assert [t["input"]["path"] for t in tools] == ["src/helper.py"] and HELPER_CANARY in tools[0]["output"]
+
+
+def test_a_review_of_only_excluded_files_has_no_trace(run, monkeypatch):
+    monkeypatch.setitem(gm.DIFFS, f"{gm.BASE}...{X}", gm._file_diff(".env", "TOKEN=x"))
+
+    result, _ = run(case("raise_nothing", ".env"), model_reading({}))
+
+    assert result["output"]["trace"] is None
+    assert asserts.schema_valid(result["output"], {"vars": {"case": case("raise_nothing", ".env")}})["pass"]
+
+
+def test_a_review_resumed_after_a_file_reviewed_without_a_trace_leaves_files_read_out(run, helper_file):
     def fail_on_util(chunk, *args):
         if chunk.file_path == "src/util.py":
             raise LLMError("stopped part way")
         return run_file_review(chunk, *args)
 
-    with patch("review_pull_request.graph.FileResult", old_file_result), \
-            patch("review_pull_request.graph.run_file_review", fail_on_util):
+    with patch("review_pull_request.trace.Trace.open", lambda self, *a, **k: None), \
+            patch("review_pull_request.graph.run_file_review", fail_on_util):  # as before PMAT-325
         stopped, _ = run(TRUE_BUG, model_reading(READS_HELPER))
     assert "left no result" in stopped["error"]
 
