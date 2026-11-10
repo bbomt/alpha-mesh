@@ -3,7 +3,7 @@
     uv run python eval/scripts/judge_labelling_sheet.py ~/.mesh/eval-runs/PMAT-322-base3
 
 Writes eval/runs/judge-labelling/sheet.md (gitignored: it holds reviews and diffs) and, if it does not exist yet,
-eval/judge/human_labels.json. Scoring is blind, so the sheet shows no judge score and no line-window result. Reads the
+eval/judge/gold-human-calibration.json. Scoring is blind, so the sheet shows no judge score and no line-window result. Reads the
 stored run for the sampled cases only, so no hold-out review is opened.
 """
 
@@ -21,7 +21,7 @@ from review_pull_request.policy import PathPolicy  # noqa: E402
 from review_pull_request.readers import PolicyFileReader  # noqa: E402
 from review_pull_request.safe_diff import SafeDiff  # noqa: E402
 
-LABELS = case_rules.EVAL / "judge" / "human_labels.json"
+LABELS = case_rules.EVAL / "judge" / "gold-human-calibration.json"
 OUT = case_rules.EVAL / "runs" / "judge-labelling" / "sheet.md"
 TODO = "TODO"
 
@@ -49,7 +49,7 @@ def _agent_saw(context: dict) -> list[str]:
 def sheet(sampled: list[tuple[dict, dict]], contexts: dict[str, dict]) -> str:
     """Cases on one commit are adjacent and share one copy of what the agent saw: {sha: {diff, description, files}}."""
     out = [f"# Hand-scoring the judge's sample: {len(sampled)} cases\n",
-           f"Score each case in `eval/judge/human_labels.json`, using `eval/judge/rubric.{llm_rubric.RUBRIC_VERSION}.md`: "
+           f"Score each case in `eval/judge/gold-human-calibration.json`, using `eval/judge/rubric.{llm_rubric.RUBRIC_VERSION}.md`: "
            "1 to 5 per dimension. Replace every `TODO`; `null` is already filled in where "
            "the rubric says so. Add a `note` when a score was a close call.\n"]
     shown = set()

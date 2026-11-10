@@ -342,7 +342,7 @@ def test_e_the_committed_sample_is_frozen_and_is_the_labelled_set():
     sample = json.loads(judge_sample.SAMPLE.read_text())
     assert hashlib.sha256(json.dumps(sample["cases"]).encode()).hexdigest() == FROZEN_SAMPLE_SHA256
     assert sample["seed"] == judge_sample.SEED and sample["repeat"] == judge_sample.REPEAT
-    labels = json.loads((case_rules.EVAL / "judge" / "human_labels.json").read_text())
+    labels = json.loads((case_rules.EVAL / "judge" / "gold-human-calibration.json").read_text())
     assert set(labels["cases"]) == set(sample["cases"])
 
 
@@ -385,10 +385,10 @@ def test_c_the_script_refuses_unfinished_labels_and_a_case_the_judge_lacks(tmp_p
     labels, judged_scores = tmp_path / "h.json", tmp_path / "j.json"
     judged_scores.write_text(json.dumps({"model": "m", "rubric": "v1", "cases": {"a": scores()}}))
     labels.write_text(json.dumps({"cases": {"a": scores("TODO")}}))
-    assert judge_agreement.main([str(labels), str(judged_scores)]) == 1
+    assert judge_agreement.main(["--gold", str(labels), str(judged_scores)]) == 1
     assert "a: correctness" in capsys.readouterr().err
     labels.write_text(json.dumps({"cases": {"a": scores(), "b": scores()}}))
-    assert judge_agreement.main([str(labels), str(judged_scores)]) == 1
+    assert judge_agreement.main(["--gold", str(labels), str(judged_scores)]) == 1
     assert "no judge score for b" in capsys.readouterr().err
 
 
@@ -397,7 +397,7 @@ def test_c_the_script_prints_each_dimensions_agreement_and_the_judge_model(tmp_p
     labels.write_text(json.dumps({"cases": {"a": scores(5, 5, 5), "b": scores(1, 1, 1)}}))
     judged_scores.write_text(json.dumps({"model": "z-ai/glm", "rubric": "v1",
                                          "cases": {"a": scores(4, 4, 4), "b": scores(5, 1, 1)}}))
-    assert judge_agreement.main([str(labels), str(judged_scores)]) == 0
+    assert judge_agreement.main(["--gold", str(labels), str(judged_scores)]) == 0
     out = capsys.readouterr().out
     assert "z-ai/glm" in out and "rubric v1" in out
     assert "correctness" in out and "50%" in out and "coverage" in out and "actionability" in out

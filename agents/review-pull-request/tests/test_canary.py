@@ -464,3 +464,49 @@ def test_the_judge_never_receives_a_token_from_the_case_text():
 
 def test_the_judge_harness_detects_a_leak_when_protection_is_off():
     assert any(CANARY in m for m in _judge(exclusions=[]))
+
+
+# ── The silver labeller (PMAT-326): a third external model, with the judge's inputs ─────────────
+
+def _silver(exclusions=None):
+    eval_dir = Path(__file__).resolve().parents[1] / "eval"
+    sys.path[:0] = [str(eval_dir / "promptfoo"), str(eval_dir / "scripts")]
+    import llm_rubric
+    import silver_labels
+
+    cfg = Config(model="judge", api_url="http://x", api_token="judge-secret-token",
+                 exclusions=list(SENSITIVE_PATTERNS) if exclusions is None else exclusions)
+    seen = []
+
+    def model(messages, tools):
+        seen.append(json.dumps(messages))
+        return SimpleNamespace(content=JUDGE_REPLY, tool_calls=[])
+
+    with patch.object(llm_rubric, "judge_config", return_value=cfg), \
+            patch.object(llm_rubric, "get_diff", return_value=_diff_with_secrets()), \
+            patch.object(llm_rubric, "GitHubFileReader", FakeReader), \
+            patch.object(llm_rubric, "github_token", return_value=GITHUB_TOKEN), \
+            patch.object(silver_labels, "make_labeller_chat_model", lambda *a, **k: chat_model_factory(model)):
+        silver_labels.label_once({**JUDGE_CASE, "case_id": "R1-a-001"}, JUDGE_REVIEW, "openai/labeller", "high")
+    return seen
+
+
+def test_the_silver_labeller_never_receives_an_excluded_file_by_any_path():
+    seen = _silver()
+
+    assert seen, "the fake labeller was never called, so the test proves nothing"
+    assert "x = 1" in seen[0] and "The visible finding." in seen[0], "the allowed content must still reach it"
+    assert "src/app.py" in seen[0].split("<files_read>")[1], "the file the agent read must still reach it"
+    assert not [m for m in seen if CANARY in m]
+
+
+def test_the_silver_labeller_never_receives_a_token_from_the_case_text():
+    text = _silver()[0]
+
+    assert "Adds an app. [REDACTED]" in text, "the PR description must still reach it, with the token removed"
+    assert "Claim [REDACTED]" in text
+    assert GITHUB_TOKEN not in text and LOOKS_LIKE_A_KEY not in text
+
+
+def test_the_silver_harness_detects_a_leak_when_protection_is_off():
+    assert any(CANARY in m for m in _silver(exclusions=[]))

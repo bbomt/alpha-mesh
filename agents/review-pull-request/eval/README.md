@@ -115,8 +115,8 @@ a real bug here that no one raised. Use these for instructive comparison.
 | `scripts/split_holdout.py`, `scripts/holdout_report.py` | draw the hold-out, report its totals |
 | `schema/review.schema.json`, `schema/baseline.schema.json` | the provider's output, the baseline's guard |
 | `promptfoo/llm_rubric.py`, `judge/rubric.v1.md` | the judge and its versioned rubric ([The judge](#the-judge)) |
-| `judge/sample.json`, `judge/human_labels.json`, `judge/judge_scores.json` | the 25 hand-scored cases, the owner's scores, the judge's scores for them |
-| `scripts/judge_sample.py`, `scripts/judge_labelling_sheet.py`, `scripts/judge_report.py`, `scripts/judge_agreement.py` | draw the sample, write the scoring sheet, report a run's scores, compute judge–human agreement |
+| `judge/sample.json`, `judge/gold-human-calibration.json`, `judge/silver-ai-calibration.json`, `judge/judge_scores.json` | the 25 calibration cases, the human (gold) scores, the silver labeller's scores, the judge's scores for them |
+| `scripts/judge_sample.py`, `scripts/judge_labelling_sheet.py`, `scripts/silver_labels.py`, `scripts/judge_report.py`, `scripts/judge_agreement.py` | draw the sample, write the scoring sheet, write the silver labels, report a run's scores, compute the judge's agreement with the reference |
 | `baseline.json`, `error_analysis.json` | the committed baseline and the error analysis behind it (development cases only) |
 | `holdout.json` | the hold-out's seed and case IDs |
 | `runs/` | eval runs (gitignored) |
@@ -292,14 +292,48 @@ JUDGE_LIVE=1 uv run pytest eval/tests/test_judge.py -k live                     
 
 A normal `run_eval.sh` run judges the agent's fresh reviews too. A `--stored` run has no `run.json`, so it can't become the baseline.
 
-**Aligning the judge (meta-evaluation):** the owner scores 25 development cases blind, and the judge's scores are compared
-with theirs (**judge–human agreement**: within ±1 point per dimension, and Cohen's kappa on pass/fail, score >= 4).
+**Aligning the judge (meta-evaluation):** humans score 25 development cases blind (gold), a silver labeller scores them
+too (below), and the judge's scores are compared with the reference: gold where set, else silver (within ±1 point per
+dimension, and Cohen's kappa on pass/fail, score >= 4).
 
 ```bash
 uv run python eval/scripts/judge_labelling_sheet.py ~/.mesh/eval-runs/PMAT-322-base3   # sheet and labels file; no scores shown
 uv run python eval/scripts/judge_report.py eval/runs/judge1/results.json --write-scores  # after the labels are committed
-uv run python eval/scripts/judge_agreement.py eval/judge/human_labels.json eval/judge/judge_scores.json
+uv run python eval/scripts/judge_agreement.py --silver eval/judge/silver-ai-calibration.json \
+    --gold eval/judge/gold-human-calibration.json eval/judge/judge_scores.json
 ```
+
+**Silver labels (PMAT-326):** the owner has no time to score the 25 cases by hand yet, so a model of another family scores
+them on the same rubric: the **silver standard**, a shortcut to the first calibration values. Humans remain the **gold
+standard**. The cases are about code (is the finding real, was the bug caught, can a developer act on it), not tone, so
+a strong model can stand in until humans score.
+
+```bash
+uv run python eval/scripts/silver_labels.py ~/.mesh/eval-runs/PMAT-322-base3 --model openai/gpt-5-nano   # dev: cheap
+```
+
+- It gets what the judge and the sheet get (rubric, ground truth, findings, PR description, diff, files the agent read),
+  through `llm_rubric.ask` and so `ReviewSession` (`tests/test_canary.py`). It reads only repeat 0's stored review: never
+  a judge score, a line-window result or a hold-out case. This sends the sample's repo code to the model's vendor via
+  OpenRouter (`JUDGE_URL`, `JUDGE_TOKEN`; owner's choice, 2026-11-10).
+- Each reply is strict JSON (`structured_outputs`, `why` before `score` per dimension, `reasoning_effort` high by
+  default). A missing or out-of-range score stops the run naming the case and pass; it is never defaulted.
+- 3 passes (odd), the median per dimension. A case whose passes differ by more than 1 point is `unstable` and worth a
+  human check first. The run prints the cost and the passes' self-agreement per dimension.
+- `judge/silver-ai-calibration.json` (committed) holds the scores only; its header names the model requested and the
+  model and providers reported, the effort, rubric, repeat, passes, cost, date and self-agreement, so a rerun with
+  another model keeps the path. The reasons are in `runs/judge-labelling/silver-ai-calibration.md` (gitignored: it
+  quotes reviews and code).
+- **A frontier model run** (e.g. `openai/gpt-6.1-sol`, about $5.50 for 3 passes) **needs the Team Lead's sign-off**:
+  develop and test with a cheap model (`openai/gpt-5-nano`, about $0.20).
+
+**Gold over silver:** `judge_agreement.py` builds the reference per case and dimension when it runs, never in a file: the
+human score where one is set, else silver's. A `TODO` is ignored, so with no human scores the reference is all silver,
+and adding human scores later needs no silver rerun. It prints how many reference scores per dimension came from each
+source (`correctness: 1 gold, 24 silver`) and lists every silver-vs-gold difference over 1 point: where silver was wrong.
+**Humans score blind:** from `sheet.md` into `gold-human-calibration.json`, never after reading the silver scores or
+reasons. **Caveat:** the silver labeller and the judge read the same rubric, so an ambiguity both read the same way is
+invisible to this calibration. That is what gold is for.
 
 The sample (`scripts/judge_sample.py`, seed 311) was drawn from the case files only, per group, from the development
 cases. **It is frozen:** your labels are on these 25 cases, so it is never redrawn, even when categories change (PMAT-321)
