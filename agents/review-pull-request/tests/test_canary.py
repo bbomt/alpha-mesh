@@ -13,6 +13,7 @@ import pytest
 
 from review_pull_request.config import Config, SENSITIVE_PATTERNS
 from review_pull_request.review import main, review_commit
+from review_pull_request.guard import Redactor
 from tests.helpers import chat_model_factory
 
 CANARY = "CANARY-7f3a9c-do-not-leak"
@@ -402,3 +403,55 @@ def test_the_stream_harness_detects_a_leak_when_protection_is_off(capsys):
     events, output = _run_recording_stream(capsys, exclusions=[])
 
     assert CANARY in events
+
+
+# --- PMAT-325: the review trace is a new path out of the run ------------------------------------
+# Invariant: an excluded file's content and the tokens never reach the trace file, by any path.
+# The trace is recorded inside the guard, so it holds what the model was sent: refusals for excluded
+# files and [REDACTED] for tokens. With the protection off the same harness must find both.
+
+class _TokenReader(FakeReader):
+    """FakeReader, but the allowed file src/app.py holds both tokens."""
+
+    def read_file(self, path, max_lines):
+        if path == "src/app.py":
+            self.asked.append(path)
+            return f"KEY = '{GITHUB_TOKEN}'\nMODEL_KEY = '{STORE_MODEL_TOKEN}'\n"
+        return super().read_file(path, max_lines)
+
+
+class _NoRedaction:
+    def __init__(self, secrets):
+        pass
+
+    def scrub(self, messages):
+        return messages
+
+
+def _run_traced(tmp_path, exclusions=None, redact=True):
+    cfg = Config(model="m", api_url="http://x", api_token=STORE_MODEL_TOKEN,
+                 exclusions=list(SENSITIVE_PATTERNS) if exclusions is None else exclusions)
+    model, trace_path = RecordingModel(), tmp_path / "trace.jsonl"
+    with patch("review_pull_request.review.GitHubFileReader", _TokenReader), \
+            patch("review_pull_request.review.get_diff", return_value=_diff_with_secrets()), \
+            patch("review_pull_request.session.make_chat_model", chat_model_factory(model)), \
+            patch("review_pull_request.session.Redactor", Redactor if redact else _NoRedaction):
+        review_commit("o", "r", "b" * 40, "abc123", "Adds an app.", config=cfg, token=GITHUB_TOKEN,
+                      publish=lambda report: None, all_excluded=lambda paths: 0, trace_path=trace_path)
+    return model, trace_path.read_text()
+
+
+def test_no_excluded_content_or_token_reaches_the_trace(tmp_path):
+    model, text = _run_traced(tmp_path)
+
+    assert set(model.requested) == set(READ_ATTEMPTS), "every read attempt must actually be exercised"
+    assert '"src/app.py"' in text and "[REDACTED]" in text, "the trace holds no reads, so the scan proves nothing"
+    for secret in (CANARY, GITHUB_TOKEN, STORE_MODEL_TOKEN):
+        assert secret not in text
+
+
+def test_the_trace_harness_detects_a_leak_when_protection_is_off(tmp_path):
+    _, text = _run_traced(tmp_path, exclusions=[], redact=False)
+
+    for secret in (CANARY, GITHUB_TOKEN, STORE_MODEL_TOKEN):
+        assert secret in text

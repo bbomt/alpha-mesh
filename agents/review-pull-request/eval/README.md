@@ -294,10 +294,21 @@ reads the findings (file, line, severity, summary) from the review's final graph
 comment is rendered from, so nothing parses markdown. The provider (`promptfoo/agent_provider.py`) returns
 them as JSON (`schema/review.schema.json`; extra fields are allowed, for later asserts).
 
-`files_read` lists the repo-relative paths whose content the agent's model was shown, across the whole review.
-It holds paths only, never content, and a not-found, refused or failed read doesn't count. A read stops at
-`max_file_lines`, so the path alone doesn't say how much of a file was shown. A review that resumed from a
-checkpoint saved before this field existed leaves it out, because `[]` would say the agent read nothing.
+`trace` is the path of the review's **trace** (PMAT-325), `runs/<run>/traces/repeat-<n>/<commit>.jsonl`: every
+tool call (name and arguments) and its result exactly as the model received them, in order, recorded inside
+the redactor (`src/review_pull_request/trace.py`). That includes not-found results with their hints,
+"already read" notes and refusals, so the judge can rebuild the agent's context without reading a file
+again. The records are shaped like Langfuse observations (a `trace`, a `span` per file review, a `tool` per
+call). A file review's records are written when it ends, so a stopped review leaves no half span; a resume
+appends to the same file, and `trace.load()` keeps the last span of a file reviewed twice. The trace never
+goes into the checkpoint store or the results JSON (only its path does). It is `null` when every changed
+file was excluded.
+
+`files_read` lists the repo-relative paths whose content the agent's model was shown, across the whole review,
+taken from the trace. It holds paths only, never content, and a not-found, refused or failed read doesn't
+count. A read stops at `max_file_lines`, so the path alone doesn't say how much of a file was shown. If a
+file of the review has no span in the trace (reviewed before the trace existed), `files_read` is left out,
+because `[]` would say the agent read nothing. New checkpoints no longer hold `files_read`.
 
 - **One review per commit and repeat.** Several cases share a commit. Within one repeat they share one review
   (they queue on a lock per commit, which also runs the repeats of a commit one after another); each repeat

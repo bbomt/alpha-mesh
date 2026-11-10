@@ -8,6 +8,8 @@ Run state lives in EVAL_RUN_DIR (eval/scripts/run_eval.sh sets it; gitignored):
   checkpoints-repeat-<n>.sqlite  one per repeat: cases on one commit share its review within a
                                  repeat, never across repeats; rerunning resumes a stopped review
   locks/<commit>.lock            one review of a commit at a time, across repeats and processes
+  traces/repeat-<n>/<commit>.jsonl  the review's trace (PMAT-325): every tool call and its result as
+                                 the model got them; shared like the review, appended to on a resume
 The model is EVAL_MODEL, else CODE_REVIEW_MODEL from .env. One run dir holds one model's reviews.
 """
 
@@ -67,7 +69,10 @@ def review(case: dict, repeat: int) -> dict:
             description = get_pr_description(f"https://github.com/{case['repo']}/pull/{case['pr_number']}", token)
         print(f"[eval] {case['case_id']}: {case['repo']}@{case['raised_sha'][:7]} repeat {repeat}", file=sys.stderr)
         return review_case(case, config=config, token=token, description=description,
-                           checkpointer=_saver(run_dir / f"checkpoints-repeat-{repeat}.sqlite"))
+                           checkpointer=_saver(run_dir / f"checkpoints-repeat-{repeat}.sqlite"),
+                           # resolved: the output names the trace, and a run folder linked from a worktree
+                           # outlives the worktree
+                           trace_path=run_dir.resolve() / "traces" / f"repeat-{repeat}" / f"{key}.jsonl")
 
 
 def call_api(prompt, options, context):

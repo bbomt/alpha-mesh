@@ -4,10 +4,12 @@ mesh review-pull-request <pr_url> [flags]
 """
 
 import argparse
+import hashlib
 import os
 import signal
 import sys
 import time
+from pathlib import Path
 from urllib.parse import urlparse
 
 from review_pull_request.checkpoints import ThreadBusy, lock_thread, make_checkpointer, thread_id
@@ -31,6 +33,7 @@ from review_pull_request.incremental import (
 from review_pull_request.session import ReviewSession, _safe_url
 from review_pull_request.stage2 import Issue
 from review_pull_request.tools import GitHubFileReader
+from review_pull_request.trace import Trace
 
 
 class PostFailed(Exception):
@@ -342,6 +345,11 @@ Rerunning the same command after a failure resumes from the file it stopped at.
     )
 
 
+def default_trace_path(thread: str) -> Path:
+    """Where a review's trace goes when the caller names no path (PR mode; in CI, the job's HOME)."""
+    return Path.home() / ".mesh" / "review-traces" / f"{hashlib.sha256(thread.encode()).hexdigest()[:16]}.jsonl"
+
+
 def review_commit(
     owner: str,
     repo: str,
@@ -360,6 +368,7 @@ def review_commit(
     force_rerun: bool = False,
     no_output: bool = False,
     checkpointer=None,
+    trace_path=None,
 ) -> int:
     """Review the diff base_sha...head_sha of owner/repo, reading files at head_sha; return the exit code.
 
@@ -368,11 +377,14 @@ def review_commit(
     all_excluded(paths) -> exit code handles a diff whose changed files are all excluded.
     diff is base_sha...head_sha when the caller has already fetched it; None fetches it.
     pr_number, when known, goes into the checkpoint key and the finding IDs.
+    trace_path is where the review's trace goes (trace.py); None is ~/.mesh/review-traces/<thread>.jsonl.
+    A dry run writes no trace.
     """
     # Kept local, never on config: stages see only the policy-wrapped reader in the session.
     github_reader = GitHubFileReader(owner, repo, head_sha, token)
     # Everything that reaches the model or the file reader goes through this session's policy.
-    session = ReviewSession.create(config, inner_reader=github_reader, secrets=[token])
+    review_trace = Trace()
+    session = ReviewSession.create(config, inner_reader=github_reader, secrets=[token], trace=review_trace)
 
     start_time = time.time()
     current_step = "review"
@@ -465,6 +477,11 @@ def review_commit(
         else:
             print(f"Starting review (thread {thread})", file=sys.stderr)
             graph_input = initial_state(safe)
+        if not dry_run:
+            review_trace.open(trace_path or default_trace_path(thread),
+                              {"repo": f"{owner}/{repo}", "pr_number": pr_number, "base_sha": base_sha,
+                               "head_sha": head_sha, "model": config.model, "thread": thread},
+                              fresh=graph_input is not None)
         context = ReviewContext(session=session, diff=safe, pr_description=pr_description,
                                 model=config.model, render=render, publish=publish)
         try:

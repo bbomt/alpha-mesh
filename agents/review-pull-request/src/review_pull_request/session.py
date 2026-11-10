@@ -8,6 +8,8 @@ It builds the PathPolicy once and hands the stages only wrapped collaborators:
   * nearest_folder(path)      : the closest folder of a path that exists in that tree
   * suggest_paths(path)       : files anywhere in that tree with the same name as a missing path
   * note_missing(path, file)  : records a missing path the model did not recover from (for the report)
+  * trace                     : the review trace (trace.py): one span per file review; its tool calls
+                                are recorded inside the guard, as the model was sent them
 Stages receive the session, not the raw pieces, so they have no way around the policy.
 """
 
@@ -25,6 +27,7 @@ from review_pull_request.llm import DRY_RUN_MODEL, DryRunChatModel, LangChainLLM
 from review_pull_request.policy import PathPolicy, normalise
 from review_pull_request.readers import PolicyFileReader
 from review_pull_request.safe_diff import SafeDiff
+from review_pull_request.trace import Trace, TracingLLM
 from review_pull_request.watchdog import WatchdogTransport
 
 
@@ -114,20 +117,25 @@ class ReviewSession:
         self._files: list[str] | None = None  # repo tree minus excluded files, loaded once
         self._listed = False
         self.missing_paths: dict[str, list[str]] = {}  # missing path -> files whose review asked for it
+        self.trace = Trace()  # create() replaces it with the one recording at the model boundary
 
     @classmethod
-    def create(cls, config, inner_reader, chat_model_factory=None, secrets=()) -> "ReviewSession":
+    def create(cls, config, inner_reader, chat_model_factory=None, secrets=(), trace=None) -> "ReviewSession":
         factory = chat_model_factory or make_chat_model
         policy = PathPolicy(config.exclusions)
         redactor = Redactor([config.api_token, *secrets])
         llm = LangChainLLM(factory(config, config.model), config.model, _host(config.api_url) or "(invalid URL)",
                            not_found=not_found_reason(config))
-        return cls(
+        trace = trace or Trace()
+        session = cls(
             config=config,
             policy=policy,
-            review_llm=GuardedLLM(llm, redactor),
+            # The trace records inside the guard: exactly what the model is sent, already redacted.
+            review_llm=GuardedLLM(TracingLLM(llm, trace), redactor),
             reader=PolicyFileReader(inner_reader, policy),
         )
+        session.trace = trace
+        return session
 
     def safe_diff(self, raw_diff: str) -> SafeDiff:
         return SafeDiff.from_raw(raw_diff, self.policy)
