@@ -1,6 +1,7 @@
 """Silver labels (PMAT-326): a model scores the judge's frozen sample on the judge's rubric, where a human has not.
 
-    uv run python eval/scripts/silver_labels.py ~/.mesh/eval-runs/PMAT-322-base3 --model openai/gpt-5-nano
+    uv run python eval/scripts/silver_labels.py ~/.mesh/eval-runs/PMAT-322-base3   # SILVER_MODEL from .env
+    uv run python eval/scripts/silver_labels.py ~/.mesh/eval-runs/PMAT-322-base3 --model openai/gpt-5-nano   # dev
 
 Humans remain the gold standard (eval/judge/gold-human-calibration.json); judge_agreement.py takes a human score where
 one is set, else this file's. The labeller gets what the judge and the human sheet get: the rubric, the case's ground
@@ -13,23 +14,27 @@ passes (odd, so the median is a score) and marks a case `unstable` when its pass
 Writes eval/judge/silver-ai-calibration.json (scores only, committed; its header names the model) and
 eval/runs/judge-labelling/silver-ai-calibration.md (the reasons, gitignored: it quotes reviews and code).
 
-The model is the --model argument, sent to JUDGE_URL with JUDGE_TOKEN. A frontier model run needs the Team Lead's
-sign-off (owner, 2026-11-10): develop with a cheap one.
+The model is --model, else SILVER_MODEL in .env (openai/gpt-6.1-terra, owner, 2026-11-10), sent to JUDGE_URL with
+JUDGE_TOKEN. A higher model run needs the Team Lead's sign-off (owner, 2026-11-10): develop with a cheap one.
 """
 
 import argparse
 import datetime
 import json
+import os
 import statistics
 import sys
 from dataclasses import replace
 from pathlib import Path
+
+from dotenv import load_dotenv
 
 sys.path[:0] = [str(Path(__file__).resolve().parent), str(Path(__file__).resolve().parent.parent / "promptfoo")]
 import agent_provider  # noqa: E402
 import case_rules  # noqa: E402
 import judge_sample  # noqa: E402
 import llm_rubric  # noqa: E402
+from review_pull_request import config as config_module  # noqa: E402
 from review_pull_request.policy import PathPolicy  # noqa: E402
 
 SCORES = case_rules.EVAL / "judge" / "silver-ai-calibration.json"
@@ -135,11 +140,16 @@ def _odd(value: str) -> int:
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Silver labels for the judge's frozen sample.")
     parser.add_argument("run_dir", type=Path, help="the stored run, with results.json")
-    parser.add_argument("--model", required=True, help="the labeller, an OpenRouter model ID")
+    parser.add_argument("--model", help="the labeller, an OpenRouter model ID (default: SILVER_MODEL in .env)")
     parser.add_argument("--passes", type=_odd, default=3)
     parser.add_argument("--reasoning-effort", choices=("low", "medium", "high"), default="high")
     args = parser.parse_args(argv)
-    sample = set(json.loads(judge_sample.SAMPLE.read_text())["cases"])
+    load_dotenv(config_module.ENV_FILE)
+    args.model = args.model or os.environ.get("SILVER_MODEL")
+    if not args.model:
+        print(f"ERROR: no labeller: pass --model or set SILVER_MODEL in {config_module.ENV_FILE}", file=sys.stderr)
+        return 1
+    sample =set(json.loads(judge_sample.SAMPLE.read_text())["cases"])
     cases = [c for c in case_rules.development_cases() if c["case_id"] in sample]
     if missing := sample - {c["case_id"] for c in cases}:
         print(f"ERROR: no development case for {', '.join(sorted(missing))}", file=sys.stderr)

@@ -309,8 +309,11 @@ standard**. The cases are about code (is the finding real, was the bug caught, c
 a strong model can stand in until humans score.
 
 ```bash
+uv run python eval/scripts/silver_labels.py ~/.mesh/eval-runs/PMAT-322-base3   # SILVER_MODEL in .env
 uv run python eval/scripts/silver_labels.py ~/.mesh/eval-runs/PMAT-322-base3 --model openai/gpt-5-nano   # dev: cheap
 ```
+
+The labeller is `SILVER_MODEL` in `.env` (`openai/gpt-6.1-terra`, owner decision 2026-11-10), or `--model`.
 
 - It gets what the judge and the sheet get (rubric, ground truth, findings, PR description, diff, files the agent read),
   through `llm_rubric.ask` and so `ReviewSession` (`tests/test_canary.py`). It reads only repeat 0's stored review: never

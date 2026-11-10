@@ -68,7 +68,7 @@ def labelled(run_dir, tmp_path, monkeypatch):
     monkeypatch.setattr(silver_labels, "SCORES", scores)
     monkeypatch.setattr(silver_labels, "REASONS", reasons)
 
-    def run(answers, argv=()):
+    def run(answers, argv=(), model_argv=("--model", "openai/labeller")):
         seen, schemas, answers = [], [], iter(answers)
 
         def model(messages, tools):
@@ -88,7 +88,7 @@ def labelled(run_dir, tmp_path, monkeypatch):
                 patch.object(llm_rubric, "github_token", return_value="gh-token"), \
                 patch.object(llm_rubric, "get_pr_description", return_value="The PR description."), \
                 patch.object(silver_labels, "make_labeller_chat_model", factory):
-            code = silver_labels.main([str(run_dir), "--model", "openai/labeller", *argv])
+            code = silver_labels.main([str(run_dir), *model_argv, *argv])
         return code, seen, schemas, scores, reasons
     return run
 
@@ -184,6 +184,20 @@ def test_c_an_even_number_of_passes_is_refused(capsys):
     with pytest.raises(SystemExit):
         silver_labels.main(["run", "--model", "m", "--passes", "2"])
     assert "odd" in capsys.readouterr().err
+
+
+def test_c_without_model_the_labeller_is_silver_model_from_env(labelled, monkeypatch):
+    monkeypatch.setenv("SILVER_MODEL", "openai/from-env")
+    code, _, _, scores, _ = labelled([reply()] * 75, model_argv=())
+    assert code == 0 and json.loads(scores.read_text())["labeller"]["requested"] == "openai/from-env"
+
+
+def test_c_with_neither_model_nor_silver_model_nothing_is_sent(labelled, monkeypatch, tmp_path, capsys):
+    monkeypatch.delenv("SILVER_MODEL", raising=False)
+    monkeypatch.setattr(silver_labels.config_module, "ENV_FILE", tmp_path / "no.env")  # not the real .env
+    code, seen, _, scores, _ = labelled([], model_argv=())
+    assert code == 1 and "SILVER_MODEL" in capsys.readouterr().err
+    assert not seen and not scores.exists()
 
 
 # (d) ── gold overrides silver, per score ──────────────────────────────────────────────────────────
