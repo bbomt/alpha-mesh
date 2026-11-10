@@ -162,6 +162,12 @@ another case's file at the same repo and `raised_sha`: a file cannot be both cle
 
 ### Baseline
 
+> **Models come from `.env`:** `CODE_REVIEW_MODEL` is the agent under test, `JUDGE_MODEL` the `llm-rubric` judge.
+> Evals use paid models only: the free ones are too slow for the eval volume (review passes still may use them).
+> Compare a run only with a baseline on the same model: `baseline.json`'s `model` says which one. Today's
+> `baseline.json` is `base2` on `nvidia/nemotron-3.5-super-vl:free`, until run `PMAT-325-base4`
+> (on `z-ai/glm-5.3-flash`) replaces it.
+
 <!-- BASELINE-HEADLINE -->
 `baseline.json`: run `base2`, agent `665c767`, `nvidia/nemotron-3.5-super-vl:free`, k=3, window ±3 lines, the 65
 development cases (195 runs, 2026-11-04), all scored (no harness errors). The hold-out's score is
@@ -229,7 +235,7 @@ development cases only.
 another tuning target.
 
 ```bash
-eval/scripts/run_eval.sh --holdout --model nvidia/nemotron-3.5-super-vl:free --run <name>
+eval/scripts/run_eval.sh --holdout --run <name>
 uv run python eval/scripts/holdout_report.py eval/runs/<name>/results-holdout.json   # the totals again
 ```
 
@@ -326,8 +332,8 @@ From `agents/review-pull-request`. Prerequisites: `gh auth login`, the repo's `.
 session; the machine default stays). No AWS is needed.
 
 ```bash
-eval/scripts/run_eval.sh --model nvidia/nemotron-3.5-super-vl:free --run base1        # k=3, every development case
-eval/scripts/run_eval.sh --model nvidia/nemotron-3.5-super-vl:free --run base1        # again: resumes
+eval/scripts/run_eval.sh --run base1                                                  # k=3, every development case (.env model)
+eval/scripts/run_eval.sh --run base1                                                  # again: resumes
 eval/scripts/run_eval.sh --k 1 --run smoke --filter-pattern '^R37-1fbb920-001$'       # one case (.env model)
 uv run python eval/scripts/compare_baseline.py eval/runs/base1/results.json           # vs baseline.json
 uv run python eval/scripts/baseline.py eval/runs/base1                                # write a new baseline
