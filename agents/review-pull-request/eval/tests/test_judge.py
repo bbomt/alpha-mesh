@@ -111,10 +111,10 @@ def test_b_the_real_run_stops_before_any_review_when_the_token_is_empty(tmp_path
     (tmp_path / "results.json").write_text('{"results": {"results": []}}')
     (tmp_path / "run.json").write_text('{"model": "nvidia/n", "k": 1}')
     done = subprocess.run([str(case_rules.EVAL / "scripts" / "run_eval.sh"), "--stored", str(tmp_path), "--run", run],
-                          capture_output=True, text=True, timeout=300, env={**os.environ, "JUDGE_TOKEN": ""})
+                          capture_output=True, text=True, timeout=300, env={**os.environ, "EVAL_JUDGE_TOKEN": ""})
     shutil.rmtree(case_rules.EVAL / "runs" / run, ignore_errors=True)
     assert done.returncode != 0
-    assert "JUDGE_TOKEN is not set" in done.stdout + done.stderr
+    assert "EVAL_JUDGE_TOKEN is not set" in done.stdout + done.stderr
 
 
 def test_a_holdout_run_needs_no_judge_settings(monkeypatch):
@@ -277,7 +277,7 @@ def test_with_no_findings_only_coverage_is_scored(judged):
 
 def test_the_family_warning_checks_the_runs_model_and_the_env_model(capsys, monkeypatch, tmp_path):
     monkeypatch.setattr(llm_rubric.config_module, "ENV_FILE", tmp_path / "no.env")
-    for var, value in {"JUDGE_MODEL": "z-ai/glm", "JUDGE_URL": "u", "JUDGE_TOKEN": "t",
+    for var, value in {"EVAL_JUDGE_MODEL": "z-ai/glm", "EVAL_JUDGE_URL": "u", "EVAL_JUDGE_TOKEN": "t",
                        "EVAL_MODEL": "nvidia/n", "CODE_REVIEW_MODEL": "nvidia/m"}.items():
         monkeypatch.setenv(var, value)
     llm_rubric.startup_check()
@@ -286,12 +286,13 @@ def test_the_family_warning_checks_the_runs_model_and_the_env_model(capsys, monk
 
     monkeypatch.setenv("CODE_REVIEW_MODEL", "z-ai/other")
     llm_rubric.startup_check()
-    assert "WARNING: JUDGE_MODEL z-ai/glm and CODE_REVIEW_MODEL z-ai/other share a family" in capsys.readouterr().err
+    assert ("WARNING: EVAL_JUDGE_MODEL z-ai/glm and CODE_REVIEW_MODEL z-ai/other share a family"
+            in capsys.readouterr().err)
 
     monkeypatch.setenv("EVAL_MODEL", "z-ai/third")
     monkeypatch.setenv("CODE_REVIEW_MODEL", "nvidia/m")
     llm_rubric.startup_check()
-    assert "WARNING: JUDGE_MODEL z-ai/glm and the run's model z-ai/third share a family" in capsys.readouterr().err
+    assert "WARNING: EVAL_JUDGE_MODEL z-ai/glm and the run's model z-ai/third share a family" in capsys.readouterr().err
 
 
 SSE = (b'data: {"model":"z-ai/reported","provider":"Wafer","choices":[{"delta":{"content":"hi"}}]}\n\n'
@@ -385,10 +386,10 @@ def test_c_the_script_refuses_unfinished_labels_and_a_case_the_judge_lacks(tmp_p
     labels, judged_scores = tmp_path / "h.json", tmp_path / "j.json"
     judged_scores.write_text(json.dumps({"model": "m", "rubric": "v1", "cases": {"a": scores()}}))
     labels.write_text(json.dumps({"cases": {"a": scores("TODO")}}))
-    assert judge_agreement.main(["--gold", str(labels), str(judged_scores)]) == 1
+    assert judge_agreement.main(["--gold-calibration", str(labels), str(judged_scores)]) == 1
     assert "a: correctness" in capsys.readouterr().err
     labels.write_text(json.dumps({"cases": {"a": scores(), "b": scores()}}))
-    assert judge_agreement.main(["--gold", str(labels), str(judged_scores)]) == 1
+    assert judge_agreement.main(["--gold-calibration", str(labels), str(judged_scores)]) == 1
     assert "no judge score for b" in capsys.readouterr().err
 
 
@@ -397,7 +398,7 @@ def test_c_the_script_prints_each_dimensions_agreement_and_the_judge_model(tmp_p
     labels.write_text(json.dumps({"cases": {"a": scores(5, 5, 5), "b": scores(1, 1, 1)}}))
     judged_scores.write_text(json.dumps({"model": "z-ai/glm", "rubric": "v1",
                                          "cases": {"a": scores(4, 4, 4), "b": scores(5, 1, 1)}}))
-    assert judge_agreement.main(["--gold", str(labels), str(judged_scores)]) == 0
+    assert judge_agreement.main(["--gold-calibration", str(labels), str(judged_scores)]) == 0
     out = capsys.readouterr().out
     assert "z-ai/glm" in out and "rubric v1" in out
     assert "correctness" in out and "50%" in out and "coverage" in out and "actionability" in out

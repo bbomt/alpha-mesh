@@ -151,7 +151,7 @@ def test_c_a_stubbed_reply_gives_a_scores_file_that_judge_agreement_reads(labell
     judge = tmp_path / "judge.json"
     judge.write_text(json.dumps({"model": "z-ai/judge", "rubric": "v1",
                                  "cases": {c: silver["cases"][c] for c in SAMPLE}}))
-    assert judge_agreement.main(["--silver", str(scores), str(judge)]) == 0
+    assert judge_agreement.main(["--silver-calibration", str(scores), str(judge)]) == 0
     assert "correctness: 0 gold" in capsys.readouterr().out
 
 
@@ -187,16 +187,16 @@ def test_c_an_even_number_of_passes_is_refused(capsys):
 
 
 def test_c_without_model_the_labeller_is_silver_model_from_env(labelled, monkeypatch):
-    monkeypatch.setenv("SILVER_MODEL", "openai/from-env")
+    monkeypatch.setenv("SILVER_CALIBRATION_MODEL", "openai/from-env")
     code, _, _, scores, _ = labelled([reply()] * 75, model_argv=())
     assert code == 0 and json.loads(scores.read_text())["labeller"]["requested"] == "openai/from-env"
 
 
 def test_c_with_neither_model_nor_silver_model_nothing_is_sent(labelled, monkeypatch, tmp_path, capsys):
-    monkeypatch.delenv("SILVER_MODEL", raising=False)
+    monkeypatch.delenv("SILVER_CALIBRATION_MODEL", raising=False)
     monkeypatch.setattr(silver_labels.config_module, "ENV_FILE", tmp_path / "no.env")  # not the real .env
     code, seen, _, scores, _ = labelled([], model_argv=())
-    assert code == 1 and "SILVER_MODEL" in capsys.readouterr().err
+    assert code == 1 and "SILVER_CALIBRATION_MODEL" in capsys.readouterr().err
     assert not seen and not scores.exists()
 
 
@@ -230,7 +230,8 @@ def test_d_a_gold_score_replaces_silver_for_that_dimension_only(files):
 
 
 def test_d_the_agreement_the_source_counts_and_the_discrepancy_reflect_the_override(files, capsys):
-    assert judge_agreement.main(["--silver", str(files["silver"]), "--gold", str(files["gold"]), str(files["judge"])]) == 0
+    assert judge_agreement.main(["--silver-calibration", str(files["silver"]),
+                                "--gold-calibration", str(files["gold"]), str(files["judge"])]) == 0
     out = capsys.readouterr().out
     assert "correctness: 1 gold, 24 silver" in out and "coverage: 0 gold, 25 silver" in out
     assert "within ±1: 100%" in out.split("correctness")[1], "the judge's 2 now agrees with gold's 2"
@@ -238,9 +239,10 @@ def test_d_the_agreement_the_source_counts_and_the_discrepancy_reflect_the_overr
 
 
 def test_d_an_all_todo_gold_file_equals_silver_only(files, capsys):
-    assert judge_agreement.main(["--silver", str(files["silver"]), str(files["judge"])]) == 0
+    assert judge_agreement.main(["--silver-calibration", str(files["silver"]), str(files["judge"])]) == 0
     silver_only = capsys.readouterr().out
-    assert judge_agreement.main(["--silver", str(files["silver"]), "--gold", str(files["todo"]), str(files["judge"])]) == 0
+    assert judge_agreement.main(["--silver-calibration", str(files["silver"]),
+                                "--gold-calibration", str(files["todo"]), str(files["judge"])]) == 0
     assert capsys.readouterr().out == silver_only
     assert "correctness: 0 gold, 25 silver" in silver_only and "Silver vs gold" not in silver_only
 
@@ -249,14 +251,15 @@ def test_d_a_close_disagreement_is_not_listed(files, capsys):
     gold = json.loads(files["gold"].read_text())
     gold["cases"][SAMPLE[0]]["correctness"] = 4  # silver 5: within 1 point
     files["gold"].write_text(json.dumps(gold))
-    assert judge_agreement.main(["--silver", str(files["silver"]), "--gold", str(files["gold"]), str(files["judge"])]) == 0
+    assert judge_agreement.main(["--silver-calibration", str(files["silver"]),
+                                "--gold-calibration", str(files["gold"]), str(files["judge"])]) == 0
     assert "Silver vs gold" not in capsys.readouterr().out
 
 
 def test_d_unfinished_silver_and_a_missing_source_are_refused(files, capsys):
-    assert judge_agreement.main(["--silver", str(files["todo"]), str(files["judge"])]) == 1
+    assert judge_agreement.main(["--silver-calibration", str(files["todo"]), str(files["judge"])]) == 1
     assert "unfinished silver labels" in capsys.readouterr().err
     with pytest.raises(SystemExit):
         judge_agreement.main([str(files["judge"])])
-    assert judge_agreement.main(["--gold", str(files["todo"]), str(files["judge"])]) == 1, \
+    assert judge_agreement.main(["--gold-calibration", str(files["todo"]), str(files["judge"])]) == 1, \
         "gold alone (no silver) must have every score set, so an all-TODO gold file is refused"

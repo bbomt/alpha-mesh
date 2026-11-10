@@ -171,7 +171,7 @@ The owner's decisions, 2026-11-10. The model IDs are set in `.env`, not here.
        broke the feedback loop.
      - GLM 5.3 Flash generates tokens fast, codes well and has a 1M+ context window, at a fraction of frontier
        prices, so Promptfoo iterations stay quick and within budget.
-2. **Judge: DeepSeek V4 Pro 0813** (`deepseek/deepseek-v4-pro-0813`, `JUDGE_MODEL`).
+2. **Judge: DeepSeek V4 Pro 0813** (`deepseek/deepseek-v4-pro-0813`, `EVAL_JUDGE_MODEL`).
    - **Role:** grades each review on the rubric (`llm-rubric`): accuracy, adherence to the JSON format and the
      constraints.
    - **Why:**
@@ -182,7 +182,7 @@ The owner's decisions, 2026-11-10. The model IDs are set in `.env`, not here.
        So does following instructions precisely, which avoids JSON parsing errors, and resisting positional bias.
      - **Independence:** a DeepSeek judge grading a GLM agent keeps the grading objective, without Western frontier
        prices ($10+/M output tokens).
-3. **Silver labeller: GPT-6.1 Terra** (`openai/gpt-6.1-terra`, `SILVER_MODEL`).
+3. **Silver labeller: GPT-6.1 Terra** (`openai/gpt-6.1-terra`, `SILVER_CALIBRATION_MODEL`).
    - **Role:** scores the judge's frozen 25-case sample on the same rubric. These are the silver labels, the stand-in
      for human (gold) scores until a human scores each case.
    - **Why:**
@@ -293,7 +293,7 @@ changing the test to rerun the draw on the old cases), or redraw knowingly and s
 
 ### The judge
 
-A second model (`JUDGE_MODEL`) grades each review on three dimensions, 1 to 5, each with its reason first: **correctness**
+A second model (`EVAL_JUDGE_MODEL`) grades each review on three dimensions, 1 to 5, each with its reason first: **correctness**
 (are the findings real?), **coverage** (did it catch what matters, against the case's `expected` and `notes`?) and
 **actionability** (could a developer act on it?). Coverage compares the claim itself, so a different bug near the line
 counts for the line window but not for the judge.
@@ -315,7 +315,7 @@ a model has to go through `ReviewSession`, so an excluded file's content never r
 (`tests/test_canary.py`), and one call has to return all three scores. It refuses hold-out cases.
 `promptfooconfig.yaml` shows how it fits with the other asserts.
 
-Set `JUDGE_MODEL`, `JUDGE_URL` and `JUDGE_TOKEN` in `.env`. A missing one stops the run before any review.
+Set `EVAL_JUDGE_MODEL`, `EVAL_JUDGE_URL` and `EVAL_JUDGE_TOKEN` in `.env`. A missing one stops the run before any review.
 
 ```bash
 eval/scripts/run_eval.sh --stored ~/.mesh/eval-runs/PMAT-322-base3 --run judge1   # judge stored reviews; the agent doesn't run
@@ -332,8 +332,8 @@ dimension, and Cohen's kappa on pass/fail, score >= 4).
 ```bash
 uv run python eval/scripts/judge_labelling_sheet.py ~/.mesh/eval-runs/PMAT-322-base3   # sheet and labels file; no scores shown
 uv run python eval/scripts/judge_report.py eval/runs/judge1/results.json --write-scores  # after the labels are committed
-uv run python eval/scripts/judge_agreement.py --silver eval/judge/silver-ai-calibration.json \
-    --gold eval/judge/gold-human-calibration.json eval/judge/judge_scores.json
+uv run python eval/scripts/judge_agreement.py --silver-calibration eval/judge/silver-ai-calibration.json \
+    --gold-calibration eval/judge/gold-human-calibration.json eval/judge/judge_scores.json
 ```
 
 **Silver labels (PMAT-326):** the owner has no time to score the 25 cases by hand yet, so a model of another family scores
@@ -342,16 +342,16 @@ standard**. The cases are about code (is the finding real, was the bug caught, c
 a strong model can stand in until humans score.
 
 ```bash
-uv run python eval/scripts/silver_labels.py ~/.mesh/eval-runs/PMAT-322-base3   # SILVER_MODEL in .env
-uv run python eval/scripts/silver_labels.py ~/.mesh/eval-runs/PMAT-322-base3 --model openai/gpt-5-nano   # dev: cheap
+uv run python eval/scripts/silver_labels.py ~/.mesh/eval-runs/<run>   # SILVER_CALIBRATION_MODEL in .env
+uv run python eval/scripts/silver_labels.py ~/.mesh/eval-runs/<run> --model openai/gpt-5-nano   # dev: cheap
 ```
 
-The labeller is `SILVER_MODEL` in `.env` (`openai/gpt-6.1-terra`, owner decision 2026-11-10), or `--model`.
+The labeller is `SILVER_CALIBRATION_MODEL` in `.env` (`openai/gpt-6.1-terra`, owner decision 2026-11-10), or `--model`.
 
 - It gets what the judge and the sheet get (rubric, ground truth, findings, PR description, diff, files the agent read),
   through `llm_rubric.ask` and so `ReviewSession` (`tests/test_canary.py`). It reads only repeat 0's stored review: never
   a judge score, a line-window result or a hold-out case. This sends the sample's repo code to the model's vendor via
-  OpenRouter (`JUDGE_URL`, `JUDGE_TOKEN`; owner's choice, 2026-11-10).
+  OpenRouter (`EVAL_JUDGE_URL`, `EVAL_JUDGE_TOKEN`; owner's choice, 2026-11-10).
 - Each reply is strict JSON (`structured_outputs`, `why` before `score` per dimension, `reasoning_effort` high by
   default). A missing or out-of-range score stops the run naming the case and pass; it is never defaulted.
 - 3 passes (odd), the median per dimension. A case whose passes differ by more than 1 point is `unstable` and worth a
@@ -380,7 +380,7 @@ invisible to this calibration. That is what gold is for.
 The sample (`scripts/judge_sample.py`, seed 311) was drawn from the case files only, per group, from the development
 cases. **It is frozen:** your labels are on these 25 cases, so it is never redrawn, even when categories change (PMAT-321)
 or cases are added; the script refuses, and a test pins the list. A new sample means new labels. Under about 75% on a dimension: read the disagreements, tighten the rubric in a new version (`rubric.v2.md`), and
-record the iteration here. Changing `JUDGE_MODEL` or the rubric means aligning again.
+record the iteration here. Changing `EVAL_JUDGE_MODEL` or the rubric means aligning again.
 
 <!-- JUDGE-RESULTS -->
 **Judge–human agreement:** not yet measured; the owner's labels come first.
@@ -403,7 +403,7 @@ a run reviewed by that family is grading itself, and the judge must then move fa
 | **The agent** | The review agent, the thing being evaluated | With its code |
 | **Running the agent** | `run_review_agent`: the slow step that produces a review | |
 | **Stored review** | A review saved from an earlier run | Never |
-| **The judge** | The separate model that scores a review | With `JUDGE_MODEL` or the rubric |
+| **The judge** | The separate model that scores a review | With `EVAL_JUDGE_MODEL` or the rubric |
 | **Judge–human agreement** | How closely the judge's scores match the owner's on the same reviews | Each alignment |
 | **Golden dataset** (labelled dataset, eval set) | The cases: input + **ground truth** (`real_issue` / `false_positive`, and the `expected` block), split into **development cases** and a **hold-out** | A **label error** is found and fixed |
 | **Ground truth** | The correct answer for a case, decided independently of the agent: the label (a fix commit citing the finding ID, or a dismissal) and the `expected` block derived from it | Only through a label-error fix |

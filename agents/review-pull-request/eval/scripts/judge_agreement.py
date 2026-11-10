@@ -1,12 +1,12 @@
 """Judge agreement (PMAT-311): how far the judge's scores can be trusted, per dimension, against the reference labels.
 
-    uv run python eval/scripts/judge_agreement.py --silver eval/judge/silver-ai-calibration.json \
-        --gold eval/judge/gold-human-calibration.json eval/judge/judge_scores.json
+    uv run python eval/scripts/judge_agreement.py --silver-calibration eval/judge/silver-ai-calibration.json \
+        --gold-calibration eval/judge/gold-human-calibration.json eval/judge/judge_scores.json
 
 The reference (PMAT-326) is built per case and dimension, never written: the human (gold) score where one is set,
 else the silver labeller's. A `TODO` in the gold file is ignored, so with no human scores the reference is all silver.
-With --gold alone, every gold score must be set. Silver-vs-gold discrepancies over 1 point are listed: they show
-where silver was wrong.
+With --gold-calibration alone, every gold score must be set. Silver-vs-gold discrepancies over 1 point are listed:
+they show where silver was wrong.
 
 Prints agreement within ±1 point and Cohen's kappa on pass/fail (score >= 4 is a pass). ±1 is lenient, and two raters
 that pass nearly everything agree by chance; kappa corrects for that. A null score (no findings to grade) is left out.
@@ -75,13 +75,13 @@ def reference(silver: dict | None, gold: dict | None) -> tuple[dict, dict, list[
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Judge agreement with the reference labels, per dimension.")
     parser.add_argument("scores", type=Path, help="the judge's scores")
-    parser.add_argument("--silver", type=Path, help="the silver labeller's scores")
-    parser.add_argument("--gold", type=Path, help="the human scores; a set score overrides silver's")
+    parser.add_argument("--silver-calibration", type=Path, help="the silver labeller's scores")
+    parser.add_argument("--gold-calibration", type=Path, help="the human scores; a set score overrides silver's")
     args = parser.parse_args(argv)
-    if not (args.silver or args.gold):
-        parser.error("give --silver, --gold or both")
-    silver = json.loads(args.silver.read_text()) if args.silver else None
-    gold = json.loads(args.gold.read_text())["cases"] if args.gold else None
+    if not (args.silver_calibration or args.gold_calibration):
+        parser.error("give --silver-calibration, --gold-calibration or both")
+    silver = json.loads(args.silver_calibration.read_text()) if args.silver_calibration else None
+    gold = json.loads(args.gold_calibration.read_text())["cases"] if args.gold_calibration else None
     scored = json.loads(args.scores.read_text())
     if bad := _unfinished(silver["cases"] if silver else gold):
         print(f"ERROR: unfinished {'silver' if silver else 'gold'} labels:\n  " + "\n  ".join(bad), file=sys.stderr)
