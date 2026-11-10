@@ -164,7 +164,8 @@ another case's file at the same repo and `raised_sha`: a file cannot be both cle
 
 > **Baseline model: `z-ai/glm-5.3-flash`** (paid, through OpenRouter; owner decision, PMAT-325, 2026-11-10).
 > Pass `--model z-ai/glm-5.3-flash` for every baseline run and for every run you compare with the baseline.
-> Scores from different models aren't comparable. The `baseline.json` below is still `base2` on
+> Scores from different models aren't comparable. Evals don't use the free models: they are too slow for the
+> eval volume (review passes still may). The `baseline.json` below is still `base2` on
 > `nvidia/nemotron-3.5-super-vl:free`, until run `PMAT-325-base4` (on `z-ai/glm-5.3-flash`) replaces it.
 
 <!-- BASELINE-HEADLINE -->

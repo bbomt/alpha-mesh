@@ -94,4 +94,6 @@ mesh test-alpha-mesh  # broken into test/test/run-all
   `agents/review-pull-request/QA.md` keeps only its first entries.
 - **Eval baseline model: `z-ai/glm-5.3-flash`** (paid; owner decision, PMAT-325, 2026-11-10). Run every
   baseline and every run compared with one on it: `eval/scripts/run_eval.sh --model z-ai/glm-5.3-flash ...`.
-  A run on another model isn't comparable with the baseline. See `agents/review-pull-request/eval/README.md` (Baseline).
+  A run on another model isn't comparable with the baseline. **Evals never use the free models**: they are too
+  slow for the eval volume. Review passes (`mesh review-pull-request`) may still use them. See
+  `agents/review-pull-request/eval/README.md` (Baseline).
