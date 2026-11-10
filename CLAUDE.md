@@ -97,3 +97,5 @@ mesh test-alpha-mesh  # broken into test/test/run-all
   A run on another model isn't comparable with the baseline. **Evals never use the free models**: they are too
   slow for the eval volume. Review passes (`mesh review-pull-request`) may still use them. See
   `agents/review-pull-request/eval/README.md` (Baseline).
+- **Eval judge model (`llm-rubric`, PMAT-311): `deepseek/deepseek-v4-pro-0813`** (owner decision, PMAT-325,
+  2026-11-10). It is deliberately not the baseline model, so the judge does not score its own model's reviews.
