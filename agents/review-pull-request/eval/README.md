@@ -160,6 +160,39 @@ another case's file at the same repo and `raised_sha`: a file cannot be both cle
 `promptfoo eval` runs the real agent on every case's commit and checks its findings against the case's
 `expected` block (PMAT-304). `promptfoo view` shows the results.
 
+### Models (decision record)
+
+The owner's decisions, 2026-11-10. The model IDs are set in `.env`, not here.
+
+1. **Agent: GLM 5.3 Flash** (`z-ai/glm-5.3-flash`, `CODE_REVIEW_MODEL`).
+   - **Role:** runs the multi-step review graph, which fetches diffs, PR descriptions and dependency files through tools.
+   - **Why:** development speed and cost.
+     - The free OpenRouter tiers were unusable for evals: runs hit 8-hour timeouts and corrupted checkpoints, which
+       broke the feedback loop.
+     - GLM 5.3 Flash generates tokens fast, codes well and has a 1M+ context window, at a fraction of frontier
+       prices, so Promptfoo iterations stay quick and within budget.
+2. **Judge: DeepSeek V4 Pro 0813** (`deepseek/deepseek-v4-pro-0813`, `JUDGE_MODEL`).
+   - **Role:** grades each review on the rubric (`llm-rubric`): accuracy, adherence to the JSON format and the
+     constraints.
+   - **Why:**
+     - **Heavy context:** judging a review means reading the PR description, the diff and the files the agent read.
+       DeepSeek V4 Pro 0813 has a 1.05M-token context window and very cheap input (about $0.10/M), so large
+       evaluations stay affordable.
+     - **Reasoning over coding rankings:** for a judge, reasoning depth matters more than code-generation benchmarks.
+       So does following instructions precisely, which avoids JSON parsing errors, and resisting positional bias.
+     - **Independence:** a DeepSeek judge grading a GLM agent keeps the grading objective, without Western frontier
+       prices ($10+/M output tokens).
+3. **Silver labeller: GPT-6.1 Terra** (`openai/gpt-6.1-terra`, `SILVER_MODEL`).
+   - **Role:** scores the judge's frozen 25-case sample on the same rubric. These are the silver labels, the stand-in
+     for human (gold) scores until a human scores each case.
+   - **Why:**
+     - It is a third family, independent of the agent and the judge.
+     - Three passes cost $0.90, and its passes agree with each other more than a cheaper model's (see
+       *Silver labels* below).
+     - `openai/gpt-6-luna` agreed with itself even more, at $0.11, but it gave almost every case the same score:
+       17 of 20 actionability scores were 5. A reference like that can't tell the judge's scores apart.
+     - Higher models (Sol, Astra) need the Team Lead's sign-off.
+
 ### Baseline
 
 <!-- BASELINE-HEADLINE -->
