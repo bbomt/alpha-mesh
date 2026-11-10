@@ -92,10 +92,3 @@ mesh test-alpha-mesh  # broken into test/test/run-all
 - Record false or weak findings from review passes in the "Review-quality log" section of Jira
   PMAT-269's description (edit the description), not in a repo file, so no branch or PR is needed.
   `agents/review-pull-request/QA.md` keeps only its first entries.
-- **Eval baseline model: `z-ai/glm-5.3-flash`** (paid; owner decision, PMAT-325, 2026-11-10). Run every
-  baseline and every run compared with one on it: `eval/scripts/run_eval.sh --model z-ai/glm-5.3-flash ...`.
-  A run on another model isn't comparable with the baseline. **Evals never use the free models**: they are too
-  slow for the eval volume. Review passes (`mesh review-pull-request`) may still use them. See
-  `agents/review-pull-request/eval/README.md` (Baseline).
-- **Eval judge model (`llm-rubric`, PMAT-311): `deepseek/deepseek-v4-pro-0813`** (owner decision, PMAT-325,
-  2026-11-10). It is deliberately not the baseline model, so the judge does not score its own model's reviews.
