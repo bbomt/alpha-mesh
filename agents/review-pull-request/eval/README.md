@@ -385,16 +385,31 @@ record the iteration here. Changing `EVAL_JUDGE_MODEL` or the rubric means align
 <!-- JUDGE-RESULTS -->
 **Judge–human agreement:** not yet measured; the owner's labels come first.
 
-**Pinning:** `z-ai/glm-5.3-flash` is an OpenRouter alias (canonical slug `z-ai/glm-5.3-flash-20260826`). A request for the
-dated slug works, but responses report the alias either way, so the API can't confirm the build. OpenRouter also routes
-calls to different upstream providers, three in three calls in one test. Each judgment records the requested and
-reported model, the provider, its tokens and cost.
+**Pinning:** the judge's model is pinned, but the provider serving it is not.
+- **The model:** `deepseek/deepseek-v4-pro-0813` is a dated release (canonical slug `deepseek/deepseek-v4-pro-20260813`).
+  The undated `deepseek/deepseek-v4-pro` points at an earlier build (`-20260423`), so `.env` uses the dated ID.
+- **The providers:** OpenRouter lists about 20 providers for this model (checked 2026-11-10), at different quantisations
+  (fp4, mxfp4, fp8, and some unstated), and it routes each call to one of them. Two judgments of the same review can
+  therefore come from differently quantised weights.
+- **What is recorded:** each judgment records the requested and reported model, the provider, its tokens and cost, so a
+  disagreement can be traced to a provider.
+- **Not done yet:** pinning a provider or a quantisation would remove that variation (OpenRouter's `provider` routing
+  options).
+- **The previous judge:** `z-ai/glm-5.3-flash` was an alias whose responses didn't confirm the build.
 
 A security miss in `judge_report.py` is a security case with coverage 2 or below.
 
-**Family:** `.env` has `CODE_REVIEW_MODEL=z-ai/glm-5.3-flash`, the judge's own family (owner decision to keep it for now,
-as the stored run's reviewer is Nemotron). The warning at the start of a run checks the run's model and `CODE_REVIEW_MODEL`;
-a run reviewed by that family is grading itself, and the judge must then move family and be aligned again.
+**Family:** each role uses a different model family, so no model grades its own family's output.
+
+| Role | Model | `.env` variable |
+|---|---|---|
+| Agent | GLM (`z-ai/glm-5.3-flash`) | `CODE_REVIEW_MODEL` |
+| Judge | DeepSeek | `EVAL_JUDGE_MODEL` |
+| Silver labeller | OpenAI | `SILVER_CALIBRATION_MODEL` |
+
+The warning at the start of a run checks the run's model and `CODE_REVIEW_MODEL` against the judge's family. A run
+reviewed by a DeepSeek model would be graded by its own family. The judge would then have to move family and be aligned
+again. The warning doesn't check the silver labeller, so keep it out of the agent's family too.
 
 ### Terms
 
