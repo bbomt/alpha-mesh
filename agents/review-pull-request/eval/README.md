@@ -324,8 +324,12 @@ uv run python eval/scripts/silver_labels.py ~/.mesh/eval-runs/PMAT-322-base3 --m
   model and providers reported, the effort, rubric, repeat, passes, cost, date and self-agreement, so a rerun with
   another model keeps the path. The reasons are in `runs/judge-labelling/silver-ai-calibration.md` (gitignored: it
   quotes reviews and code).
-- **A frontier model run** (e.g. `openai/gpt-6.1-sol`, about $5.50 for 3 passes) **needs the Team Lead's sign-off**:
-  develop and test with a cheap model (`openai/gpt-5-nano`, about $0.20).
+- **The committed labels are `openai/gpt-6.1-terra`** (owner, 2026-11-10): 3 passes, effort high, $0.90. Passes agree
+  exactly / within ±1 on correctness 60% / 85%, coverage 84% / 84%, actionability 65% / 100%; 6 of 25 cases unstable.
+  A dev run on `openai/gpt-5-nano` ($0.28) agreed with itself far less (correctness 30% / 70%; 9 unstable).
+- **Cost:** one run sends about 1.02M input tokens (339k per pass, measured). Output, mostly reasoning, varies by model:
+  Terra used little, nano about 580k. **A higher model run** (`openai/gpt-6.1-sol` about $5–11, `openai/gpt-6-astra`
+  about $25–54 for 3 passes) **needs the Team Lead's sign-off**: develop and test with a cheap model.
 
 **Gold over silver:** `judge_agreement.py` builds the reference per case and dimension when it runs, never in a file: the
 human score where one is set, else silver's. A `TODO` is ignored, so with no human scores the reference is all silver,
