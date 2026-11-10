@@ -1,0 +1,212 @@
+{
+  "standard": "silver",
+  "labeller": {
+    "requested": "openai/gpt-6.1-terra",
+    "reported": [
+      "openai/gpt-6.1-terra"
+    ],
+    "providers": [
+      "OpenAI"
+    ]
+  },
+  "reasoning_effort": "high",
+  "rubric": "v1",
+  "repeat": 0,
+  "passes": 3,
+  "date": "2026-11-10",
+  "cost_usd": 0.9009,
+  "self_agreement": {
+    "correctness": {
+      "n": 20,
+      "exact": 0.6,
+      "within_1": 0.85
+    },
+    "coverage": {
+      "n": 25,
+      "exact": 0.84,
+      "within_1": 0.84
+    },
+    "actionability": {
+      "n": 20,
+      "exact": 0.65,
+      "within_1": 1.0
+    }
+  },
+  "cases": {
+    "R36-812f904-001": {
+      "correctness": 5,
+      "coverage": 3,
+      "actionability": 4,
+      "note": "",
+      "unstable": true
+    },
+    "R36-812f904-002": {
+      "correctness": 5,
+      "coverage": 5,
+      "actionability": 4,
+      "note": "",
+      "unstable": true
+    },
+    "R36-812f904-003": {
+      "correctness": 2,
+      "coverage": 1,
+      "actionability": 5,
+      "note": "",
+      "unstable": false
+    },
+    "R36-c3e9e57-001": {
+      "correctness": 5,
+      "coverage": 5,
+      "actionability": 4,
+      "note": "",
+      "unstable": true
+    },
+    "R36-d2309a5-001": {
+      "correctness": 3,
+      "coverage": 2,
+      "actionability": 3,
+      "note": "",
+      "unstable": true
+    },
+    "R36-d2309a5-002": {
+      "correctness": 2,
+      "coverage": 3,
+      "actionability": 4,
+      "note": "",
+      "unstable": true
+    },
+    "R37-1fbb920-001": {
+      "correctness": 1,
+      "coverage": 1,
+      "actionability": 4,
+      "note": "",
+      "unstable": false
+    },
+    "R37-1fbb920-002": {
+      "correctness": 1,
+      "coverage": 5,
+      "actionability": 4,
+      "note": "",
+      "unstable": true
+    },
+    "R45-02d37e7-001": {
+      "correctness": 1,
+      "coverage": 1,
+      "actionability": 5,
+      "note": "",
+      "unstable": false
+    },
+    "R45-fee8a9a-004": {
+      "correctness": 2,
+      "coverage": 4,
+      "actionability": 3,
+      "note": "",
+      "unstable": false
+    },
+    "R45-fee8a9a-015": {
+      "correctness": 1,
+      "coverage": 1,
+      "actionability": 4,
+      "note": "",
+      "unstable": false
+    },
+    "con-003": {
+      "correctness": 5,
+      "coverage": 5,
+      "actionability": 5,
+      "note": "",
+      "unstable": false
+    },
+    "deg-001": {
+      "correctness": null,
+      "coverage": 5,
+      "actionability": null,
+      "note": "",
+      "unstable": false
+    },
+    "imp-001": {
+      "correctness": null,
+      "coverage": 1,
+      "actionability": null,
+      "note": "",
+      "unstable": false
+    },
+    "log-002": {
+      "correctness": 5,
+      "coverage": 5,
+      "actionability": 5,
+      "note": "",
+      "unstable": false
+    },
+    "log-005": {
+      "correctness": 5,
+      "coverage": 5,
+      "actionability": 5,
+      "note": "",
+      "unstable": false
+    },
+    "pub-ansible-66192": {
+      "correctness": 4,
+      "coverage": 5,
+      "actionability": 5,
+      "note": "",
+      "unstable": false
+    },
+    "pub-pyenv-1646": {
+      "correctness": 2,
+      "coverage": 1,
+      "actionability": 4,
+      "note": "",
+      "unstable": false
+    },
+    "pub-trio-1832": {
+      "correctness": 4,
+      "coverage": 1,
+      "actionability": 5,
+      "note": "",
+      "unstable": false
+    },
+    "ref-003": {
+      "correctness": null,
+      "coverage": 5,
+      "actionability": null,
+      "note": "",
+      "unstable": false
+    },
+    "sec-002": {
+      "correctness": 3,
+      "coverage": 5,
+      "actionability": 4,
+      "note": "",
+      "unstable": false
+    },
+    "sec-005": {
+      "correctness": 2,
+      "coverage": 5,
+      "actionability": 5,
+      "note": "",
+      "unstable": false
+    },
+    "sec-007": {
+      "correctness": 5,
+      "coverage": 5,
+      "actionability": 5,
+      "note": "",
+      "unstable": false
+    },
+    "sty-002": {
+      "correctness": null,
+      "coverage": 5,
+      "actionability": null,
+      "note": "",
+      "unstable": false
+    },
+    "sty-004": {
+      "correctness": null,
+      "coverage": 5,
+      "actionability": null,
+      "note": "",
+      "unstable": false
+    }
+  }
+}

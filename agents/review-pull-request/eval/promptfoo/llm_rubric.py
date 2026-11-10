@@ -11,7 +11,8 @@ repeats the agent's tool calls; a trace of its calls and results will replace it
 
 The judge never gates: judge_results always passes, and a judge error is recorded, not failed. Hold-out cases are
 refused here, so nothing about them reaches it: rubric iterations must not use them. Thresholds are
-provisional until the owner sets them (eval/README.md). JUDGE_MODEL, JUDGE_URL and JUDGE_TOKEN come from .env.
+provisional until the owner sets them (eval/README.md). EVAL_JUDGE_MODEL, EVAL_JUDGE_URL and EVAL_JUDGE_TOKEN come from
+.env.
 """
 
 import json
@@ -40,7 +41,7 @@ from review_pull_request.watchdog import WatchdogTransport
 
 RUBRIC_VERSION = "v1"  # a change to the rubric is a new file and a new version
 RUBRIC = EVAL / "judge" / f"rubric.{RUBRIC_VERSION}.md"
-REQUIRED = ("JUDGE_MODEL", "JUDGE_URL", "JUDGE_TOKEN")
+REQUIRED = ("EVAL_JUDGE_MODEL", "EVAL_JUDGE_URL", "EVAL_JUDGE_TOKEN")
 DIMENSIONS = ("correctness", "coverage", "actionability")
 
 
@@ -66,12 +67,12 @@ def _family(model: str) -> str:
 def startup_check() -> None:
     """Fail before any review if the judge can't run; print its model, and warn on self-preference bias."""
     _require_env()
-    judge = os.environ["JUDGE_MODEL"]
+    judge = os.environ["EVAL_JUDGE_MODEL"]
     print(f"Judge model: {judge} (rubric {RUBRIC_VERSION})", file=sys.stderr)
     for label, model in (("the run's model", os.environ.get("EVAL_MODEL")),
                          ("CODE_REVIEW_MODEL", os.environ.get("CODE_REVIEW_MODEL"))):
         if model and _family(model) == _family(judge):
-            print(f"WARNING: JUDGE_MODEL {judge} and {label} {model} share a family: a model may favour its own "
+            print(f"WARNING: EVAL_JUDGE_MODEL {judge} and {label} {model} share a family: a model may favour its own "
                   "output. Scores for reviews by that family are not comparable.", file=sys.stderr)
 
 
@@ -83,8 +84,8 @@ def judge_config():
                                                       verbose=False, hide_pr_comment=False))
     except SystemExit as e:  # load_config exits on a missing .env value; its message is on stderr
         raise RuntimeError(f"cannot load the review config (exit {e.code}): see stderr") from e
-    return replace(config, model=os.environ["JUDGE_MODEL"], api_url=os.environ["JUDGE_URL"],
-                   api_token=os.environ["JUDGE_TOKEN"])
+    return replace(config, model=os.environ["EVAL_JUDGE_MODEL"], api_url=os.environ["EVAL_JUDGE_URL"],
+                   api_token=os.environ["EVAL_JUDGE_TOKEN"])
 
 
 def github_token() -> str:
@@ -141,14 +142,15 @@ class RecordingTransport(httpx.BaseTransport):
         self._inner.close()
 
 
-def make_judge_chat_model(meta: dict):
-    """A chat_model_factory for ReviewSession: as session.make_chat_model, at temperature 0, recording into meta."""
+def make_judge_chat_model(meta: dict, temperature: float | None = 0, extra_body: dict | None = None):
+    """A chat_model_factory for ReviewSession: as session.make_chat_model, at temperature 0, recording into meta.
+    The silver labeller (PMAT-326) sets no temperature and adds its schema and reasoning effort in extra_body."""
     def factory(config, model=None):
         name, base_url = _sent(config, model or config.model)
         client = httpx.Client(transport=WatchdogTransport(RecordingTransport(http_transport(base_url), meta)),
                               timeout=httpx.Timeout(llm.IDLE_TIMEOUT, connect=30))
-        return ChatOpenAI(model=name, api_key=config.api_token, base_url=base_url, temperature=0,
-                          streaming=True, max_retries=0, http_client=client)
+        return ChatOpenAI(model=name, api_key=config.api_token, base_url=base_url, temperature=temperature,
+                          streaming=True, max_retries=0, http_client=client, extra_body=extra_body)
     return factory
 
 
@@ -221,11 +223,19 @@ def _parse(text: str, findings: list[dict]) -> dict:
 
 
 def judge_review(case: dict, review: dict) -> dict:
-    """One judgment of one stored or fresh review. Everything reaches the model through ReviewSession."""
-    config, token, meta = judge_config(), github_token(), {}
+    """One judgment of one stored or fresh review."""
+    config, meta = judge_config(), {}
+    text, findings = ask(case, review, config, make_judge_chat_model(meta))
+    return {**_parse(text, findings), "rubric": RUBRIC_VERSION, "model_requested": config.model, **meta}
+
+
+def ask(case: dict, review: dict, config, chat_model_factory) -> tuple[str, list[dict]]:
+    """The rubric and what the agent saw, sent to `config.model`: (the reply's text, the findings it graded).
+    Everything reaches the model through ReviewSession. Shared by the judge and the silver labeller (PMAT-326)."""
+    token = github_token()
     # Its session redacts these as well as its own token.
     session = ReviewSession.create(config, inner_reader=file_reader(case, token),
-                                   chat_model_factory=make_judge_chat_model(meta),
+                                   chat_model_factory=chat_model_factory,
                                    secrets=[token, os.environ.get("CODE_REVIEW_TOKEN", "")])
     try:
         context = agent_context(case, review, session.reader, session.policy, config.max_file_lines, token)
@@ -236,7 +246,7 @@ def judge_review(case: dict, review: dict) -> dict:
     findings = [f for f in review["findings"] if not session.policy.is_excluded(f["file"])]
     reply = session.review_llm.chat([{"role": "system", "content": RUBRIC.read_text()},
                                      {"role": "user", "content": _prompt(case, findings, diff.text, context)}])
-    return {**_parse(reply.content, findings), "rubric": RUBRIC_VERSION, "model_requested": config.model, **meta}
+    return reply.content, findings
 
 
 def judge_results(output, context) -> dict:

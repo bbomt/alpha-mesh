@@ -27,7 +27,7 @@ defaultTest:
       value: file://promptfoo/asserts.py:case_expectations
     # The LLM judge: a second model scores the review 1 to 5 on correctness, coverage and actionability.
     #   Rubric:  judge/rubric.v1.md (a change is a new version; the judge's reply format is in it)
-    #   Model:   JUDGE_MODEL, JUDGE_URL, JUDGE_TOKEN in .env, at temperature 0, no tools
+    #   Model:   EVAL_JUDGE_MODEL, EVAL_JUDGE_URL, EVAL_JUDGE_TOKEN in .env, at temperature 0, no tools
     #   Sees:    what the agent saw: the diff, the PR description and the files the agent read (files_read)
     #   Why python, not Promptfoo's built-in llm-rubric: everything sent to a model must go through ReviewSession, which
     #   keeps excluded files and tokens out, and one call returns all three scores (eval/README.md, The judge).
