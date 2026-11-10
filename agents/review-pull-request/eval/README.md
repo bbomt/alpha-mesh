@@ -330,9 +330,11 @@ The labeller is `SILVER_MODEL` in `.env` (`openai/gpt-6.1-terra`, owner decision
 - **The committed labels are `openai/gpt-6.1-terra`** (owner, 2026-11-10): 3 passes, effort high, $0.90. Passes agree
   exactly / within ±1 on correctness 60% / 85%, coverage 84% / 84%, actionability 65% / 100%; 6 of 25 cases unstable.
   A dev run on `openai/gpt-5-nano` ($0.28) agreed with itself far less (correctness 30% / 70%; 9 unstable).
-- **Cost:** one run sends about 1.02M input tokens (339k per pass, measured). Output, mostly reasoning, varies by model:
-  Terra used little, nano about 580k. **A higher model run** (`openai/gpt-6.1-sol` about $5–11, `openai/gpt-6-astra`
-  about $25–54 for 3 passes) **needs the Team Lead's sign-off**: develop and test with a cheap model.
+- **Cost:** one run sends about 1.02M input tokens (339k per pass, measured); passes 2 and 3 repeat pass 1's prompts, so
+  OpenRouter mostly bills them at the cached-input price (5% for these models). Output, mostly reasoning, varies by
+  model: Terra about 90k–105k over 3 passes (inferred from its cost), nano about 600k. **A higher model run**
+  (`openai/gpt-6.1-sol` about $2–4, `openai/gpt-6-astra` about $9–21 for 3 passes) **needs the Team Lead's sign-off**:
+  develop and test with a cheap model.
 
 **Gold over silver:** `judge_agreement.py` builds the reference per case and dimension when it runs, never in a file: the
 human score where one is set, else silver's. A `TODO` is ignored, so with no human scores the reference is all silver,
