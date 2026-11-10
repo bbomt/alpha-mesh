@@ -36,7 +36,8 @@ def review_case(case: dict, *, config, token: str, description: str, checkpointe
 
         code = review_commit(owner, repo, case["base_sha"], head, description, config=config, token=token,
                              publish=lambda report: None, all_excluded=all_excluded,
-                             pr_number=case.get("pr_number"), checkpointer=checkpointer, trace_path=trace_path)
+                             pr_number=case.get("pr_number"), checkpointer=checkpointer, trace_path=trace_path,
+                             run_lock=False)  # the caller holds a lock per commit and repeat
         if excluded:  # every changed file is excluded: nothing was reviewed, so nothing was raised or read
             return _review(case, config, files=[], incomplete=[], excluded=excluded, findings=[], files_read=[],
                            trace=None)

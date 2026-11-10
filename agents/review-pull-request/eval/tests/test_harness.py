@@ -5,6 +5,8 @@ and a scripted model, the same boundaries test_review_core fakes. Nothing reache
 """
 
 import json
+import multiprocessing
+from contextlib import ExitStack
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -61,14 +63,44 @@ def run(tmp_path, monkeypatch):
 
     def call(c, model, repeat=0):
         github = gm.FakeGitHub()
-        cfg = Config(model="m", api_url="http://x", api_token="t", exclusions=list(SENSITIVE_PATTERNS))
-        with patch("agent_provider.load_config", return_value=cfg), \
-                patch("review_pull_request.session.make_chat_model", chat_model_factory(model)), \
-                patch("subprocess.run", github.run), \
-                patch.object(httpx.HTTPTransport, "handle_request", lambda self, req: github.handle(req)):
-            result = agent_provider.call_api(c["case_id"], {"config": {}},
-                                             {"vars": {"case_id": c["case_id"], "case": c}, "repeatIndex": repeat})
+        with fakes(github, model):
+            result = call_api(c, repeat)
         return result, github
+
+    def fakes(github, model):
+        cfg = Config(model="m", api_url="http://x", api_token="t", exclusions=list(SENSITIVE_PATTERNS))
+        stack = ExitStack()
+        for p in (patch("agent_provider.load_config", return_value=cfg),
+                  patch("review_pull_request.session.make_chat_model", chat_model_factory(model)),
+                  patch("subprocess.run", github.run),
+                  patch.object(httpx.HTTPTransport, "handle_request", lambda self, req: github.handle(req))):
+            stack.enter_context(p)
+        return stack
+
+    def call_api(c, repeat):
+        return agent_provider.call_api(c["case_id"], {"config": {}},
+                                       {"vars": {"case_id": c["case_id"], "case": c}, "repeatIndex": repeat})
+
+    def call_together(calls, model):
+        """call_api for each (case, repeat) at once, each in its own forked process as Promptfoo's workers
+        are (the core sets signal handlers, so not threads); returns the results and every diff fetched."""
+        ctx = multiprocessing.get_context("fork")
+        queue = ctx.Queue()
+
+        def worker(i, c, repeat):
+            github = gm.FakeGitHub()
+            with fakes(github, model):
+                result = call_api(c, repeat)
+            queue.put((i, result, github.diff_ranges))
+
+        procs = [ctx.Process(target=worker, args=(i, c, repeat)) for i, (c, repeat) in enumerate(calls)]
+        for proc in procs:
+            proc.start()
+        got = sorted(queue.get(timeout=60) for _ in procs)
+        for proc in procs:
+            proc.join()
+        return [r for _, r, _ in got], [d for _, _, ranges in got for d in ranges]
+    call.together = call_together
     return call
 
 
@@ -97,6 +129,39 @@ def test_cases_on_one_commit_share_one_review_within_a_repeat_but_not_across_rep
 
     assert again.diff_ranges == [] and same_commit["output"]["findings"] == first["output"]["findings"]
     assert fresh.diff_ranges == [f"{gm.BASE}...{X}"]
+
+
+def model_waiting_for(parties):
+    """model_reporting({}), whose overview call waits until `parties` reviews have reached it: a review
+    that waits for another one to finish first breaks the barrier (BrokenBarrierError) instead."""
+    barrier, report = multiprocessing.get_context("fork").Barrier(parties, timeout=10), model_reporting({})
+
+    def model(messages, tools):
+        if tools is None:
+            barrier.wait()
+        return report(messages, tools)
+    return model
+
+
+def test_the_repeats_of_one_case_review_at_the_same_time_each_into_its_own_store_and_trace(run, tmp_path):
+    (r0, r1), diffs = run.together([(TRUE_BUG, 0), (TRUE_BUG, 1)], model_waiting_for(2))
+
+    assert "error" not in r0 and "error" not in r1, (r0, r1)
+    assert diffs == [f"{gm.BASE}...{X}"] * 2  # two reviews, neither reused the other's
+    assert r0["output"]["files"] == r1["output"]["files"] == ["src/cart.py", "src/util.py"]
+    for n, r in enumerate((r0, r1)):
+        trace = Path(r["output"]["trace"])
+        assert trace.parent == tmp_path / "run" / "traces" / f"repeat-{n}" and trace.is_file()
+        assert "src/cart.py" in _store_text(tmp_path / "run" / f"checkpoints-repeat-{n}.sqlite")
+
+
+def test_cases_on_one_commit_at_the_same_time_in_one_repeat_still_share_one_review(run):
+    (first, second), diffs = run.together([(TRUE_BUG, 0), (case("skip_false_bug", "src/util.py"), 0)],
+                                           model_reporting({}))
+
+    assert "error" not in first and "error" not in second, (first, second)
+    assert diffs == [f"{gm.BASE}...{X}"]  # one review; the other case reused it
+    assert first["output"]["findings"] == second["output"]["findings"]
 
 
 # (b) ────────────────────────────────────────────────────────────────────────────────────────────
