@@ -243,4 +243,5 @@ def test_d_unfinished_silver_and_a_missing_source_are_refused(files, capsys):
     assert "unfinished silver labels" in capsys.readouterr().err
     with pytest.raises(SystemExit):
         judge_agreement.main([str(files["judge"])])
-    assert judge_agreement.main(["--gold", str(files["todo"]), str(files["judge"])]) == 1, "gold alone: all set"
+    assert judge_agreement.main(["--gold", str(files["todo"]), str(files["judge"])]) == 1, \
+        "gold alone (no silver) must have every score set, so an all-TODO gold file is refused"
