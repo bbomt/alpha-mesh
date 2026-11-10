@@ -69,13 +69,13 @@ def run(tmp_path, monkeypatch):
 
     def fakes(github, model):
         cfg = Config(model="m", api_url="http://x", api_token="t", exclusions=list(SENSITIVE_PATTERNS))
-        stack = ExitStack()
-        for p in (patch("agent_provider.load_config", return_value=cfg),
-                  patch("review_pull_request.session.make_chat_model", chat_model_factory(model)),
-                  patch("subprocess.run", github.run),
-                  patch.object(httpx.HTTPTransport, "handle_request", lambda self, req: github.handle(req))):
-            stack.enter_context(p)
-        return stack
+        with ExitStack() as stack:  # a patch that fails to start undoes the ones before it
+            for p in (patch("agent_provider.load_config", return_value=cfg),
+                      patch("review_pull_request.session.make_chat_model", chat_model_factory(model)),
+                      patch("subprocess.run", github.run),
+                      patch.object(httpx.HTTPTransport, "handle_request", lambda self, req: github.handle(req))):
+                stack.enter_context(p)
+            return stack.pop_all()
 
     def call_api(c, repeat):
         return agent_provider.call_api(c["case_id"], {"config": {}},
@@ -94,11 +94,17 @@ def run(tmp_path, monkeypatch):
             queue.put((i, result, github.diff_ranges))
 
         procs = [ctx.Process(target=worker, args=(i, c, repeat)) for i, (c, repeat) in enumerate(calls)]
-        for proc in procs:
-            proc.start()
-        got = sorted(queue.get(timeout=60) for _ in procs)
-        for proc in procs:
-            proc.join()
+        try:
+            for proc in procs:
+                proc.start()
+            got = sorted(queue.get(timeout=60) for _ in procs)
+        finally:  # a child that hangs or fails is never left running after the test
+            for proc in procs:
+                if proc.is_alive():
+                    proc.join(5)
+                if proc.is_alive():
+                    proc.kill()
+                    proc.join()
         return [r for _, r, _ in got], [d for _, _, ranges in got for d in ranges]
     call.together = call_together
     return call
