@@ -470,9 +470,9 @@ def test_the_judge_harness_detects_a_leak_when_protection_is_off():
 
 def _silver(exclusions=None):
     eval_dir = Path(__file__).resolve().parents[1] / "eval"
-    sys.path[:0] = [str(eval_dir / "promptfoo"), str(eval_dir / "scripts")]
-    import llm_rubric
-    import silver_labels
+    with patch.object(sys, "path", [str(eval_dir / "promptfoo"), str(eval_dir / "scripts"), *sys.path]):
+        import llm_rubric
+        import silver_labels
 
     cfg = Config(model="judge", api_url="http://x", api_token="judge-secret-token",
                  exclusions=list(SENSITIVE_PATTERNS) if exclusions is None else exclusions)

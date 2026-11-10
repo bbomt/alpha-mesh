@@ -143,6 +143,7 @@ def test_c_a_stubbed_reply_gives_a_scores_file_that_judge_agreement_reads(labell
     assert silver["reasoning_effort"] == "high" and silver["cost_usd"] == 0.75 and silver["repeat"] == 0
     assert set(silver["cases"]) == set(SAMPLE) and "TODO" not in scores.read_text()
     empty = [c for c in SAMPLE if c.endswith("1")]
+    assert empty, "the fake gives a review with no findings to cases ending in 1: the sample must have one"
     assert silver["cases"][empty[0]]["correctness"] is None and silver["cases"][empty[0]]["coverage"] == 4
     assert "why" not in scores.read_text(), "scores only: the reasons are in the gitignored .md"
     assert "Pass 3" in reasons.read_text()
