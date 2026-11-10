@@ -149,7 +149,7 @@ def main(argv=None) -> int:
     if not args.model:
         print(f"ERROR: no labeller: pass --model or set SILVER_MODEL in {config_module.ENV_FILE}", file=sys.stderr)
         return 1
-    sample =set(json.loads(judge_sample.SAMPLE.read_text())["cases"])
+    sample = set(json.loads(judge_sample.SAMPLE.read_text())["cases"])
     cases = [c for c in case_rules.development_cases() if c["case_id"] in sample]
     if missing := sample - {c["case_id"] for c in cases}:
         print(f"ERROR: no development case for {', '.join(sorted(missing))}", file=sys.stderr)
