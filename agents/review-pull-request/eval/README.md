@@ -198,68 +198,67 @@ The owner's decisions, 2026-11-10. The model IDs are set in `.env`, not here.
 
 ### Baseline
 
-> **Models come from `.env`:** `CODE_REVIEW_MODEL` is the agent under test, `JUDGE_MODEL` the `llm-rubric` judge.
-> Evals use paid models only: the free ones are too slow for the eval volume (review passes still may use them).
-> Compare a run only with a baseline on the same model: `baseline.json`'s `model` says which one. Today's
-> `baseline.json` is `base2` on `nvidia/nemotron-3.5-super-vl:free`, until run `PMAT-325-base4`
-> (on `z-ai/glm-5.3-flash`) replaces it.
+> **Models come from `.env`, the one source of truth:** `CODE_REVIEW_MODEL` is the agent under test (unless
+> `run_eval.sh --model` names another), `EVAL_JUDGE_MODEL` the `llm-rubric` judge. Evals run on the free model
+> `CODE_REVIEW_MODEL` sets: since PMAT-328 a full run of the 65 cases at k=3 takes about 2 hours. A paid model only
+> when asked.
+> Compare a run only with a baseline on the same model: `baseline.json`'s `model` says which one.
 
 <!-- BASELINE-HEADLINE -->
-`baseline.json`: run `base2`, agent `665c767`, `nvidia/nemotron-3.5-super-vl:free`, k=3, window ±3 lines, the 65
-development cases (195 runs, 2026-11-04), all scored (no harness errors). The hold-out's score is
+`baseline.json`: run `PMAT-325-base6-nemotron`, agent `ba8705a`, `nvidia/nemotron-3.5-super-vl:free`, k=3, window ±3
+lines, the 65 development cases (195 runs, 2026-11-11), all scored (no harness errors). The hold-out's score is
 [reported apart](#hold-out-set).
 
 | | Pass rate (per run) | pass^3 (per case) |
 | :-- | --: | --: |
-| **All 65 development cases** | **71%** | **52%** |
-| `raise_true_bug` (36, recall) | 70% | 56% |
-| `skip_false_bug` (20, precision traps) | 63% | 35% |
-| `raise_nothing` (9, clean code) | 93% | 78% |
-| Old file-only rule, for comparison | 68% | |
+| **All 65 development cases** | **72%** | **65%** |
+| `raise_true_bug` (36, recall) | 67% | 61% |
+| `skip_false_bug` (20, precision traps) | 77% | 70% |
+| `raise_nothing` (9, clean code) | 81% | 67% |
+| Old file-only rule, for comparison | 64% | |
 
 | Category | Expected action | Cases | Runs passed | Rate | Passed all 3 |
 | :-- | :-- | --: | --: | --: | --: |
 | concurrency | `raise_true_bug` | 3 | 9/9 | 100% | 3/3 |
 | degenerate | `raise_nothing` | 2 | 6/6 | 100% | 2/2 |
-| improvable | `raise_true_bug` | 3 | 4/9 | 44% | 1/3 |
+| improvable | `raise_true_bug` | 3 | 0/9 | 0% | 0/3 |
 | logic (synthetic) | `raise_true_bug` | 6 | 18/18 | 100% | 6/6 |
-| logic (public) | `raise_true_bug` | 8 | 18/24 | 75% | 5/8 |
-| mined: all | `raise_true_bug` | 10 | 10/30 | 33% | 0/10 |
-| mined: logic | `raise_true_bug` | 10 | 10/30 | 33% | 0/10 |
-| mined: all | `skip_false_bug` | 20 | 38/60 | 63% | 7/20 |
-| mined: logic | `skip_false_bug` | 10 | 17/30 | 57% | 4/10 |
-| mined: improvable | `skip_false_bug` | 7 | 15/21 | 71% | 2/7 |
-| mined: concurrency | `skip_false_bug` | 2 | 3/6 | 50% | 0/2 |
+| logic (public) | `raise_true_bug` | 8 | 19/24 | 79% | 6/8 |
+| mined: all | `raise_true_bug` | 10 | 8/30 | 27% | 1/10 |
+| mined: logic | `raise_true_bug` | 10 | 8/30 | 27% | 1/10 |
+| mined: all | `skip_false_bug` | 20 | 46/60 | 77% | 14/20 |
+| mined: logic | `skip_false_bug` | 10 | 20/30 | 67% | 6/10 |
+| mined: improvable | `skip_false_bug` | 7 | 19/21 | 90% | 6/7 |
+| mined: concurrency | `skip_false_bug` | 2 | 4/6 | 67% | 1/2 |
 | mined: style_only | `skip_false_bug` | 1 | 3/3 | 100% | 1/1 |
-| refactor | `raise_nothing` | 3 | 7/9 | 78% | 1/3 |
-| security | `raise_true_bug` | 6 | 17/18 | 94% | 5/6 |
-| style_only | `raise_nothing` | 4 | 12/12 | 100% | 4/4 |
+| refactor | `raise_nothing` | 3 | 5/9 | 56% | 1/3 |
+| security | `raise_true_bug` | 6 | 18/18 | 100% | 6/6 |
+| style_only | `raise_nothing` | 4 | 11/12 | 92% | 3/4 |
 
 Mined cases keep their own rows (`mined:<category>` in `by_category`), like public ones. The `mined: all` rows are their
-sum; the rates are those of the baseline before mined cases had categories (PMAT-321 only moved the grouping).
+sum.
 
 | Severity of the case's finding | Expected action | Cases | Runs passed | Rate | Passed all 3 |
 | :-- | :-- | --: | --: | --: | --: |
-| high | `raise_true_bug` | 9 | 19/27 | 70% | 5/9 |
-| medium | `raise_true_bug` | 15 | 35/45 | 78% | 9/15 |
-| low | `raise_true_bug` | 12 | 22/36 | 61% | 6/12 |
-| high | `skip_false_bug` | 5 | 13/15 | 87% | 3/5 |
-| medium | `skip_false_bug` | 9 | 14/27 | 52% | 2/9 |
-| low | `skip_false_bug` | 6 | 11/18 | 61% | 2/6 |
-| none | `raise_nothing` | 9 | 25/27 | 93% | 7/9 |
+| high | `raise_true_bug` | 9 | 21/27 | 78% | 7/9 |
+| medium | `raise_true_bug` | 15 | 31/45 | 69% | 9/15 |
+| low | `raise_true_bug` | 12 | 20/36 | 56% | 6/12 |
+| high | `skip_false_bug` | 5 | 15/15 | 100% | 5/5 |
+| medium | `skip_false_bug` | 9 | 19/27 | 70% | 6/9 |
+| low | `skip_false_bug` | 6 | 12/18 | 67% | 3/6 |
+| none | `raise_nothing` | 9 | 22/27 | 81% | 6/9 |
 
-- **Failure taxonomy:** 31 `model_failure` (8 stable, 23 flaky), 0 `harness_error`, **24 `label_error`s fixed**
-  (`label_errors_fixed`: 24 mined cases whose line was not the line of the code they describe at `raised_sha`). The fixes followed the code, not the results, and moved individual cases both ways: 34 cases passed all
-  3 repeats before them and 34 after.
-- **The 31:** of the 13 `skip_false_bug` failures, 8 re-raise the dismissed claim and 5 are the line-matching limit only
-  (a *different* claim inside the window). The 16 `raise_true_bug` failures are mostly misses; in 5 the claim is raised
-  in some repeats but at a line outside the window or below the required severity (`R36-d2309a5-001`, `R45-fee8a9a-004`,
-  `-006`, `pub-mikro-orm-481`, `sec-002`). The 2 `raise_nothing` failures flag behaviour a refactor did not change. Each
-  reason is in `error_analysis.json`.
-- **Recall on mined bugs is lower than 33%.** 8 of its 10 passing runs pass only because a *different* claim is inside
-  the window: from reading them, the agent raised the real claim at the line and severity the case requires twice in 30
-  runs. The window also favours `run_eval.sh`, where three cases sit within lines 34 to 39. The judge (PMAT-311) is
-  what separates these.
+- **Failure taxonomy:** 23 `model_failure` (12 stable, 11 flaky), 0 `harness_error`, no `label_error`s fixed since the
+  run (`label_errors_fixed` is empty: the 24 mined-line fixes counted in run `base2` were already in the cases it ran on).
+- **The 23:** of the 6 `skip_false_bug` failures, 3 re-raise the dismissed claim and 3 are the line-matching limit only
+  (a *different* claim inside the window). The 14 `raise_true_bug` failures are mostly misses (the 3 `improvable`
+  cases have no finding at all); in 3 the claim is raised but below the required severity (`R45-fee8a9a-004`, `-006`)
+  or at a line outside the window (`pub-trio-1832`). The 3 `raise_nothing` failures flag behaviour the commit did not
+  change. Each reason is in `error_analysis.json`.
+- **Recall on mined bugs is lower than 27%.** 4 of its 8 passing runs pass only because a *different* claim is inside
+  the window: the agent raised the real claim at the line and severity the case requires 4 times in 30 runs (3 of them
+  `R36-d2309a5-001`). The window also favours `run_eval.sh`, where three cases sit within lines 34 to 39. The judge
+  (PMAT-311) is what separates these.
 
 ### Hold-out set
 
