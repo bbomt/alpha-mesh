@@ -269,10 +269,36 @@ def test_a_fenced_json_reply_is_accepted(judged):
 
 
 def test_with_no_findings_only_coverage_is_scored(judged):
-    graded, _ = judged(case("raise_nothing", "src/**"), review(), reply(5, 5, 5))
+    graded, seen = judged(case(min_severity="low"), review(), reply(5, 1, 5))
+    assert seen, "a missed true bug is the model's to score"
+    assert graded["namedScores"] == {"coverage": 1}
+    judgment = graded["metadata"]["judgment"]
+    assert judgment["correctness"]["score"] is None and judgment["actionability"]["score"] is None
+
+
+def test_a_clean_case_with_no_findings_is_scored_by_the_rubric_not_the_model(judged):
+    """Rubric: raise_nothing scores coverage 5 when the review raises nothing; no findings means nulls for the rest."""
+    graded, seen = judged(case("raise_nothing", "src/**"), review(), reply(1, 1, 1))
+    assert seen == [], "the rubric fixes every score, so no model call is made"
     assert graded["namedScores"] == {"coverage": 5}
     judgment = graded["metadata"]["judgment"]
     assert judgment["correctness"]["score"] is None and judgment["actionability"]["score"] is None
+    assert judgment["fixed_by_rubric"] is True and judgment["rubric"] == llm_rubric.RUBRIC_VERSION
+
+
+def test_a_clean_case_with_a_finding_still_goes_to_the_model(judged):
+    _, seen = judged(case("raise_nothing", "src/**"), review(finding(file="docs/a.md")), reply())
+    assert seen
+
+
+def test_the_shared_context_comes_first_and_the_case_last_so_a_review_s_cases_share_a_cached_prefix(judged):
+    r = review(finding()) | {"files_read": ["src/loop.py"]}
+    first = judged(case(min_severity="low"), r, reply())[1][0][1]["content"]
+    second = judged(case("skip_false_bug", min_severity="low") | {"case_id": "R7-x-002"}, r, reply())[1][0][1]["content"]
+    tags = ["<pr_description>", "<diff>", "<files_read>", "<findings>", "<case>"]
+    assert [first.index(t) for t in tags] == sorted(first.index(t) for t in tags)
+    shared = first[:first.index("<case>")]
+    assert second.startswith(shared), "two cases on one review differ only after the shared context and findings"
 
 
 def test_the_family_warning_checks_the_runs_model_and_the_env_model(capsys, monkeypatch, tmp_path):
@@ -311,6 +337,24 @@ def test_the_reported_model_provider_and_cost_are_recorded_from_the_stream():
     assert b"".join(response.stream) == SSE, "the reply must pass through unchanged"
     assert meta == {"model_reported": "z-ai/reported", "provider": "Wafer", "prompt_tokens": 10,
                     "completion_tokens": 2, "cost": 0.001}
+
+
+def test_the_cached_and_reasoning_tokens_are_recorded_from_deepseek_and_openrouter_replies():
+    def recorded(usage):
+        meta, sse = {}, b"data: " + json.dumps({"model": "deepseek-v4-pro", "usage": usage}).encode() + b"\n\n"
+
+        class Inner(httpx.BaseTransport):
+            def handle_request(self, request):
+                return httpx.Response(200, stream=httpx.ByteStream(sse))
+
+        b"".join(llm_rubric.RecordingTransport(Inner(), meta).handle_request(httpx.Request("POST", "http://x")).stream)
+        return meta
+
+    deepseek = recorded({"prompt_tokens": 90, "completion_tokens": 34, "prompt_cache_hit_tokens": 64,
+                         "completion_tokens_details": {"reasoning_tokens": 32}})
+    assert deepseek["cached_tokens"] == 64 and deepseek["reasoning_tokens"] == 32 and "cost" not in deepseek
+    openrouter = recorded({"prompt_tokens": 90, "completion_tokens": 34, "prompt_tokens_details": {"cached_tokens": 50}})
+    assert openrouter["cached_tokens"] == 50
 
 
 def test_the_recording_survives_a_reader_that_stops_at_done_and_a_chunk_split_mid_line():
@@ -440,6 +484,21 @@ def test_the_report_gives_the_means_the_proposal_and_the_cost(capsys):
     judge_report.print_summary(summary)
     out = capsys.readouterr().out
     assert "z-ai/glm" in out and "Wafer" in out and "provisional" in out
+
+
+def test_the_report_says_when_the_provider_reports_no_cost_and_counts_cached_tokens_and_rubric_fixed_rows(capsys):
+    c = case() | {"case_id": "a"}
+    direct = {k: v for k, v in judgment(4, 4, 4).items() if k not in ("cost", "provider")} | {
+        "prompt_tokens": 100, "cached_tokens": 60}
+    no_call = ("cost", "provider", "model_reported", "prompt_tokens", "completion_tokens")
+    fixed = {k: v for k, v in judgment(None, 5, None).items() if k not in no_call} | {"fixed_by_rubric": True}
+    rows = [graded_row("a", 0, direct), graded_row("a", 1, fixed)]
+    summary = judge_report.summarise(judge_report.collect({"results": {"results": rows}}, [c]))
+    judge_report.print_summary(summary)
+    out = capsys.readouterr().out
+    assert "cost not reported by the provider" in out
+    assert "cached 60 of 100 prompt tokens (60%)" in out
+    assert "1 fixed by the rubric (no model call)" in out
 
 
 def test_the_scores_file_holds_only_the_sample_at_repeat_0():

@@ -117,9 +117,15 @@ class _RecordingStream(httpx.SyncByteStream):
         except json.JSONDecodeError:
             return
         usage = data.get("usage") or {}
+        # Cached prompt tokens: DeepSeek's own API names them prompt_cache_hit_tokens, OpenRouter prompt_tokens_details.
+        cached = usage.get("prompt_cache_hit_tokens")
+        if cached is None:
+            cached = (usage.get("prompt_tokens_details") or {}).get("cached_tokens")
         for key, value in (("model_reported", data.get("model")), ("provider", data.get("provider")),
-                           ("prompt_tokens", usage.get("prompt_tokens")),
-                           ("completion_tokens", usage.get("completion_tokens")), ("cost", usage.get("cost"))):
+                           ("prompt_tokens", usage.get("prompt_tokens")), ("cached_tokens", cached),
+                           ("completion_tokens", usage.get("completion_tokens")),
+                           ("reasoning_tokens", (usage.get("completion_tokens_details") or {}).get("reasoning_tokens")),
+                           ("cost", usage.get("cost"))):
             if value is not None:
                 self._meta[key] = value
 
@@ -189,11 +195,12 @@ def _prompt(case: dict, findings: list[dict], diff: str, context: dict) -> str:
     truth = {"expected": case["expected"], "finding": case.get("finding"), "category": case["category"],
              "notes": case.get("notes"), "label_reason": case.get("label_reason")}
     numbered = [{"number": i, **f} for i, f in enumerate(findings)]
-    return (f"<case>\n{json.dumps(truth, indent=1)}\n</case>\n\n"
-            f"<findings>\n{json.dumps(numbered, indent=1)}\n</findings>\n\n"
-            f"<pr_description>\n{context['description']}\n</pr_description>\n\n"
+    # What the cases of one review share comes first, the case last: their calls then share a cached prefix.
+    return (f"<pr_description>\n{context['description']}\n</pr_description>\n\n"
             f"<diff>\n{diff}\n</diff>\n\n"
-            f"<files_read>\n{_files_read(context['files'])}\n</files_read>")
+            f"<files_read>\n{_files_read(context['files'])}\n</files_read>\n\n"
+            f"<findings>\n{json.dumps(numbered, indent=1)}\n</findings>\n\n"
+            f"<case>\n{json.dumps(truth, indent=1)}\n</case>")
 
 
 def _score(reply: dict, dimension: str, nullable: bool):
@@ -225,6 +232,11 @@ def _parse(text: str, findings: list[dict]) -> dict:
 def judge_review(case: dict, review: dict) -> dict:
     """One judgment of one stored or fresh review."""
     config, meta = judge_config(), {}
+    if case["expected"]["action"] == "raise_nothing" and not review["findings"]:
+        # The rubric fixes every score: coverage 5 (it raised nothing), and no findings to grade. No model call.
+        fixed = {"why": "fixed by the rubric: a raise_nothing case whose review has no findings", "score": None}
+        return {**{d: fixed for d in DIMENSIONS}, "coverage": {**fixed, "score": 5}, "fixed_by_rubric": True,
+                "rubric": RUBRIC_VERSION, "model_requested": config.model}
     text, findings = ask(case, review, config, make_judge_chat_model(meta))
     return {**_parse(text, findings), "rubric": RUBRIC_VERSION, "model_requested": config.model, **meta}
 

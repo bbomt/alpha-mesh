@@ -174,13 +174,15 @@ The owner's decisions, 2026-11-10. The model IDs are set in `.env`, not here.
        broke the feedback loop.
      - GLM 5.3 Flash generates tokens fast, codes well and has a 1M+ context window, at a fraction of frontier
        prices, so Promptfoo iterations stay quick and within budget.
-2. **Judge: DeepSeek V4 Pro 0813** (`deepseek/deepseek-v4-pro-0813`, `EVAL_JUDGE_MODEL`).
+2. **Judge: DeepSeek V4 Pro 0813**, called on DeepSeek's own API (`EVAL_JUDGE_URL=https://api.deepseek.com`,
+   `EVAL_JUDGE_MODEL=deepseek/deepseek-v4-pro`; owner, PMAT-311 comment 13696, 2026-11-11). See *Pinning* below.
    - **Role:** grades each review on the rubric (`llm-rubric`): accuracy, adherence to the JSON format and the
      constraints.
    - **Why:**
      - **Heavy context:** judging a review means reading the PR description, the diff and the files the agent read.
-       DeepSeek V4 Pro 0813 has a 1.05M-token context window and very cheap input (about $0.10/M), so large
-       evaluations stay affordable.
+       DeepSeek V4 Pro 0813 has a 1.05M-token context window, and on DeepSeek's API costs $0.66/M input and
+       $1.98/M output, with cached input at $0.022/M (OpenRouter's listing, 2026-11-11), so large evaluations stay
+       affordable.
      - **Reasoning over coding rankings:** for a judge, reasoning depth matters more than code-generation benchmarks.
        So does following instructions precisely, which avoids JSON parsing errors, and resisting positional bias.
      - **Independence:** a DeepSeek judge grading a GLM agent keeps the grading objective, without Western frontier
@@ -403,16 +405,21 @@ record the iteration here. Changing `EVAL_JUDGE_MODEL` or the rubric means align
 <!-- JUDGE-RESULTS -->
 **Judge–human agreement:** not yet measured; the owner's labels come first.
 
-**Pinning:** the judge's model is pinned, but the provider serving it is not.
-- **The model:** `deepseek/deepseek-v4-pro-0813` is a dated release (canonical slug `deepseek/deepseek-v4-pro-20260813`).
-  The undated `deepseek/deepseek-v4-pro` points at an earlier build (`-20260423`), so `.env` uses the dated ID.
-- **The providers:** OpenRouter lists about 20 providers for this model (checked 2026-11-10), at different quantisations
-  (fp4, mxfp4, fp8, and some unstated), and it routes each call to one of them. Two judgments of the same review can
-  therefore come from differently quantised weights.
-- **What is recorded:** each judgment records the requested and reported model, the provider, its tokens and cost, so a
-  disagreement can be traced to a provider.
-- **Not done yet:** pinning a provider or a quantisation would remove that variation (OpenRouter's `provider` routing
-  options).
+**Pinning:** the judge runs on one provider, DeepSeek's own API, so every judgment comes from the same weights.
+- **Why not OpenRouter:** judge1 (2026-11-11) was routed to 10 providers at fp4, mxfp4, fp8 and unstated
+  quantisations, so two judgments of one review could come from different weights, and no prompt was ever cached.
+  The fp8 hosts charged $1.32/M input, twice DeepSeek's price.
+- **The model:** DeepSeek's API names it `deepseek-v4-pro`, with no date, and reports that name back. It is the dated
+  build `20260813` as of 2026-11-11: that is the only build OpenRouter's DeepSeek endpoint serves (its undated
+  `deepseek/deepseek-v4-pro` is the older `-20260423` and isn't served by DeepSeek). DeepSeek can move the name to a
+  new build without notice, so the calibration holds for the build of the date it was measured, recorded below.
+- **What is recorded:** each judgment records the requested and reported model, its tokens, cached and reasoning
+  tokens, and the provider and cost where the reply gives them. DeepSeek's API gives neither, so a run's cost is
+  the account balance before and after.
+- **Calls the rubric makes unnecessary:** a `raise_nothing` case whose review has no findings scores coverage 5 with
+  null correctness and actionability (the rubric fixes every score), so it isn't sent to the model.
+- **Prompt order:** the shared context (the PR description, diff and files read) comes before the findings and the
+  case, so the cases of one review share a cached prefix.
 - **The previous judge:** `z-ai/glm-5.3-flash` was an alias whose responses didn't confirm the build.
 
 A security miss in `judge_report.py` is a security case with coverage 2 or below.
