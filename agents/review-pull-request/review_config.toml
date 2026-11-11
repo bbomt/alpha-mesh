@@ -13,6 +13,9 @@ patterns = [
     "*.min.js",
     "*.min.css",
     "*.lock",
+    "*.lockb",
+    "npm-shrinkwrap.json",
+    "go.sum",
 ]
 
 [github]

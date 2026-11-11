@@ -345,8 +345,9 @@ JUDGE_LIVE=1 uv run pytest eval/tests/test_judge.py -k live                     
 
 A normal `run_eval.sh` run judges the agent's fresh reviews too. A `--stored` run has no `run.json`, so it can't become the baseline.
 
-**Aligning the judge (meta-evaluation):** humans score 25 development cases blind (gold), a silver labeller scores them
-too (below), and the judge's scores are compared with the reference: gold where set, else silver (within ±1 point per
+**Judge Calibration (meta-evaluation):** humans score 25 development cases blind (gold), a silver labeller scores them
+too (below); together these are the **Calibration Labels**. The judge's scores are compared with them, gold where set, else
+silver, and the result is the **Judge Alignment** (within ±1 point per
 dimension, and Cohen's kappa on pass/fail, score >= 4).
 
 ```bash
@@ -405,7 +406,7 @@ or cases are added; the script refuses, and a test pins the list. A new sample m
 record the iteration here. Changing `EVAL_JUDGE_MODEL` or the rubric means aligning again.
 
 <!-- JUDGE-RESULTS -->
-**Judge–human agreement:** not yet measured; the owner's labels come first.
+**Judge Alignment:** not yet published; the first Judge Calibration is in progress.
 
 **Pinning:** the judge runs on one provider, DeepSeek's own API, so every judgment comes from the same weights.
 - **Why not OpenRouter:** judge1 (2026-11-11) was routed to 10 providers at fp4, mxfp4, fp8 and unstated
@@ -446,7 +447,9 @@ again. The warning doesn't check the silver labeller, so keep it out of the agen
 | **Running the agent** | `run_review_agent`: the slow step that produces a review | |
 | **Stored review** | A review saved from an earlier run | Never |
 | **The judge** | The separate model that scores a review | With `EVAL_JUDGE_MODEL` or the rubric |
-| **Judge–human agreement** | How closely the judge's scores match the owner's on the same reviews | Each alignment |
+| **Calibration Labels** | Trusted scores on the 25 frozen sample reviews, the yardstick for the judge: **gold** (a human's) where set, else **silver** (a model of another family) | Gold when a human scores; silver when the labeller reruns |
+| **Judge Calibration** | Running the judge on the sample reviews and comparing its scores with the Calibration Labels | With `EVAL_JUDGE_MODEL` or the rubric |
+| **Judge Alignment** | The result of Judge Calibration: how often the judge agrees with the Calibration Labels (within ±1 point, and kappa) per dimension | Each Judge Calibration |
 | **Golden dataset** (labelled dataset, eval set) | The cases: input + **ground truth** (`real_issue` / `false_positive`, and the `expected` block), split into **development cases** and a **hold-out** | A **label error** is found and fixed |
 | **Ground truth** | The correct answer for a case, decided independently of the agent: the label (a fix commit citing the finding ID, or a dismissal) and the `expected` block derived from it | Only through a label-error fix |
 | **Run** | One `promptfoo eval`: the agent's output and pass / fail / error for every case, k times | Every run |
