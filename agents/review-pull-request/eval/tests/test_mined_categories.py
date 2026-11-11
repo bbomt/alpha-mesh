@@ -39,20 +39,14 @@ def test_2_the_holdout_list_is_unchanged_and_the_draw_still_gives_it():
 
 # 3 ──────────────────────────────────────────────────────────────────────────────────────────────
 
-def test_3_the_baselines_pass_rates_are_unchanged_and_only_the_grouping_moves():
+def test_3_the_baseline_groups_mined_cases_by_their_category():
+    """PMAT-321 checked here that only the grouping moved (base2's rates pinned); since base6 (PMAT-325) the
+    baseline is a new run, so only the grouping is checked."""
     b = json.loads((EVAL / "baseline.json").read_text())
     by_id = {c["case_id"]: c for c in CASES}
     s = b["summary"]
-    assert (s["cases"], s["pass_rate"], s["pass_k"], s["file_level_pass_rate"]) == (65, 0.7128, 0.5231, 0.6821)
+    assert s["cases"] == 65
     assert all(e["category"] == by_id[i]["category"] for i, e in b["cases"].items())
     assert s["by_category"] == baseline.pass_rates(b["cases"], by_id, baseline.category_group)
-
-    mined = {}
-    for key, row in s["by_category"].items():
-        if key.startswith("mined:"):
-            totals = mined.setdefault(key.rsplit("/", 1)[1], {"cases": 0, "runs_passed": 0, "runs": 0, "passed_all": 0})
-            for k in totals:
-                totals[k] += row[k]
-    assert mined == {  # the old `mined/<action>` rows of the PMAT-318 baseline
-        "skip_false_bug": {"cases": 20, "runs_passed": 38, "runs": 60, "passed_all": 7},
-        "raise_true_bug": {"cases": 10, "runs_passed": 10, "runs": 30, "passed_all": 0}}
+    assert sum(row["cases"] for key, row in s["by_category"].items() if key.startswith("mined:")) == len(
+        [i for i in b["cases"] if by_id[i]["source"] == "pr_comment"])

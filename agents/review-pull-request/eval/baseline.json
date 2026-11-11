@@ -1,45 +1,45 @@
 {
-  "commit": "665c767bb257da196fbbd57ab86552e03d63f9ff",
+  "commit": "ba8705a04c877afd04133f4c82dddb16cbafb836",
   "model": "nvidia/nemotron-3.5-super-vl:free",
-  "date": "2026-11-04",
+  "date": "2026-11-11",
   "k": 3,
   "window": 3,
-  "cases_commit": "af1d3ce8e5a6f02c473d983b24ed293cee934ebc",
+  "cases_commit": "96426d6babdde91619a373467ae0bf0227832871",
   "summary": {
     "cases": 65,
     "scored_cases": 65,
-    "pass_rate": 0.7128,
-    "pass_k": 0.5231,
-    "file_level_pass_rate": 0.6821,
+    "pass_rate": 0.7179,
+    "pass_k": 0.6462,
+    "file_level_pass_rate": 0.641,
     "by_class": {
-      "model_failure": 31,
-      "label_error": 24,
+      "model_failure": 23,
+      "label_error": 0,
       "harness_error": 0
     },
     "by_category": {
       "mined:logic/skip_false_bug": {
         "cases": 10,
-        "runs_passed": 17,
+        "runs_passed": 20,
         "runs": 30,
-        "passed_all": 4
+        "passed_all": 6
       },
       "mined:logic/raise_true_bug": {
         "cases": 10,
-        "runs_passed": 10,
+        "runs_passed": 8,
         "runs": 30,
-        "passed_all": 0
+        "passed_all": 1
       },
       "mined:improvable/skip_false_bug": {
         "cases": 7,
-        "runs_passed": 15,
+        "runs_passed": 19,
         "runs": 21,
-        "passed_all": 2
+        "passed_all": 6
       },
       "mined:concurrency/skip_false_bug": {
         "cases": 2,
-        "runs_passed": 3,
+        "runs_passed": 4,
         "runs": 6,
-        "passed_all": 0
+        "passed_all": 1
       },
       "mined:style_only/skip_false_bug": {
         "cases": 1,
@@ -61,9 +61,9 @@
       },
       "improvable/raise_true_bug": {
         "cases": 3,
-        "runs_passed": 4,
+        "runs_passed": 0,
         "runs": 9,
-        "passed_all": 1
+        "passed_all": 0
       },
       "logic/raise_true_bug": {
         "cases": 6,
@@ -73,187 +73,90 @@
       },
       "public/raise_true_bug": {
         "cases": 8,
-        "runs_passed": 18,
+        "runs_passed": 19,
         "runs": 24,
-        "passed_all": 5
+        "passed_all": 6
       },
       "refactor/raise_nothing": {
         "cases": 3,
-        "runs_passed": 7,
+        "runs_passed": 5,
         "runs": 9,
         "passed_all": 1
       },
       "security/raise_true_bug": {
         "cases": 6,
-        "runs_passed": 17,
+        "runs_passed": 18,
         "runs": 18,
-        "passed_all": 5
+        "passed_all": 6
       },
       "style_only/raise_nothing": {
         "cases": 4,
-        "runs_passed": 12,
+        "runs_passed": 11,
         "runs": 12,
-        "passed_all": 4
+        "passed_all": 3
       }
     },
     "by_severity": {
       "medium/skip_false_bug": {
         "cases": 9,
-        "runs_passed": 14,
+        "runs_passed": 19,
         "runs": 27,
-        "passed_all": 2
+        "passed_all": 6
       },
       "medium/raise_true_bug": {
         "cases": 15,
-        "runs_passed": 35,
+        "runs_passed": 31,
         "runs": 45,
         "passed_all": 9
       },
       "high/skip_false_bug": {
         "cases": 5,
-        "runs_passed": 13,
+        "runs_passed": 15,
         "runs": 15,
-        "passed_all": 3
+        "passed_all": 5
       },
       "high/raise_true_bug": {
         "cases": 9,
-        "runs_passed": 19,
+        "runs_passed": 21,
         "runs": 27,
-        "passed_all": 5
+        "passed_all": 7
       },
       "low/skip_false_bug": {
         "cases": 6,
-        "runs_passed": 11,
+        "runs_passed": 12,
         "runs": 18,
-        "passed_all": 2
+        "passed_all": 3
       },
       "low/raise_true_bug": {
         "cases": 12,
-        "runs_passed": 22,
+        "runs_passed": 20,
         "runs": 36,
         "passed_all": 6
       },
       "none/raise_nothing": {
         "cases": 9,
-        "runs_passed": 25,
+        "runs_passed": 22,
         "runs": 27,
-        "passed_all": 7
+        "passed_all": 6
       }
     }
   },
-  "label_errors_fixed": [
-    {
-      "case_id": "R36-812f904-003",
-      "reason": "finding.line moved 41 -> 45: at raised_sha 812f904 the `tuple(line.split(\" \", 1))` the finding describes is at status.py:45 (41 is the `def queued` line); the review cited the wrong line."
-    },
-    {
-      "case_id": "R36-c3e9e57-001",
-      "reason": "finding.line moved 159 -> 158: at raised_sha c3e9e57 the `return` after the exception the finding describes is at cli.py:158 (159 is the started event); the review cited the wrong line."
-    },
-    {
-      "case_id": "R36-d2309a5-001",
-      "reason": "finding.line moved 151 -> 152: at raised_sha d2309a5 the `loop.start` call the finding describes is at cli.py:152 (151 is its `try`); the review cited the wrong line."
-    },
-    {
-      "case_id": "R37-1fbb920-001",
-      "reason": "finding.line moved 123 -> 124: at raised_sha 1fbb920 the `if` that fails on a missing .env outside dry-run is at config.py:124 (123 reads dry_run); the review cited the wrong line."
-    },
-    {
-      "case_id": "R37-1fbb920-002",
-      "reason": "finding.line moved 25 -> 24: at raised_sha 1fbb920 the `ENV_FILE` line the finding describes is at config.py:24 (25 is blank); the review cited the wrong line."
-    },
-    {
-      "case_id": "R45-fee8a9a-001",
-      "reason": "finding.line moved 42 -> 53: at raised_sha fee8a9a the fcntl.flock(lock, fcntl.LOCK_EX) the finding describes is at agent_provider.py:53 (42 is sqlite3.connect's path.parent.mkdir); the review cited the wrong line."
-    },
-    {
-      "case_id": "R45-fee8a9a-002",
-      "reason": "finding.line moved 53 -> 45: at raised_sha fee8a9a the results[f] lookup the finding describes is at eval_adapter.py:45 (53 is the last line of _review); the review cited the wrong line."
-    },
-    {
-      "case_id": "R45-fee8a9a-004",
-      "reason": "finding.line moved 55 -> 46: at raised_sha fee8a9a the required list naming file_level_runs, reason, category and action is at baseline.schema.json:46 (55 is the first allOf's if); the review cited the wrong line."
-    },
-    {
-      "case_id": "R45-fee8a9a-005",
-      "reason": "finding.line moved 102 -> 87: at raised_sha fee8a9a the `reason or \"\"` the finding describes is at baseline.py:87 (102 is the harness_error reason in build); the review cited the wrong line."
-    },
-    {
-      "case_id": "R45-fee8a9a-006",
-      "reason": "finding.line moved 30 -> 37: at raised_sha fee8a9a the printf that builds run.json is at run_eval.sh:37 (30 is the nvm source line); the review cited the wrong line."
-    },
-    {
-      "case_id": "R45-fee8a9a-007",
-      "reason": "finding.line moved 15 -> 14: at raised_sha fee8a9a the `import fcntl` the finding describes is at agent_provider.py:14 (15 is `import hashlib`); the review cited the wrong line."
-    },
-    {
-      "case_id": "R45-fee8a9a-008",
-      "reason": "finding.line moved 43 -> 57: at raised_sha fee8a9a the `except SystemExit` around load_config is at agent_provider.py:57 (43 is the SqliteSaver line); the review cited the wrong line."
-    },
-    {
-      "case_id": "R45-fee8a9a-010",
-      "reason": "finding.line moved 53 -> 44: at raised_sha fee8a9a the `\"line\": i[\"line\"]` the finding describes is at eval_adapter.py:44 (53 is the last line of _review); the review cited the wrong line."
-    },
-    {
-      "case_id": "R45-fee8a9a-011",
-      "reason": "finding.line moved 14 -> 12: at raised_sha fee8a9a the `date` property the finding describes is at baseline.schema.json:12 (14 is `window`); the review cited the wrong line."
-    },
-    {
-      "case_id": "R45-fee8a9a-012",
-      "reason": "finding.line moved 186 -> 189: at raised_sha fee8a9a the `allOf` the finding describes is at case.schema.json:189 (186 is the type of `notes`); the review cited the wrong line."
-    },
-    {
-      "case_id": "R45-fee8a9a-013",
-      "reason": "finding.line moved 78 -> 147: at raised_sha fee8a9a the label_changes(meta[\"commit\"], ...) call the finding describes is at baseline.py:147 (78 is inside label_changes, unrelated to which commit is passed); the review cited the wrong line."
-    },
-    {
-      "case_id": "R45-fee8a9a-014",
-      "reason": "finding.line moved 28 -> 34: at raised_sha fee8a9a the grep on run.json the finding describes is at run_eval.sh:34 (28 is a comment about Node); the review cited the wrong line."
-    },
-    {
-      "case_id": "R45-fee8a9a-015",
-      "reason": "finding.line moved 31 -> 39: at raised_sha fee8a9a the uncommitted-changes check that only warns is at run_eval.sh:39 (31 is nvm use); the review cited the wrong line."
-    },
-    {
-      "case_id": "R45-fee8a9a-016",
-      "reason": "finding.line moved 17 -> 29: at raised_sha fee8a9a the module-level _savers dictionary is at agent_provider.py:29 (17 is `import sqlite3`); the review cited the wrong line."
-    },
-    {
-      "case_id": "R45-fee8a9a-017",
-      "reason": "finding.line moved 27 -> 41: at raised_sha fee8a9a the `if path not in _savers` the finding describes is at agent_provider.py:41 (27 is an import); the review cited the wrong line."
-    },
-    {
-      "case_id": "R45-fee8a9a-018",
-      "reason": "finding.line moved 22 -> 18: at raised_sha fee8a9a review_case's signature with the unannotated config and checkpointer is at eval_adapter.py:18 (22 is the thread_id call); the review cited the wrong line."
-    },
-    {
-      "case_id": "R45-fee8a9a-019",
-      "reason": "finding.line moved 56 -> 48: at raised_sha fee8a9a the hardcoded excluded=[] the finding describes is at eval_adapter.py:48 (56 is past the end of the file); the review cited the wrong line."
-    },
-    {
-      "case_id": "R45-fee8a9a-021",
-      "reason": "finding.line moved 85 -> 73: at raised_sha fee8a9a the git diff call whose return code is not checked is at baseline.py:73 (85 is a changes.append); the review cited the wrong line."
-    },
-    {
-      "case_id": "R45-fee8a9a-022",
-      "reason": "finding.line moved 26 -> 31: at raised_sha fee8a9a the `nvm use 24` the finding describes is at run_eval.sh:31 (26 is mkdir); the review cited the wrong line."
-    }
-  ],
+  "label_errors_fixed": [],
   "cases": {
     "R36-812f904-001": {
       "runs": [
-        "fail",
+        "pass",
         "fail",
         "fail"
       ],
       "file_level_runs": [
-        "fail",
+        "pass",
         "fail",
         "fail"
       ],
-      "status": "stable_failure",
+      "status": "flaky",
       "failure_class": "model_failure",
-      "reason": "Re-raises the dismissed claim (save_queue before loop.start loses the ticket) at lines 148, 148 and 150, in every repeat.",
+      "reason": "Repeats 1 and 2 re-raise the dismissed claim (save_queue before loop.start loses the ticket) at line 148; repeat 0 has no finding in the file.",
       "category": "logic",
       "action": "skip_false_bug"
     },
@@ -261,16 +164,16 @@
       "runs": [
         "fail",
         "fail",
-        "pass"
+        "fail"
       ],
       "file_level_runs": [
-        "pass",
+        "fail",
         "pass",
         "pass"
       ],
-      "status": "flaky",
+      "status": "stable_failure",
       "failure_class": "model_failure",
-      "reason": "Misses the real bug (initial start_queued() outside try/except) in every repeat. Repeat 2 passes only because a different claim (save_queue ordering, line 150) is inside the window.",
+      "reason": "Misses the real bug (the initial start_queued() is outside try/except) in every repeat. Repeats 1 and 2 raise only a different claim (save_queue ordering) at line 148, outside the window.",
       "category": "logic",
       "action": "raise_true_bug"
     },
@@ -287,24 +190,24 @@
       ],
       "status": "stable_failure",
       "failure_class": "model_failure",
-      "reason": "Re-raises the dismissed claim (queued() returns 1-tuples for malformed lines) in every repeat, at lines 44, 48 and 43.",
+      "reason": "Re-raises the dismissed claim (queued() returns 1-tuples for lines without a space) in every repeat, at lines 46, 45 and 45.",
       "category": "logic",
       "action": "skip_false_bug"
     },
     "R36-c3e9e57-001": {
       "runs": [
-        "fail",
+        "pass",
         "pass",
         "pass"
       ],
       "file_level_runs": [
         "fail",
         "fail",
-        "pass"
+        "fail"
       ],
-      "status": "flaky",
-      "failure_class": "model_failure",
-      "reason": "Repeat 0 re-raises the dismissed claim (a ticket that keeps failing blocks the queue) at line 156.",
+      "status": "pass",
+      "failure_class": null,
+      "reason": null,
       "category": "logic",
       "action": "skip_false_bug"
     },
@@ -312,16 +215,16 @@
       "runs": [
         "pass",
         "pass",
-        "fail"
+        "pass"
       ],
       "file_level_runs": [
         "pass",
         "pass",
         "pass"
       ],
-      "status": "flaky",
-      "failure_class": "model_failure",
-      "reason": "Raises the real bug's claim in every repeat. Repeats 0 (line 155) and 1 (line 150) pass; repeat 2 cites line 164, outside the window.",
+      "status": "pass",
+      "failure_class": null,
+      "reason": null,
       "category": "logic",
       "action": "raise_true_bug"
     },
@@ -329,16 +232,16 @@
       "runs": [
         "fail",
         "fail",
-        "pass"
+        "fail"
       ],
       "file_level_runs": [
         "fail",
         "fail",
         "fail"
       ],
-      "status": "flaky",
+      "status": "stable_failure",
       "failure_class": "model_failure",
-      "reason": "Repeat 1 re-raises the dismissed claim (the early return stops the rest of the queue) at line 155. Repeat 0 raises a different claim (the ticket is lost) on the same line, which the matcher cannot tell apart.",
+      "reason": "Repeat 2 re-raises the dismissed claim (the early return stops the rest of the queue) at lines 156 and 162. Repeats 0 and 1 raise a different claim (save_queue before loop.start loses the ticket) at lines 155 and 152, which the matcher cannot tell apart.",
       "category": "logic",
       "action": "skip_false_bug"
     },
@@ -350,7 +253,7 @@
       ],
       "file_level_runs": [
         "pass",
-        "fail",
+        "pass",
         "pass"
       ],
       "status": "pass",
@@ -362,17 +265,17 @@
     "R37-1fbb920-002": {
       "runs": [
         "pass",
-        "fail",
+        "pass",
         "pass"
       ],
       "file_level_runs": [
         "pass",
-        "fail",
+        "pass",
         "pass"
       ],
-      "status": "flaky",
-      "failure_class": "model_failure",
-      "reason": "Repeat 1 re-raises the dismissed claim (ENV_FILE's parents[4] couples config.py to the repo layout) at line 24.",
+      "status": "pass",
+      "failure_class": null,
+      "reason": null,
       "category": "improvable",
       "action": "skip_false_bug"
     },
@@ -389,13 +292,13 @@
       ],
       "status": "stable_failure",
       "failure_class": "model_failure",
-      "reason": "Misses the real bug: no finding in baseline.json in any repeat, though the file was reviewed.",
+      "reason": "Misses the real bug: no finding in baseline.json in any repeat, though the file was reviewed each time.",
       "category": "logic",
       "action": "raise_true_bug"
     },
     "R45-fee8a9a-001": {
       "runs": [
-        "fail",
+        "pass",
         "pass",
         "pass"
       ],
@@ -404,9 +307,9 @@
         "fail",
         "fail"
       ],
-      "status": "flaky",
-      "failure_class": "model_failure",
-      "reason": "Matcher limit: repeat 0 raises a different claim (the lock is held across network calls) at line 52, not the dismissed claim that flock can hang for ever after a crash.",
+      "status": "pass",
+      "failure_class": null,
+      "reason": null,
       "category": "concurrency",
       "action": "skip_false_bug"
     },
@@ -417,7 +320,7 @@
         "pass"
       ],
       "file_level_runs": [
-        "pass",
+        "fail",
         "pass",
         "fail"
       ],
@@ -440,7 +343,7 @@
       ],
       "status": "stable_failure",
       "failure_class": "model_failure",
-      "reason": "Misses the real bug at high severity: repeat 1 raises it at line 46 only at medium; repeats 0 and 2 have no finding in the file.",
+      "reason": "Raises the real bug (case fields required but not defined in properties) in repeats 0 and 2, at lines 50 and 46, but only at medium, below the high the case requires; repeat 1 has no finding in the file.",
       "category": "logic",
       "action": "raise_true_bug"
     },
@@ -468,13 +371,13 @@
         "fail"
       ],
       "file_level_runs": [
-        "fail",
+        "pass",
         "fail",
         "fail"
       ],
       "status": "stable_failure",
       "failure_class": "model_failure",
-      "reason": "Raises the real bug (printf builds run.json unescaped) at line 37 in every repeat, but at medium or low, below the high severity the case requires.",
+      "reason": "Raises the real bug (printf builds run.json unescaped) in repeats 1 and 2, at lines 37 and 32, but only at medium, below the high the case requires; repeat 0 raises only a different claim (--k unvalidated in run.json, line 17).",
       "category": "logic",
       "action": "raise_true_bug"
     },
@@ -482,23 +385,6 @@
       "runs": [
         "pass",
         "pass",
-        "fail"
-      ],
-      "file_level_runs": [
-        "fail",
-        "fail",
-        "fail"
-      ],
-      "status": "flaky",
-      "failure_class": "model_failure",
-      "reason": "Repeat 2 re-raises the dismissed claim (fcntl is Unix-only) at line 14.",
-      "category": "improvable",
-      "action": "skip_false_bug"
-    },
-    "R45-fee8a9a-008": {
-      "runs": [
-        "pass",
-        "fail",
         "pass"
       ],
       "file_level_runs": [
@@ -506,26 +392,43 @@
         "fail",
         "fail"
       ],
-      "status": "flaky",
-      "failure_class": "model_failure",
-      "reason": "Matcher limit: repeat 1 raises a different claim (the PR description is today's) at line 59, not the dismissed load_config claim.",
+      "status": "pass",
+      "failure_class": null,
+      "reason": null,
+      "category": "improvable",
+      "action": "skip_false_bug"
+    },
+    "R45-fee8a9a-008": {
+      "runs": [
+        "pass",
+        "pass",
+        "pass"
+      ],
+      "file_level_runs": [
+        "fail",
+        "fail",
+        "fail"
+      ],
+      "status": "pass",
+      "failure_class": null,
+      "reason": null,
       "category": "improvable",
       "action": "skip_false_bug"
     },
     "R45-fee8a9a-009": {
       "runs": [
-        "fail",
         "pass",
-        "fail"
+        "pass",
+        "pass"
       ],
       "file_level_runs": [
         "fail",
         "pass",
-        "fail"
+        "pass"
       ],
-      "status": "flaky",
-      "failure_class": "model_failure",
-      "reason": "Repeats 0 and 2 re-raise the dismissed claim (case_expectations does not handle exceptions) at lines 20 and 23.",
+      "status": "pass",
+      "failure_class": null,
+      "reason": null,
       "category": "logic",
       "action": "skip_false_bug"
     },
@@ -536,7 +439,7 @@
         "pass"
       ],
       "file_level_runs": [
-        "pass",
+        "fail",
         "pass",
         "fail"
       ],
@@ -553,9 +456,9 @@
         "pass"
       ],
       "file_level_runs": [
-        "pass",
         "fail",
-        "pass"
+        "pass",
+        "fail"
       ],
       "status": "pass",
       "failure_class": null,
@@ -567,23 +470,23 @@
       "runs": [
         "pass",
         "fail",
-        "pass"
+        "fail"
       ],
       "file_level_runs": [
         "pass",
         "fail",
-        "pass"
+        "fail"
       ],
       "status": "flaky",
       "failure_class": "model_failure",
-      "reason": "Misses the real bug (raised_sha stays nullable and not required) in every repeat. Repeats 0 and 2 pass only because a different claim about the same allOf (line 192) is inside the window.",
+      "reason": "Misses the real bug (raised_sha stays nullable and not required) in every repeat. Repeat 0 passes only because a different claim about the same allOf (the if has no required, line 192) is inside the window; repeats 1 and 2 have no finding in the file.",
       "category": "logic",
       "action": "raise_true_bug"
     },
     "R45-fee8a9a-013": {
       "runs": [
         "fail",
-        "pass",
+        "fail",
         "fail"
       ],
       "file_level_runs": [
@@ -591,60 +494,60 @@
         "pass",
         "pass"
       ],
-      "status": "flaky",
+      "status": "stable_failure",
       "failure_class": "model_failure",
-      "reason": "Misses the real bug (label_changes gets the agent commit) in every repeat. Repeat 1 passes only because a different claim (malformed JSON, line 145) is inside the window.",
+      "reason": "Misses the real bug (label_changes gets the agent commit) in every repeat; the findings in the file are about other lines (json.loads at 50-51, git return codes at 74 and 140, the label_error count at 127).",
       "category": "logic",
       "action": "raise_true_bug"
     },
     "R45-fee8a9a-014": {
       "runs": [
-        "pass",
         "fail",
+        "pass",
         "pass"
       ],
       "file_level_runs": [
         "pass",
-        "fail",
+        "pass",
         "pass"
       ],
       "status": "flaky",
       "failure_class": "model_failure",
-      "reason": "Misses the real bug (grep on JSON is fragile to its format). Repeat 2 raises a different claim on the same grep (regex metacharacters, line 34) and repeat 0 another (printf, line 37), and both pass inside the window; repeat 1 has only a low finding there.",
+      "reason": "Misses the real bug (grep on JSON is fragile to its format) in every repeat. Repeat 1 passes on a different claim about the same grep (no -F, line 34) and repeat 2 on another (printf, line 32), both inside the window; repeat 0 has findings only at lines 17 and 25.",
       "category": "logic",
       "action": "raise_true_bug"
     },
     "R45-fee8a9a-015": {
       "runs": [
-        "pass",
         "fail",
-        "pass"
+        "pass",
+        "fail"
       ],
       "file_level_runs": [
         "pass",
-        "fail",
+        "pass",
         "pass"
       ],
       "status": "flaky",
       "failure_class": "model_failure",
-      "reason": "Misses the real bug (uncommitted changes only warn) in every repeat. Repeats 0 and 2 pass only because a different claim (printf, line 37) is inside the window.",
+      "reason": "Misses the real bug (uncommitted changes only warn) in every repeat. Repeat 1 passes only because a different claim (printf, line 37) is inside the window.",
       "category": "logic",
       "action": "raise_true_bug"
     },
     "R45-fee8a9a-016": {
       "runs": [
-        "fail",
         "pass",
-        "fail"
+        "pass",
+        "pass"
       ],
       "file_level_runs": [
         "fail",
         "fail",
         "fail"
       ],
-      "status": "flaky",
-      "failure_class": "model_failure",
-      "reason": "Repeats 0 and 2 re-raise the dismissed claim (_savers never evicts) at line 29.",
+      "status": "pass",
+      "failure_class": null,
+      "reason": null,
       "category": "improvable",
       "action": "skip_false_bug"
     },
@@ -661,7 +564,7 @@
       ],
       "status": "flaky",
       "failure_class": "model_failure",
-      "reason": "Matcher limit: repeats 1 and 2 raise a different claim (commits share one saver's connection) at lines 40 and 43, not the dismissed claim that the cache's initialisation is not thread-safe.",
+      "reason": "Matcher limit: repeats 1 and 2 raise different claims at line 43 (flock waits with no timeout; SQLite connections never closed), not the dismissed claim that the cache's initialisation is not thread-safe.",
       "category": "concurrency",
       "action": "skip_false_bug"
     },
@@ -672,7 +575,7 @@
         "pass"
       ],
       "file_level_runs": [
-        "pass",
+        "fail",
         "pass",
         "fail"
       ],
@@ -689,7 +592,7 @@
         "pass"
       ],
       "file_level_runs": [
-        "pass",
+        "fail",
         "pass",
         "fail"
       ],
@@ -701,25 +604,25 @@
     },
     "R45-fee8a9a-020": {
       "runs": [
-        "pass",
         "fail",
-        "pass"
+        "pass",
+        "fail"
       ],
       "file_level_runs": [
-        "pass",
         "fail",
-        "pass"
+        "pass",
+        "fail"
       ],
       "status": "flaky",
       "failure_class": "model_failure",
-      "reason": "Matcher limit: repeat 1 raises a different claim (case fields have no types, the real bug of R45-fee8a9a-004) at line 46, not the dismissed maxItems claim.",
+      "reason": "Matcher limit: repeats 0 and 2 raise a different claim (case fields have no types, the real bug of R45-fee8a9a-004) at lines 50 and 46, not the dismissed maxItems claim.",
       "category": "improvable",
       "action": "skip_false_bug"
     },
     "R45-fee8a9a-021": {
       "runs": [
         "fail",
-        "fail",
+        "pass",
         "fail"
       ],
       "file_level_runs": [
@@ -727,16 +630,16 @@
         "pass",
         "pass"
       ],
-      "status": "stable_failure",
+      "status": "flaky",
       "failure_class": "model_failure",
-      "reason": "Misses the real bug (git diff's return code is not checked) in every repeat; the findings in the file are about other lines.",
+      "reason": "Raises the real bug (git diff's return code is not checked) only in repeat 1, at line 74; in repeats 0 and 2 the findings in the file are about other lines.",
       "category": "logic",
       "action": "raise_true_bug"
     },
     "R45-fee8a9a-022": {
       "runs": [
-        "fail",
         "pass",
+        "fail",
         "fail"
       ],
       "file_level_runs": [
@@ -746,7 +649,7 @@
       ],
       "status": "flaky",
       "failure_class": "model_failure",
-      "reason": "Matcher limit: repeats 0 and 2 raise a different claim ($MODEL as a grep regex) at line 34, not the dismissed nvm claim.",
+      "reason": "Matcher limit: repeats 1 and 2 raise a different claim ($MODEL as a grep regex) at lines 34 and 29, not the dismissed nvm claim.",
       "category": "logic",
       "action": "skip_false_bug"
     },
@@ -838,17 +741,17 @@
     "imp-001": {
       "runs": [
         "fail",
-        "pass",
+        "fail",
         "fail"
       ],
       "file_level_runs": [
         "fail",
-        "pass",
+        "fail",
         "fail"
       ],
-      "status": "flaky",
+      "status": "stable_failure",
       "failure_class": "model_failure",
-      "reason": "Repeats 0 and 2 have no finding in the file: the agent does not suggest the idiomatic sum().",
+      "reason": "No finding in the file in any repeat: the agent does not suggest the idiomatic sum().",
       "category": "improvable",
       "action": "raise_true_bug"
     },
@@ -871,18 +774,18 @@
     },
     "imp-004": {
       "runs": [
-        "pass",
-        "pass",
-        "pass"
+        "fail",
+        "fail",
+        "fail"
       ],
       "file_level_runs": [
-        "pass",
-        "pass",
-        "pass"
+        "fail",
+        "fail",
+        "fail"
       ],
-      "status": "pass",
-      "failure_class": null,
-      "reason": null,
+      "status": "stable_failure",
+      "failure_class": "model_failure",
+      "reason": "Misses the planted improvable issue (parsing `ls` piped into `grep` and `wc` at line 18) in every repeat: no finding at all in backup.sh.",
       "category": "improvable",
       "action": "raise_true_bug"
     },
@@ -1026,16 +929,16 @@
       "runs": [
         "pass",
         "pass",
-        "fail"
+        "pass"
       ],
       "file_level_runs": [
         "pass",
         "pass",
-        "fail"
+        "pass"
       ],
-      "status": "flaky",
-      "failure_class": "model_failure",
-      "reason": "Repeat 2 has no finding in the file. Repeat 0 passes only because a different claim (regex metacharacters, line 201) is inside the window; repeat 1 raises the reviewer's claim at line 202.",
+      "status": "pass",
+      "failure_class": null,
+      "reason": null,
       "category": "logic",
       "action": "raise_true_bug"
     },
@@ -1060,16 +963,16 @@
       "runs": [
         "fail",
         "fail",
-        "fail"
+        "pass"
       ],
       "file_level_runs": [
         "pass",
         "pass",
         "pass"
       ],
-      "status": "stable_failure",
+      "status": "flaky",
       "failure_class": "model_failure",
-      "reason": "Misses the reviewer's bug in repeats 0 and 1. Repeat 2 raises it, but at line 116, outside the window: the code is at line 121 at raised_sha (checked), so the line is the model's error.",
+      "reason": "Misses the reviewer's bug in repeats 0 and 1, which raise only a different claim (one text index per collection). Repeat 2 raises it (unique: index.type === 'uniques' is always false) at lines 121 and 122.",
       "category": "logic",
       "action": "raise_true_bug"
     },
@@ -1093,7 +996,7 @@
     "pub-trio-1832": {
       "runs": [
         "fail",
-        "pass",
+        "fail",
         "fail"
       ],
       "file_level_runs": [
@@ -1101,9 +1004,9 @@
         "pass",
         "pass"
       ],
-      "status": "flaky",
+      "status": "stable_failure",
       "failure_class": "model_failure",
-      "reason": "Misses the reviewer's bug (a failed DeviceIoControl loses the afd_group): repeats 0 and 2 raise a different claim in process_events, and repeat 1 passes on a different afd_group.size claim at line 674, inside the window.",
+      "reason": "Misses the reviewer's bug (a failed DeviceIoControl loses the afd_group) in repeats 0 and 1, which raise a different claim (a completed poll never decrements afd_group.size). Repeat 2 raises it, but at line 660, 15 lines from the case's line 675, outside the window.",
       "category": "logic",
       "action": "raise_true_bug"
     },
@@ -1137,7 +1040,7 @@
       ],
       "status": "flaky",
       "failure_class": "model_failure",
-      "reason": "Repeat 0 raises a medium finding on a behaviour-preserving refactor (floating-point tax rounding, line 9): the code it describes moved, and did not change.",
+      "reason": "Repeat 0 raises a high finding on a behaviour-preserving move (tax_amount given shipping rates, line 34) and a medium one (rates not sorted, line 25): code that moved and did not change.",
       "category": "refactor",
       "action": "raise_nothing"
     },
@@ -1160,18 +1063,18 @@
     },
     "ref-004": {
       "runs": [
-        "pass",
-        "pass",
+        "fail",
+        "fail",
         "fail"
       ],
       "file_level_runs": [
-        "pass",
-        "pass",
+        "fail",
+        "fail",
         "fail"
       ],
-      "status": "flaky",
+      "status": "stable_failure",
       "failure_class": "model_failure",
-      "reason": "Repeat 2 raises a medium finding on a behaviour-preserving refactor: sourcing the script runs main, which nothing in the commit does.",
+      "reason": "Every repeat raises a medium or high finding on a behaviour-preserving restructure: the version argument injected into the ssh command (repeats 0 and 2, lines 6 and 7) and sourcing the script runs main (repeats 0 and 1, lines 40 and 41). The commit changes neither.",
       "category": "refactor",
       "action": "raise_nothing"
     },
@@ -1196,16 +1099,16 @@
       "runs": [
         "pass",
         "pass",
-        "fail"
+        "pass"
       ],
       "file_level_runs": [
         "pass",
         "pass",
         "pass"
       ],
-      "status": "flaky",
-      "failure_class": "model_failure",
-      "reason": "Repeat 2 raises the SQL injection at high severity but cites line 52, outside the window of line 47: the line is the model's error.",
+      "status": "pass",
+      "failure_class": null,
+      "reason": null,
       "category": "security",
       "action": "raise_true_bug"
     },
@@ -1314,17 +1217,17 @@
     "sty-005": {
       "runs": [
         "pass",
-        "pass",
+        "fail",
         "pass"
       ],
       "file_level_runs": [
         "pass",
-        "pass",
+        "fail",
         "pass"
       ],
-      "status": "pass",
-      "failure_class": null,
-      "reason": null,
+      "status": "flaky",
+      "failure_class": "model_failure",
+      "reason": "Flaky (1 of 3 repeats): on a commit that only adds comments, raises a high finding at line 20 that a failed health check leaves the new release live, behaviour the commit does not change.",
       "category": "style_only",
       "action": "raise_nothing"
     },
