@@ -357,6 +357,27 @@ def test_the_cached_and_reasoning_tokens_are_recorded_from_deepseek_and_openrout
     assert openrouter["cached_tokens"] == 50
 
 
+def test_the_recorder_asks_for_an_uncompressed_reply_it_can_read():
+    """DeepSeek's own API compresses its stream (content-encoding: br), and the recorder reads the bytes before httpx
+    decodes them: it would see nothing, so judge2 (2026-11-11) recorded no model or tokens."""
+    sent = []
+
+    class Inner(httpx.BaseTransport):
+        def handle_request(self, request):
+            sent.append(request.headers.get("accept-encoding"))
+            return httpx.Response(200, stream=httpx.ByteStream(SSE))
+
+    request = httpx.Request("POST", "http://x", headers={"Accept-Encoding": "gzip, deflate, br"})
+    llm_rubric.RecordingTransport(Inner(), {}).handle_request(request)
+    assert sent == ["identity"]
+
+
+def test_the_judge_s_chat_model_asks_for_usage_in_the_stream():
+    """DeepSeek's own API sends usage in a stream only when asked (stream_options.include_usage)."""
+    cfg = Config(model="deepseek/deepseek-v4-pro", api_url="https://api.deepseek.com", api_token="t")
+    assert llm_rubric.make_judge_chat_model({})(cfg).stream_usage is True
+
+
 def test_the_recording_survives_a_reader_that_stops_at_done_and_a_chunk_split_mid_line():
     """The OpenAI client stops reading at [DONE], so a recorder that waits for the stream's end sees nothing."""
     meta = {}

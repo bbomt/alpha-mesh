@@ -140,6 +140,8 @@ class RecordingTransport(httpx.BaseTransport):
         self._inner, self._meta = inner, meta
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
+        # The stream is read here, before httpx decodes it, so it must arrive uncompressed (DeepSeek's API sends br).
+        request.headers["Accept-Encoding"] = "identity"
         response = self._inner.handle_request(request)
         response.stream = _RecordingStream(response.stream, self._meta)
         return response
@@ -156,7 +158,7 @@ def make_judge_chat_model(meta: dict, temperature: float | None = 0, extra_body:
         client = httpx.Client(transport=WatchdogTransport(RecordingTransport(http_transport(base_url), meta)),
                               timeout=httpx.Timeout(llm.IDLE_TIMEOUT, connect=30))
         return ChatOpenAI(model=name, api_key=config.api_token, base_url=base_url, temperature=temperature,
-                          streaming=True, max_retries=0, http_client=client, extra_body=extra_body)
+                          streaming=True, stream_usage=True, max_retries=0, http_client=client, extra_body=extra_body)
     return factory
 
 
