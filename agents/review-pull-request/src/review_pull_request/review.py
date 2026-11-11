@@ -369,6 +369,7 @@ def review_commit(
     no_output: bool = False,
     checkpointer=None,
     trace_path=None,
+    run_lock: bool = True,
 ) -> int:
     """Review the diff base_sha...head_sha of owner/repo, reading files at head_sha; return the exit code.
 
@@ -379,7 +380,12 @@ def review_commit(
     pr_number, when known, goes into the checkpoint key and the finding IDs.
     trace_path is where the review's trace goes (trace.py); None is ~/.mesh/review-traces/<thread>.jsonl.
     A dry run writes no trace.
+    run_lock=False skips the run lock (one run per thread on this machine): only for a caller that holds
+    its own lock over its own checkpointer and trace_path (the evals, one per commit and repeat).
     """
+    if not run_lock and (checkpointer is None or trace_path is None):
+        # the defaults are shared (the production store, ~/.mesh/review-traces): never written unlocked
+        raise ValueError("run_lock=False needs the caller's own checkpointer and trace_path")
     # Kept local, never on config: stages see only the policy-wrapped reader in the session.
     github_reader = GitHubFileReader(owner, repo, head_sha, token)
     # Everything that reaches the model or the file reader goes through this session's policy.
@@ -389,7 +395,7 @@ def review_commit(
     start_time = time.time()
     current_step = "review"
     incomplete_files: list[str] = []
-    run_lock = None
+    lock = None
     kept = ""
     try:
         if diff is None:
@@ -443,9 +449,9 @@ def review_commit(
 
         mode = f"since-{incremental_info['base_sha']}" if incremental_info else "full"
         thread = thread_id(owner, repo, pr_number, head_sha, mode, config.exclusions)
-        if not dry_run:
+        if run_lock and not dry_run:
             try:
-                run_lock = lock_thread(thread)
+                lock = lock_thread(thread)
             except ThreadBusy as e:
                 print(f"ERROR: {e}", file=sys.stderr)
                 return 1
@@ -541,8 +547,8 @@ def review_commit(
         config.read_cache.clear()
         config.read_cache_bytes = 0
         github_reader.close()
-        if run_lock:
-            run_lock.close()
+        if lock:
+            lock.close()
 
 
 if __name__ == "__main__":

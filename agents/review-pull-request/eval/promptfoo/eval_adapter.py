@@ -20,7 +20,10 @@ class ReviewFailed(Exception):
 
 
 def review_case(case: dict, *, config, token: str, description: str, checkpointer, trace_path: Path) -> dict:
-    """Review the case's commit, or reuse the finished review of it in this checkpointer."""
+    """Review the case's commit, or reuse the finished review of it in this checkpointer.
+
+    The caller must hold a lock per commit and repeat over checkpointer and trace_path (agent_provider
+    does): the core's own run lock is off here, so two unlocked calls would write one thread at once."""
     owner, repo = case["repo"].split("/")
     head = case["raised_sha"]
     thread = thread_id(owner, repo, case.get("pr_number"), head, "full", config.exclusions)
@@ -36,7 +39,8 @@ def review_case(case: dict, *, config, token: str, description: str, checkpointe
 
         code = review_commit(owner, repo, case["base_sha"], head, description, config=config, token=token,
                              publish=lambda report: None, all_excluded=all_excluded,
-                             pr_number=case.get("pr_number"), checkpointer=checkpointer, trace_path=trace_path)
+                             pr_number=case.get("pr_number"), checkpointer=checkpointer, trace_path=trace_path,
+                             run_lock=False)  # the caller holds a lock per commit and repeat
         if excluded:  # every changed file is excluded: nothing was reviewed, so nothing was raised or read
             return _review(case, config, files=[], incomplete=[], excluded=excluded, findings=[], files_read=[],
                            trace=None)
