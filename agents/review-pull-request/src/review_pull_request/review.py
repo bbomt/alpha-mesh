@@ -383,6 +383,9 @@ def review_commit(
     run_lock=False skips the run lock (one run per thread on this machine): only for a caller that holds
     its own lock over its own checkpointer and trace_path (the evals, one per commit and repeat).
     """
+    if not run_lock and (checkpointer is None or trace_path is None):
+        # the defaults are shared (the production store, ~/.mesh/review-traces): never written unlocked
+        raise ValueError("run_lock=False needs the caller's own checkpointer and trace_path")
     # Kept local, never on config: stages see only the policy-wrapped reader in the session.
     github_reader = GitHubFileReader(owner, repo, head_sha, token)
     # Everything that reaches the model or the file reader goes through this session's policy.

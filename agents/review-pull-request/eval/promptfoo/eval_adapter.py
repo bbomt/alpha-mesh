@@ -20,7 +20,10 @@ class ReviewFailed(Exception):
 
 
 def review_case(case: dict, *, config, token: str, description: str, checkpointer, trace_path: Path) -> dict:
-    """Review the case's commit, or reuse the finished review of it in this checkpointer."""
+    """Review the case's commit, or reuse the finished review of it in this checkpointer.
+
+    The caller must hold a lock per commit and repeat over checkpointer and trace_path (agent_provider
+    does): the core's own run lock is off here, so two unlocked calls would write one thread at once."""
     owner, repo = case["repo"].split("/")
     head = case["raised_sha"]
     thread = thread_id(owner, repo, case.get("pr_number"), head, "full", config.exclusions)

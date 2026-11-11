@@ -54,7 +54,8 @@ def review(case: dict, repeat: int) -> dict:
     (run_dir / "locks").mkdir(parents=True, exist_ok=True)
     # The cases of one commit in one repeat queue here, then reuse the first's review. The core's own run
     # lock is off (run_lock=False): it does not wait and its key has no repeat, and this lock already
-    # guards everything the repeat shares (its checkpoint store and its trace).
+    # guards what one commit's review in this repeat writes (its checkpoint thread and its trace). Other
+    # commits' threads in the same store are left to SQLite's own locking (timeout=60 in _saver).
     with open(run_dir / "locks" / f"{key}-repeat-{repeat}.lock", "a+") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         try:

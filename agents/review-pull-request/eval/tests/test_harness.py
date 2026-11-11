@@ -89,8 +89,11 @@ def run(tmp_path, monkeypatch):
 
         def worker(i, c, repeat):
             github = gm.FakeGitHub()
-            with fakes(github, model):
-                result = call_api(c, repeat)
+            try:
+                with fakes(github, model):
+                    result = call_api(c, repeat)
+            except BaseException as e:  # reported to the test at once, not as a 60 s queue timeout
+                result = {"error": f"worker failed: {e!r}"}
             queue.put((i, result, github.diff_ranges))
 
         procs = [ctx.Process(target=worker, args=(i, c, repeat)) for i, (c, repeat) in enumerate(calls)]
