@@ -317,8 +317,9 @@ file of the review has no span in the trace (reviewed before the trace existed),
 because `[]` would say the agent read nothing. New checkpoints no longer hold `files_read`.
 
 - **One review per commit and repeat.** Several cases share a commit. Within one repeat they share one review
-  (they queue on a lock per commit, which also runs the repeats of a commit one after another); each repeat
-  is a fresh review, so pass^k measures something.
+  (they queue on a lock per commit and repeat, then reuse the first's review); each repeat is a fresh review,
+  so pass^k measures something, and the repeats of a commit review at the same time (PMAT-328). Promptfoo
+  runs 8 cases at once (`maxConcurrency` in `promptfooconfig.yaml`; `--max-concurrency <n>` overrides it).
 - **Checkpoints** go to `runs/<run>/checkpoints-repeat-<n>.sqlite` (LangGraph's SqliteSaver), never to the
   production DynamoDB store, so a run never touches the checkpoint of a real PR review. Rerunning the same
   `--run` reuses finished reviews and resumes a stopped one from its last finished file (free models throttle).
@@ -335,6 +336,7 @@ session; the machine default stays). No AWS is needed.
 eval/scripts/run_eval.sh --run base1                                                  # k=3, every development case (.env model)
 eval/scripts/run_eval.sh --run base1                                                  # again: resumes
 eval/scripts/run_eval.sh --k 1 --run smoke --filter-pattern '^R37-1fbb920-001$'       # one case (.env model)
+eval/scripts/run_eval.sh --run base1 --max-concurrency 4                              # fewer workers (default 8)
 uv run python eval/scripts/compare_baseline.py eval/runs/base1/results.json           # vs baseline.json
 uv run python eval/scripts/baseline.py eval/runs/base1                                # write a new baseline
 PROMPTFOO_CONFIG_DIR=eval/runs/base1/.promptfoo promptfoo view                        # browse (Node 24)
@@ -400,8 +402,9 @@ findings are on the ticket.
   call site, say) is missed, and a different bug inside the window counts as the same one.
 - **The PR description is today's**, fetched at run time; it may have been edited since `raised_sha`.
 - **Mined cases leave out large commits** (`--max-files 22`): 3 real and 19 false findings on 7 commits.
-- **Long reviews can time out in Promptfoo.** The repeats of one commit queue on its lock, so the last
-  repeat of a large review (86 files: about an hour each) can wait past the provider's 2-hour timeout and
-  become a `harness_error`. Rerunning the same `--run` finishes it from the checkpoints.
+- **Long reviews can time out in Promptfoo.** The time a case waits on its lock counts towards the provider's
+  2-hour timeout: a case queued behind a large review of the same commit in the same repeat (19–20 files:
+  75–110 minutes) can pass it and become a `harness_error` (PMAT-330). Rerunning the same `--run` finishes it
+  from the checkpoints.
 - **The free models' daily quota** (OpenRouter `429 free-models-per-day`) does not cover a k=3 baseline in
   one day: rerun the same `--run` after it resets (00:00 UTC).

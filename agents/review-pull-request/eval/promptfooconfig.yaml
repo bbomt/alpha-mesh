@@ -10,4 +10,5 @@ providers:
       timeout: 7200000  # ms: one review of a large commit on a throttled free model takes many minutes
 tests: file://promptfoo/load_cases.py:create_tests
 evaluateOptions:
-  maxConcurrency: 2  # free models throttle; the cases of one commit queue on its lock anyway
+  maxConcurrency: 8  # paid model (PMAT-328); all workers share the GitHub token's 5000 requests/hour.
+                     # Override: run_eval.sh ... --max-concurrency <n>
