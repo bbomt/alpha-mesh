@@ -371,7 +371,9 @@ The labeller is `SILVER_CALIBRATION_MODEL` in `.env` (`openai/gpt-6.1-terra`, ow
 - It gets what the judge and the sheet get (rubric, ground truth, findings, PR description, diff, files the agent read),
   through `llm_rubric.ask` and so `ReviewSession` (`tests/test_canary.py`). It reads only repeat 0's stored review: never
   a judge score, a line-window result or a hold-out case. This sends the sample's repo code to the model's vendor via
-  OpenRouter (`EVAL_JUDGE_URL`, `EVAL_JUDGE_TOKEN`; owner's choice, 2026-11-10).
+  OpenRouter (owner's choice, 2026-11-10), at `SILVER_CALIBRATION_URL` with `SILVER_CALIBRATION_TOKEN`. These are its
+  own, not the judge's, because the judge is on DeepSeek's own API (PMAT-311, 2026-11-11). A missing one stops the run
+  before anything is sent.
 - Each reply is strict JSON (`structured_outputs`, `why` before `score` per dimension, `reasoning_effort` high by
   default). A missing or out-of-range score stops the run naming the case and pass; it is never defaulted.
 - 3 passes (odd), the median per dimension. A case whose passes differ by more than 1 point is `unstable` and worth a

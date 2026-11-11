@@ -14,7 +14,8 @@ passes (odd, so the median is a score) and marks a case `unstable` when its pass
 Writes eval/judge/silver-ai-calibration.json (scores only, committed; its header names the model) and
 eval/runs/judge-labelling/silver-ai-calibration.md (the reasons, gitignored: it quotes reviews and code).
 
-The model is SILVER_CALIBRATION_MODEL in .env, or --model; it is sent to EVAL_JUDGE_URL with EVAL_JUDGE_TOKEN.
+The model is SILVER_CALIBRATION_MODEL in .env, or --model; it is sent to SILVER_CALIBRATION_URL with
+SILVER_CALIBRATION_TOKEN, not the judge's: the judge may be on another host (DeepSeek's own API, PMAT-311).
 A higher model run needs the Team Lead's sign-off (owner, 2026-11-10): develop with a cheap one.
 """
 
@@ -67,7 +68,8 @@ def label_once(case: dict, review: dict, model: str, reasoning_effort: str) -> d
     """One pass over one case: {dimension: {why, score}, plus what the API reported (model, provider, cost)}."""
     if case["case_id"] in case_rules.holdout_ids():
         raise LabelError(f"{case['case_id']} is a hold-out case: it is never labelled")
-    config = replace(llm_rubric.judge_config(), model=model)
+    config = replace(llm_rubric.judge_config(), model=model, api_url=os.environ["SILVER_CALIBRATION_URL"],
+                     api_token=os.environ["SILVER_CALIBRATION_TOKEN"])
     policy = PathPolicy(config.exclusions)
     has_findings = any(not policy.is_excluded(f["file"]) for f in review["findings"])
     meta = {}
@@ -151,6 +153,10 @@ def main(argv=None) -> int:
         print(f"ERROR: no labeller: pass --model or set SILVER_CALIBRATION_MODEL in {config_module.ENV_FILE}",
               file=sys.stderr)
         return 1
+    for var in ("SILVER_CALIBRATION_URL", "SILVER_CALIBRATION_TOKEN"):
+        if not os.environ.get(var):
+            print(f"ERROR: {var} is not set. Set it in {config_module.ENV_FILE} (see .env.example).", file=sys.stderr)
+            return 1
     sample = set(json.loads(judge_sample.SAMPLE.read_text())["cases"])
     cases = [c for c in case_rules.development_cases() if c["case_id"] in sample]
     if missing := sample - {c["case_id"] for c in cases}:

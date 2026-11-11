@@ -65,6 +65,8 @@ def reply(correctness=4, coverage=4, actionability=4):
 def labelled(run_dir, tmp_path, monkeypatch):
     """silver_labels.main through a fake model; returns (exit code, prompts seen, schemas sent, outputs)."""
     scores, reasons = tmp_path / "silver.json", tmp_path / "out" / "silver.md"
+    monkeypatch.setenv("SILVER_CALIBRATION_URL", "http://silver")
+    monkeypatch.setenv("SILVER_CALIBRATION_TOKEN", "silver-token")
     monkeypatch.setattr(silver_labels, "SCORES", scores)
     monkeypatch.setattr(silver_labels, "REASONS", reasons)
 
@@ -263,3 +265,27 @@ def test_d_unfinished_silver_and_a_missing_source_are_refused(files, capsys):
         judge_agreement.main([str(files["judge"])])
     assert judge_agreement.main(["--gold-calibration", str(files["todo"]), str(files["judge"])]) == 1, \
         "gold alone (no silver) must have every score set, so an all-TODO gold file is refused"
+
+
+def test_c_the_labeller_goes_to_its_own_url_and_token_not_the_judge_s(labelled):
+    """The judge may be on another host (DeepSeek's own API) than the labeller's model (OpenRouter)."""
+    sent = []
+    real_ask = llm_rubric.ask
+
+    def ask(case, review, config, factory):
+        sent.append((config.model, config.api_url, config.api_token))
+        return real_ask(case, review, config, factory)
+
+    with patch.object(llm_rubric, "ask", ask):
+        code, *_ = labelled([reply()] * 75)
+    assert code == 0 and sent
+    assert set(sent) == {("openai/labeller", "http://silver", "silver-token")}
+
+
+@pytest.mark.parametrize("var", ["SILVER_CALIBRATION_URL", "SILVER_CALIBRATION_TOKEN"])
+def test_c_a_missing_silver_url_or_token_stops_before_anything_is_sent(labelled, monkeypatch, tmp_path, capsys, var):
+    monkeypatch.setattr(silver_labels.config_module, "ENV_FILE", tmp_path / "no.env")  # not the real .env
+    monkeypatch.setenv(var, "")
+    code, seen, _, scores, _ = labelled([reply()] * 75)
+    assert code == 1 and var in capsys.readouterr().err
+    assert not seen and not scores.exists()

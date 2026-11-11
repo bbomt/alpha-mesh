@@ -6,6 +6,7 @@ records every message it receives; the secret must appear in none of them.
 """
 
 import json
+import os
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -487,7 +488,8 @@ def _silver(exclusions=None):
             patch.object(llm_rubric, "get_diff", return_value=_diff_with_secrets()), \
             patch.object(llm_rubric, "GitHubFileReader", FakeReader), \
             patch.object(llm_rubric, "github_token", return_value=GITHUB_TOKEN), \
-            patch.object(silver_labels, "make_labeller_chat_model", lambda *a, **k: chat_model_factory(model)):
+            patch.object(silver_labels, "make_labeller_chat_model", lambda *a, **k: chat_model_factory(model)), \
+            patch.dict(os.environ, {"SILVER_CALIBRATION_URL": "http://silver", "SILVER_CALIBRATION_TOKEN": "silver-tok"}):
         silver_labels.label_once({**JUDGE_CASE, "case_id": "R1-a-001"}, JUDGE_REVIEW, "openai/labeller", "high")
     return seen
 
