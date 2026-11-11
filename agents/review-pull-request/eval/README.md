@@ -163,8 +163,8 @@ another case's file at the same repo and `raised_sha`: a file cannot be both cle
 ### Baseline
 
 > **Models:** `CODE_REVIEW_MODEL` in `.env` is the agent under test unless `run_eval.sh --model` names another;
-> `JUDGE_MODEL` is the `llm-rubric` judge. Evals run on the free `nvidia/nemotron-3.5-super-vl:free`
-> (`--model`): since PMAT-328 a full run of the 65 cases at k=3 takes about 2 hours. A paid model only when asked.
+> `JUDGE_MODEL` is the `llm-rubric` judge. Evals run on the free `nvidia/nemotron-3.5-super-vl:free`, which `.env`
+> sets: since PMAT-328 a full run of the 65 cases at k=3 takes about 2 hours. A paid model only when asked.
 > Compare a run only with a baseline on the same model: `baseline.json`'s `model` says which one.
 
 <!-- BASELINE-HEADLINE -->
