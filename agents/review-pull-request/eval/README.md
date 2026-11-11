@@ -129,8 +129,11 @@ for reference.
 
 Besides the finding and its label, every case has:
 
-- `category`: `mined` for mined cases. Hand-written cases use `logic`, `security`, `style_only`, `refactor`,
-  `concurrency`, `improvable` or `degenerate`.
+- `category`: the kind of bug: `logic`, `security`, `style_only`, `refactor`, `concurrency`, `improvable` or
+  `degenerate`. `source` says where the case came from. A mined case is classed by hand, from the code at `raised_sha`,
+  as the kind of bug its finding claims (a false positive too: a dismissed claim of a race is `concurrency`). `mine`
+  writes a new case without one and keeps it on a rerun, so the schema test fails until the new case is classed
+  (PMAT-321).
 - `notes`: free text for people, saying why the case exists. The harness never reads it; the judge may.
 - `expected`: what a good review of `raised_sha` does, never expected text. Every case passes or fails.
   `action` and `flag_file` are required:
@@ -195,6 +198,12 @@ The owner's decisions, 2026-11-10. The model IDs are set in `.env`, not here.
 
 ### Baseline
 
+> **Models come from `.env`:** `CODE_REVIEW_MODEL` is the agent under test, `JUDGE_MODEL` the `llm-rubric` judge.
+> Evals use paid models only: the free ones are too slow for the eval volume (review passes still may use them).
+> Compare a run only with a baseline on the same model: `baseline.json`'s `model` says which one. Today's
+> `baseline.json` is `base2` on `nvidia/nemotron-3.5-super-vl:free`, until run `PMAT-325-base4`
+> (on `z-ai/glm-5.3-flash`) replaces it.
+
 <!-- BASELINE-HEADLINE -->
 `baseline.json`: run `base2`, agent `665c767`, `nvidia/nemotron-3.5-super-vl:free`, k=3, window ±3 lines, the 65
 development cases (195 runs, 2026-11-04), all scored (no harness errors). The hold-out's score is
@@ -215,11 +224,19 @@ development cases (195 runs, 2026-11-04), all scored (no harness errors). The ho
 | improvable | `raise_true_bug` | 3 | 4/9 | 44% | 1/3 |
 | logic (synthetic) | `raise_true_bug` | 6 | 18/18 | 100% | 6/6 |
 | logic (public) | `raise_true_bug` | 8 | 18/24 | 75% | 5/8 |
-| mined | `raise_true_bug` | 10 | 10/30 | 33% | 0/10 |
-| mined | `skip_false_bug` | 20 | 38/60 | 63% | 7/20 |
+| mined: all | `raise_true_bug` | 10 | 10/30 | 33% | 0/10 |
+| mined: logic | `raise_true_bug` | 10 | 10/30 | 33% | 0/10 |
+| mined: all | `skip_false_bug` | 20 | 38/60 | 63% | 7/20 |
+| mined: logic | `skip_false_bug` | 10 | 17/30 | 57% | 4/10 |
+| mined: improvable | `skip_false_bug` | 7 | 15/21 | 71% | 2/7 |
+| mined: concurrency | `skip_false_bug` | 2 | 3/6 | 50% | 0/2 |
+| mined: style_only | `skip_false_bug` | 1 | 3/3 | 100% | 1/1 |
 | refactor | `raise_nothing` | 3 | 7/9 | 78% | 1/3 |
 | security | `raise_true_bug` | 6 | 17/18 | 94% | 5/6 |
 | style_only | `raise_nothing` | 4 | 12/12 | 100% | 4/4 |
+
+Mined cases keep their own rows (`mined:<category>` in `by_category`), like public ones. The `mined: all` rows are their
+sum; the rates are those of the baseline before mined cases had categories (PMAT-321 only moved the grouping).
 
 | Severity of the case's finding | Expected action | Cases | Runs passed | Rate | Passed all 3 |
 | :-- | :-- | --: | --: | --: | --: |
@@ -254,7 +271,7 @@ development cases only.
 another tuning target.
 
 ```bash
-eval/scripts/run_eval.sh --holdout --model nvidia/nemotron-3.5-super-vl:free --run <name>
+eval/scripts/run_eval.sh --holdout --run <name>
 uv run python eval/scripts/holdout_report.py eval/runs/<name>/results-holdout.json   # the totals again
 ```
 
@@ -274,7 +291,9 @@ This is a coarse check, good for catching a large drop, not a small one. Per-cat
 **How it was drawn** (`scripts/split_holdout.py`, seed 318, chosen before any failure was read; it never reads results):
 
 - Per source and category, so that public cases, which share the category `logic` with synthetic ones, are on both
-  sides. Each takes about 25% of its cases, at least 1, in whole units.
+  sides. Each takes about 25% of its cases, at least 1, in whole units. Mined cases are one group per source: they
+  were drawn so before they had categories, and drawing them per category would move cases between the sets
+  (PMAT-321). New mined cases need the owner's decision on how they join the split.
 - A unit is a PR, so cases from one PR never split; a case with no PR (synthetic) is its own unit.
 - Units are taken in the order of a hash of seed and unit. One that would pass the target is skipped.
 - The 8 ID-based cases of the old `base1` baseline (PRs 36 and 37) are left out: their failures were read.
@@ -442,14 +461,26 @@ reads the findings (file, line, severity, summary) from the review's final graph
 comment is rendered from, so nothing parses markdown. The provider (`promptfoo/agent_provider.py`) returns
 them as JSON (`schema/review.schema.json`; extra fields are allowed, for later asserts).
 
-`files_read` lists the repo-relative paths whose content the agent's model was shown, across the whole review.
-It holds paths only, never content, and a not-found, refused or failed read doesn't count. A read stops at
-`max_file_lines`, so the path alone doesn't say how much of a file was shown. A review that resumed from a
-checkpoint saved before this field existed leaves it out, because `[]` would say the agent read nothing.
+`trace` is the path of the review's **trace** (PMAT-325), `runs/<run>/traces/repeat-<n>/<commit>.jsonl`: every
+tool call (name and arguments) and its result exactly as the model received them, in order, recorded inside
+the redactor (`src/review_pull_request/trace.py`). That includes not-found results with their hints,
+"already read" notes and refusals, so the judge can rebuild the agent's context without reading a file
+again. The records are shaped like Langfuse observations (a `trace`, a `span` per file review, a `tool` per
+call). A file review's records are written when it ends, so a stopped review leaves no half span; a resume
+appends to the same file, and `trace.load()` keeps the last span of a file reviewed twice. The trace never
+goes into the checkpoint store or the results JSON (only its path does). It is `null` when every changed
+file was excluded.
+
+`files_read` lists the repo-relative paths whose content the agent's model was shown, across the whole review,
+taken from the trace. It holds paths only, never content, and a not-found, refused or failed read doesn't
+count. A read stops at `max_file_lines`, so the path alone doesn't say how much of a file was shown. If a
+file of the review has no span in the trace (reviewed before the trace existed), `files_read` is left out,
+because `[]` would say the agent read nothing. New checkpoints no longer hold `files_read`.
 
 - **One review per commit and repeat.** Several cases share a commit. Within one repeat they share one review
-  (they queue on a lock per commit, which also runs the repeats of a commit one after another); each repeat
-  is a fresh review, so pass^k measures something.
+  (they queue on a lock per commit and repeat, then reuse the first's review); each repeat is a fresh review,
+  so pass^k measures something, and the repeats of a commit review at the same time (PMAT-328). Promptfoo
+  runs 8 cases at once (`maxConcurrency` in `promptfooconfig.yaml`; `--max-concurrency <n>` overrides it).
 - **Checkpoints** go to `runs/<run>/checkpoints-repeat-<n>.sqlite` (LangGraph's SqliteSaver), never to the
   production DynamoDB store, so a run never touches the checkpoint of a real PR review. Rerunning the same
   `--run` reuses finished reviews and resumes a stopped one from its last finished file (free models throttle).
@@ -463,9 +494,10 @@ From `agents/review-pull-request`. Prerequisites: `gh auth login`, the repo's `.
 session; the machine default stays). No AWS is needed.
 
 ```bash
-eval/scripts/run_eval.sh --model nvidia/nemotron-3.5-super-vl:free --run base1        # k=3, every development case
-eval/scripts/run_eval.sh --model nvidia/nemotron-3.5-super-vl:free --run base1        # again: resumes
+eval/scripts/run_eval.sh --run base1                                                  # k=3, every development case (.env model)
+eval/scripts/run_eval.sh --run base1                                                  # again: resumes
 eval/scripts/run_eval.sh --k 1 --run smoke --filter-pattern '^R37-1fbb920-001$'       # one case (.env model)
+eval/scripts/run_eval.sh --run base1 --max-concurrency 4                              # fewer workers (default 8)
 uv run python eval/scripts/compare_baseline.py eval/runs/base1/results.json           # vs baseline.json
 uv run python eval/scripts/baseline.py eval/runs/base1                                # write a new baseline
 PROMPTFOO_CONFIG_DIR=eval/runs/base1/.promptfoo promptfoo view                        # browse (Node 24)
@@ -531,8 +563,9 @@ findings are on the ticket.
   bug inside the window counts as the same one. The judge's coverage score compares the claim (`judge_report.py`).
 - **The PR description is today's**, fetched at run time; it may have been edited since `raised_sha`.
 - **Mined cases leave out large commits** (`--max-files 22`): 3 real and 19 false findings on 7 commits.
-- **Long reviews can time out in Promptfoo.** The repeats of one commit queue on its lock, so the last
-  repeat of a large review (86 files: about an hour each) can wait past the provider's 2-hour timeout and
-  become a `harness_error`. Rerunning the same `--run` finishes it from the checkpoints.
+- **Long reviews can time out in Promptfoo.** The time a case waits on its lock counts towards the provider's
+  2-hour timeout: a case queued behind a large review of the same commit in the same repeat (19–20 files:
+  75–110 minutes) can pass it and become a `harness_error` (PMAT-330). Rerunning the same `--run` finishes it
+  from the checkpoints.
 - **The free models' daily quota** (OpenRouter `429 free-models-per-day`) does not cover a k=3 baseline in
   one day: rerun the same `--run` after it resets (00:00 UTC).

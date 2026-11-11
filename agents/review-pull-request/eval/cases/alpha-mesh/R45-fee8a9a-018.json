@@ -21,7 +21,7 @@
   "label_by": "rule",
   "label_date": "2026-11-04",
   "label_reason": "style only; the surrounding review code passes config and checkpointer unannotated the same way (review_commit).",
-  "category": "mined",
+  "category": "style_only",
   "expected": {
     "action": "skip_false_bug",
     "flag_file": "agents/review-pull-request/eval/promptfoo/eval_adapter.py"

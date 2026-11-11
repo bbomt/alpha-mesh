@@ -90,6 +90,16 @@ Each changed file is reviewed individually. The LLM receives:
 
 Issues are classified as `high`, `medium`, or `low` severity.
 
+### Trace
+
+Every review (except `--dry-run`) writes a **trace** (PMAT-325): one JSONL file holding each `read_file`
+call (name and arguments) and its result exactly as the model received it, in order, with one span per
+file review. It is recorded inside the redactor, so excluded files appear only as refusals and tokens as
+`[REDACTED]`. The records are shaped like Langfuse observations, so Langfuse can replace the file later
+(PMAT-262). `mesh review-pull-request` writes it to `~/.mesh/review-traces/<thread hash>.jsonl` (in CI, under
+the job's HOME); the evals write it to their run folder. A resumed review appends to the same file, and
+`--force-rerun` starts it again. The trace never goes into the checkpoint store.
+
 ### Report
 
 A Markdown report is printed to stdout and (unless `--no-post-comment`) posted as a GitHub PR comment. The comment header is:

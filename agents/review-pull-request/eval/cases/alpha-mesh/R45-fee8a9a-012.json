@@ -21,7 +21,7 @@
   "label_by": "rule",
   "label_date": "2026-11-04",
   "label_reason": "Commit 02d37e7 in the PR cites finding R45-fee8a9a-012.",
-  "category": "mined",
+  "category": "logic",
   "expected": {
     "action": "raise_true_bug",
     "flag_file": "agents/review-pull-request/eval/schema/case.schema.json",

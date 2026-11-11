@@ -85,3 +85,14 @@ def test_a_full_review_at_the_compare_file_limit_fails_loudly_and_posts_nothing(
     assert code == 1
     assert "ERROR: failed to get diff: the diff has 300 files" in capsys.readouterr().err
     assert model.seen == [] and github.posted == []
+
+
+@pytest.mark.parametrize("own", [{"checkpointer": None, "trace_path": "t.jsonl"},
+                                 {"checkpointer": object(), "trace_path": None}])
+def test_skipping_the_run_lock_is_refused_without_the_callers_own_store_and_trace(own):
+    """run_lock=False is only safe over a store and trace that the caller locks itself: never the shared
+    production store, nor the default trace (PMAT-328, R54-363e569-002)."""
+    cfg = Config(model="m", api_url="http://x", api_token="t", exclusions=list(SENSITIVE_PATTERNS))
+    with pytest.raises(ValueError, match="run_lock=False"):
+        run_review_agent(gm.OWNER, gm.REPO, gm.BASE, X, "d", config=cfg, token=gm.TOKEN, publish=print,
+                      all_excluded=lambda paths: 0, run_lock=False, **own)

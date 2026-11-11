@@ -211,8 +211,11 @@ def run_file_review(chunk, overview: str, session) -> FileReviewResult:
     """
     paths_read: set[str] = set()  # paths already shown to the model in this review
     misses: dict[str, list[str]] = {}  # path that came back "not found" -> suggested paths
-    result = _run_file_review(chunk, overview, session, paths_read, misses)
-    result.files_read = sorted(paths_read)
+    with session.trace.file_review(chunk.file_path) as span:  # written only if the review ends
+        result = _run_file_review(chunk, overview, session, paths_read, misses)
+        result.files_read = sorted(paths_read)
+        span.output = {"files_read": result.files_read, "incomplete": result.incomplete,
+                       "tool_calls_made": result.tool_calls_made}
     seen = paths_read | {normalise(chunk.file_path)}
     for path, suggestions in misses.items():
         if not seen.intersection(suggestions):

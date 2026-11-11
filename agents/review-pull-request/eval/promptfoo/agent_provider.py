@@ -7,7 +7,10 @@ or {"error": ...}, which Promptfoo counts as an error, not a failure (failure cl
 Run state lives in EVAL_RUN_DIR (eval/scripts/run_eval.sh sets it; gitignored):
   checkpoints-repeat-<n>.sqlite  one per repeat: cases on one commit share its review within a
                                  repeat, never across repeats; rerunning resumes a stopped review
-  locks/<commit>.lock            one review of a commit at a time, across repeats and processes
+  locks/<commit>-repeat-<n>.lock one review of a commit per repeat at a time, across processes; the
+                                 repeats of a commit review at once (PMAT-328)
+  traces/repeat-<n>/<commit>.jsonl  the review's trace (PMAT-325): every tool call and its result as
+                                 the model got them; shared like the review, appended to on a resume
 The model is EVAL_MODEL, else CODE_REVIEW_MODEL from .env. One run dir holds one model's reviews.
 
 With EVAL_STORED_RESULTS (run_eval.sh --stored, PMAT-311) the agent does not run: each case gets its
@@ -54,8 +57,11 @@ def review(case: dict, repeat: int) -> dict:
     run_dir = _run_dir()
     key = hashlib.sha256(f"{case['repo']}@{case['raised_sha']}".encode()).hexdigest()[:16]
     (run_dir / "locks").mkdir(parents=True, exist_ok=True)
-    # run_review_agent's own run lock does not wait (and its key has no repeat), so the cases of one commit queue here.
-    with open(run_dir / "locks" / f"{key}.lock", "a+") as lock:
+    # The cases of one commit in one repeat queue here, then reuse the first's review. run_review_agent's own run
+    # lock is off (run_lock=False): it does not wait and its key has no repeat, and this lock already
+    # guards what one commit's review in this repeat writes (its checkpoint thread and its trace). Other
+    # commits' threads in the same store are left to SQLite's own locking (timeout=60 in _saver).
+    with open(run_dir / "locks" / f"{key}-repeat-{repeat}.lock", "a+") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         try:
             config = load_config(Namespace(model=os.environ.get("EVAL_MODEL"), base=None, config=None,
@@ -72,7 +78,10 @@ def review(case: dict, repeat: int) -> dict:
             description = get_pr_description(f"https://github.com/{case['repo']}/pull/{case['pr_number']}", token)
         print(f"[eval] {case['case_id']}: {case['repo']}@{case['raised_sha'][:7]} repeat {repeat}", file=sys.stderr)
         return review_case(case, config=config, token=token, description=description,
-                           checkpointer=_saver(run_dir / f"checkpoints-repeat-{repeat}.sqlite"))
+                           checkpointer=_saver(run_dir / f"checkpoints-repeat-{repeat}.sqlite"),
+                           # resolved: the output names the trace, and a run folder linked from a worktree
+                           # outlives the worktree
+                           trace_path=run_dir.resolve() / "traces" / f"repeat-{repeat}" / f"{key}.jsonl")
 
 
 @functools.lru_cache(maxsize=1)

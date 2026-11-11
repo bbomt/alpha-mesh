@@ -95,6 +95,14 @@ def label_changes(since: str, cases_dir: Path, repo_root: Path) -> list[dict]:
     return changes
 
 
+def category_group(case: dict) -> str:
+    """The by_category row of a case: public cases share `logic` with synthetic ones, and mined cases stay a
+    group by source (PMAT-321), so both get their own rows."""
+    if case.get("source") == "public_pr":
+        return "public"
+    return f"mined:{case['category']}" if case.get("source") == "pr_comment" else case["category"]
+
+
 def pass_rates(entries: dict, by_id: dict, group) -> dict:
     """"<group(case)>/<action>" -> counts over the scored cases, for the README's tables."""
     out: dict[str, dict] = {}
@@ -147,8 +155,7 @@ def build(results: dict, cases: list[dict], meta: dict, *, analysis: dict, label
             "by_class": {"model_failure": sum(e["failure_class"] == "model_failure" for e in entries.values()),
                          "label_error": len(labelled),
                          "harness_error": sum(e["failure_class"] == "harness_error" for e in entries.values())},
-            "by_category": pass_rates(entries, by_id,
-                                      lambda c: "public" if c.get("source") == "public_pr" else c["category"]),
+            "by_category": pass_rates(entries, by_id, category_group),
             "by_severity": pass_rates(entries, by_id, lambda c: (c.get("finding") or {}).get("severity") or "none"),
         },
         "label_errors_fixed": fixed,

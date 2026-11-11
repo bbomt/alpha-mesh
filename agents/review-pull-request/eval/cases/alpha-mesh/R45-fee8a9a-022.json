@@ -21,7 +21,7 @@
   "label_by": "rule",
   "label_date": "2026-11-04",
   "label_reason": "under set -e a failing `nvm use 24` stops the script, and only its stdout is silenced, so its error is shown.",
-  "category": "mined",
+  "category": "logic",
   "expected": {
     "action": "skip_false_bug",
     "flag_file": "agents/review-pull-request/eval/scripts/run_eval.sh"

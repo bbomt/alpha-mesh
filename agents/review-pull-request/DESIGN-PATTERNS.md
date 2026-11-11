@@ -67,9 +67,15 @@ Policies combine with `|` (`PathPolicy(a) | PathPolicy(b)`), which is the compos
 
 **Why:** defence in depth. The policy keeps excluded *files* out; this catches a credential that someone pasted into an ordinary file.
 
-### 5. Facade: `ReviewSession` (`session.py`)
+### 5. Decorator inside the guard: `TracingLLM` (`trace.py`)
 
-**What it is:** one object built once per run. It creates the policy and hands out only the protected pieces: `review_llm`, `reader` and `safe_diff()`.
+**What it is:** a wrapper with the same `chat(messages, tools)` method, placed *inside* `GuardedLLM` (`GuardedLLM(TracingLLM(model))`). It records each tool call and its result into the review's trace (PMAT-325), one span per file review.
+
+**Why:** inside the guard it sees exactly what the model is sent: excluded files are already refusals and tokens are already `[REDACTED]`. So the trace holds the agent's context and nothing the model could not see. `tests/test_canary.py` checks the trace file like the model's input.
+
+### 6. Facade: `ReviewSession` (`session.py`)
+
+**What it is:** one object built once per run. It creates the policy and hands out only the protected pieces: `review_llm`, `reader`, `safe_diff()` and `trace`.
 
 **Why:** the stages receive the session, not the raw tools. `stage1.py` and `stage2.py` don't import the HTTP client or the file readers at all, and a test enforces that. So the only way for a stage to talk to the model or read a file is through the protections.
 

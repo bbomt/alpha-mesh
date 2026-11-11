@@ -281,7 +281,7 @@ def test_a_rerun_leaves_unchanged_cases_untouched_and_redates_only_a_changed_lab
     assert (changed["label_reason"], changed["label_date"]) == ("checked at src/x.py:40.", later.isoformat())
 
 
-def test_mined_cases_get_category_notes_and_an_expected_block_derived_from_the_label(tmp_path):  # PMAT-309 (a)
+def test_mined_cases_get_notes_and_an_expected_block_derived_from_the_label_and_no_category(tmp_path):  # PMAT-309 (a)
     cited = Issue("src/a.py", 12, "high", "Index can go out of range.", "Check the length first.")
     dismissed = Issue("src/b.py", 20, "medium", "The caller may pass None.", None)
     gh = FakeGh([pr(7, BASE1, HEAD1)],
@@ -293,12 +293,13 @@ def test_mined_cases_get_category_notes_and_an_expected_block_derived_from_the_l
 
     files = repo_cases(tmp_path)
     real, false = files["R7-eeeeeee-001.json"], files["R7-eeeeeee-002.json"]
-    assert (real["category"], real["notes"]) == (false["category"], false["notes"]) == ("mined", "")
+    assert "category" not in real and "category" not in false  # classed by hand (PMAT-321): the schema fails until then
+    assert real["notes"] == false["notes"] == ""
     assert real["expected"] == {"action": "raise_true_bug", "flag_file": "src/a.py", "min_severity": "high"}
     assert false["expected"] == {"action": "skip_false_bug", "flag_file": "src/b.py"}
 
 
-def test_a_rerun_keeps_a_hand_edited_expected_and_notes_and_label_recomputes_expected(tmp_path):  # PMAT-309 (c)
+def test_a_rerun_keeps_a_hand_edited_expected_notes_and_category_and_label_recomputes_expected(tmp_path):  # PMAT-309 (c)
     gh = FakeGh([pr(7, BASE1, HEAD1)],
                 comments={7: [report(HEAD1, [MEDIUM], pr_number=7),
                               "Dismissed review finding R7-bbbbbbb-001: checked by the caller."]})
@@ -306,13 +307,14 @@ def test_a_rerun_keeps_a_hand_edited_expected_and_notes_and_label_recomputes_exp
     path = tmp_path / "cases" / "repo" / "R7-bbbbbbb-001.json"
     case = json.loads(path.read_text())
     hand = {"action": "raise_nothing", "flag_file": "src/*.py", "min_severity": "medium"}
-    case.update(expected=hand, notes="The caller checks the length at src/x.py:40.")
+    case.update(expected=hand, notes="The caller checks the length at src/x.py:40.", category="logic")
     path.write_text(json.dumps(case, indent=2) + "\n")
 
     mine(tmp_path, gh)
 
     kept = json.loads(path.read_text())
     assert (kept["expected"], kept["notes"]) == (hand, "The caller checks the length at src/x.py:40.")
+    assert kept["category"] == "logic"  # PMAT-321
 
     eval_cases.label("R7-bbbbbbb-001", "real_issue", "The caller never checks the length.",
                      cases_dir=tmp_path / "cases", today=TODAY)

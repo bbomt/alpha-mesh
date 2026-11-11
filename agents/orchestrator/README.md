@@ -212,8 +212,8 @@ a worker by answering in its tab and telling it not to post to Jira.
   (one `KEY FOLDER` line per waiting ticket).
 - `src/orchestrator/tmux.py`: the tabs, named by ticket key, in the tmux session the orchestrator runs in.
 - `settings.json`: the settings every worker is started with (`--settings`):
-  - the status hooks (`SessionStart` → started, `UserPromptSubmit` → working, `Stop` → idle,
-    `Notification` → waiting), each running `status-hook.sh`;
+  - the status hooks (`SessionStart` → started, except that a compact or `/clear` keeps the state,
+    `UserPromptSubmit` → working, `Stop` → idle, `Notification` → waiting), each running `status-hook.sh`;
   - a `PostToolUse` hook on the Atlassian tools, running `jira-access.sh ok`;
   - the Atlassian plugin;
   - what a worker needs to work inside its sandbox without approvals: write access to `~/.mesh` (review

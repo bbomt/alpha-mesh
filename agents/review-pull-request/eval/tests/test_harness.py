@@ -4,8 +4,10 @@ The provider runs the real agent against a recording fake GitHub (tests.test_gol
 and a scripted model, the same boundaries test_run_review_agent fakes. Nothing reaches GitHub or a model.
 """
 
-import dataclasses
 import json
+import multiprocessing
+from contextlib import ExitStack
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -20,6 +22,7 @@ import load_cases
 from review_pull_request.config import Config, SENSITIVE_PATTERNS
 from review_pull_request.llm import LLMError
 from review_pull_request.stage2 import run_file_review
+from review_pull_request.trace import load as load_trace
 from tests import test_golden_master as gm
 from tests.helpers import chat_model_factory
 from tests.test_canary import _store_text
@@ -60,14 +63,53 @@ def run(tmp_path, monkeypatch):
 
     def call(c, model, repeat=0):
         github = gm.FakeGitHub()
-        cfg = Config(model="m", api_url="http://x", api_token="t", exclusions=list(SENSITIVE_PATTERNS))
-        with patch("agent_provider.load_config", return_value=cfg), \
-                patch("review_pull_request.session.make_chat_model", chat_model_factory(model)), \
-                patch("subprocess.run", github.run), \
-                patch.object(httpx.HTTPTransport, "handle_request", lambda self, req: github.handle(req)):
-            result = agent_provider.call_api(c["case_id"], {"config": {}},
-                                             {"vars": {"case_id": c["case_id"], "case": c}, "repeatIndex": repeat})
+        with fakes(github, model):
+            result = call_api(c, repeat)
         return result, github
+
+    def fakes(github, model):
+        cfg = Config(model="m", api_url="http://x", api_token="t", exclusions=list(SENSITIVE_PATTERNS))
+        with ExitStack() as stack:  # a patch that fails to start undoes the ones before it
+            for p in (patch("agent_provider.load_config", return_value=cfg),
+                      patch("review_pull_request.session.make_chat_model", chat_model_factory(model)),
+                      patch("subprocess.run", github.run),
+                      patch.object(httpx.HTTPTransport, "handle_request", lambda self, req: github.handle(req))):
+                stack.enter_context(p)
+            return stack.pop_all()
+
+    def call_api(c, repeat):
+        return agent_provider.call_api(c["case_id"], {"config": {}},
+                                       {"vars": {"case_id": c["case_id"], "case": c}, "repeatIndex": repeat})
+
+    def call_together(calls, model):
+        """call_api for each (case, repeat) at once, each in its own forked process as Promptfoo's workers
+        are (run_review_agent sets signal handlers, so not threads); returns the results and every diff fetched."""
+        ctx = multiprocessing.get_context("fork")
+        queue = ctx.Queue()
+
+        def worker(i, c, repeat):
+            github = gm.FakeGitHub()
+            try:
+                with fakes(github, model):
+                    result = call_api(c, repeat)
+            except BaseException as e:  # reported to the test at once, not as a 60 s queue timeout
+                result = {"error": f"worker failed: {e!r}"}
+            queue.put((i, result, github.diff_ranges))
+
+        procs = [ctx.Process(target=worker, args=(i, c, repeat)) for i, (c, repeat) in enumerate(calls)]
+        try:
+            for proc in procs:
+                proc.start()
+            got = sorted(queue.get(timeout=60) for _ in procs)
+        finally:  # a child that hangs or fails is never left running after the test
+            for proc in procs:
+                if proc.is_alive():
+                    proc.join(5)
+                if proc.is_alive():
+                    proc.kill()
+                    proc.join()
+        return [r for _, r, _ in got], [d for _, _, ranges in got for d in ranges]
+    call.together = call_together
     return call
 
 
@@ -96,6 +138,39 @@ def test_cases_on_one_commit_share_one_review_within_a_repeat_but_not_across_rep
 
     assert again.diff_ranges == [] and same_commit["output"]["findings"] == first["output"]["findings"]
     assert fresh.diff_ranges == [f"{gm.BASE}...{X}"]
+
+
+def model_waiting_for(parties):
+    """model_reporting({}), whose overview call waits until `parties` reviews have reached it: a review
+    that waits for another one to finish first breaks the barrier (BrokenBarrierError) instead."""
+    barrier, report = multiprocessing.get_context("fork").Barrier(parties, timeout=10), model_reporting({})
+
+    def model(messages, tools):
+        if tools is None:
+            barrier.wait()
+        return report(messages, tools)
+    return model
+
+
+def test_the_repeats_of_one_case_review_at_the_same_time_each_into_its_own_store_and_trace(run, tmp_path):
+    (r0, r1), diffs = run.together([(TRUE_BUG, 0), (TRUE_BUG, 1)], model_waiting_for(2))
+
+    assert "error" not in r0 and "error" not in r1, (r0, r1)
+    assert diffs == [f"{gm.BASE}...{X}"] * 2  # two reviews, neither reused the other's
+    assert r0["output"]["files"] == r1["output"]["files"] == ["src/cart.py", "src/util.py"]
+    for n, r in enumerate((r0, r1)):
+        trace = Path(r["output"]["trace"])
+        assert trace.parent == tmp_path / "run" / "traces" / f"repeat-{n}" and trace.is_file()
+        assert "src/cart.py" in _store_text(tmp_path / "run" / f"checkpoints-repeat-{n}.sqlite")
+
+
+def test_cases_on_one_commit_at_the_same_time_in_one_repeat_still_share_one_review(run):
+    (first, second), diffs = run.together([(TRUE_BUG, 0), (case("skip_false_bug", "src/util.py"), 0)],
+                                           model_reporting({}))
+
+    assert "error" not in first and "error" not in second, (first, second)
+    assert diffs == [f"{gm.BASE}...{X}"]  # one review; the other case reused it
+    assert first["output"]["findings"] == second["output"]["findings"]
 
 
 # (b) ────────────────────────────────────────────────────────────────────────────────────────────
@@ -292,38 +367,55 @@ def _stored_and_returned_text(tmp_path, result) -> tuple[str, str]:
 READS_HELPER = {"src/cart.py": ["src/helper.py"]}
 
 
-def test_the_store_and_the_results_hold_the_read_path_and_never_the_files_content(run, helper_file, tmp_path):
+def test_the_store_holds_no_read_and_the_results_hold_the_path_never_the_files_content(run, helper_file, tmp_path):
     result, _ = run(TRUE_BUG, model_reading(READS_HELPER))
     store, returned = _stored_and_returned_text(tmp_path, result)
 
-    assert "src/helper.py" in store and "src/helper.py" in returned, "the scan saw no paths, so it proves nothing"
+    assert "src/cart.py" in store and "src/helper.py" in returned, "the scan saw no paths, so it proves nothing"
+    assert "files_read" not in store and "src/helper.py" not in store  # PMAT-325: the trace holds the reads
     assert HELPER_CANARY not in store
     assert HELPER_CANARY not in returned
 
 
-def test_the_content_scan_finds_content_saved_as_files_read(run, helper_file, tmp_path):
-    def leaky(*args):
-        return dataclasses.replace(run_file_review(*args), files_read=[gm.FILES["src/helper.py"]])
+def test_the_content_scan_finds_content_returned_as_files_read(run, helper_file, tmp_path):
+    def leaky(path):
+        spans = load_trace(path)
+        spans["src/cart.py"]["span"]["output"]["files_read"] = [gm.FILES["src/helper.py"]]
+        return spans
 
-    with patch("review_pull_request.graph.run_file_review", leaky):
+    with patch("eval_adapter.load_trace", leaky):
         result, _ = run(TRUE_BUG, model_reading(READS_HELPER))
-    store, returned = _stored_and_returned_text(tmp_path, result)
+    _, returned = _stored_and_returned_text(tmp_path, result)
 
-    assert HELPER_CANARY in store
     assert HELPER_CANARY in returned
 
 
-def test_a_review_saved_before_files_read_existed_resumes_and_leaves_the_field_out(run, helper_file):
-    def old_file_result(**fields):  # what the code before PMAT-322 saved
-        return {k: v for k, v in fields.items() if k != "files_read"}
+def test_the_output_names_the_trace_which_holds_what_the_model_was_shown(run, helper_file, tmp_path):
+    result, _ = run(TRUE_BUG, model_reading(READS_HELPER))
 
+    path = Path(result["output"]["trace"])
+    assert path.parent == tmp_path / "run" / "traces" / "repeat-0"
+    tools = load_trace(path)["src/cart.py"]["tools"]
+    assert [t["input"]["path"] for t in tools] == ["src/helper.py"] and HELPER_CANARY in tools[0]["output"]
+
+
+def test_a_review_of_only_excluded_files_has_no_trace(run, monkeypatch):
+    monkeypatch.setitem(gm.DIFFS, f"{gm.BASE}...{X}", gm._file_diff(".env", "TOKEN=x"))
+
+    result, _ = run(case("raise_nothing", ".env"), model_reading({}))
+
+    assert result["output"]["trace"] is None
+    assert asserts.schema_valid(result["output"], {"vars": {"case": case("raise_nothing", ".env")}})["pass"]
+
+
+def test_a_review_resumed_after_a_file_reviewed_without_a_trace_leaves_files_read_out(run, helper_file):
     def fail_on_util(chunk, *args):
         if chunk.file_path == "src/util.py":
             raise LLMError("stopped part way")
         return run_file_review(chunk, *args)
 
-    with patch("review_pull_request.graph.FileResult", old_file_result), \
-            patch("review_pull_request.graph.run_file_review", fail_on_util):
+    with patch("review_pull_request.trace.Trace.open", lambda self, *a, **k: None), \
+            patch("review_pull_request.graph.run_file_review", fail_on_util):  # as before PMAT-325
         stopped, _ = run(TRUE_BUG, model_reading(READS_HELPER))
     assert "left no result" in stopped["error"]
 
@@ -343,3 +435,17 @@ def test_the_schema_refuses_a_files_read_that_is_not_a_list_of_paths():
     jsonschema.validate({**good, "files_read": ["a.py"]}, case_rules.REVIEW_SCHEMA)
     with pytest.raises(jsonschema.ValidationError):
         jsonschema.validate({**good, "files_read": [{"path": "a.py", "content": "x"}]}, case_rules.REVIEW_SCHEMA)
+
+
+def test_the_trace_path_survives_the_run_folder_being_a_symlink(run, tmp_path, monkeypatch):
+    """A long run's folder is a symlink to ~/.mesh/eval-runs/<run> (outside the worktree, which is deleted
+    after merge): the output must name the real file, not the path through the link."""
+    real = tmp_path / "mesh-eval-runs" / "run"
+    real.mkdir(parents=True)
+    (tmp_path / "worktree").mkdir()
+    (tmp_path / "worktree" / "run").symlink_to(real)
+    monkeypatch.setenv("EVAL_RUN_DIR", str(tmp_path / "worktree" / "run"))
+
+    result, _ = run(TRUE_BUG, model_reading({}))
+
+    assert Path(result["output"]["trace"]).parent == real / "traces" / "repeat-0"
