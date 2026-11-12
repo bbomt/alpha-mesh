@@ -268,6 +268,10 @@ def judge_results(output, context) -> dict:
     review, case = json.loads(output) if isinstance(output, str) else output, context["vars"]["case"]
     if case["case_id"] in holdout_ids():
         return {"pass": True, "score": 1, "reason": "not judged: a hold-out case"}
+    repeat = review.get("repeat") or 0
+    if os.environ.get("EVAL_JUDGE_REPEATS") == "first" and repeat > 0:  # while iterating (CLAUDE.md, Evals)
+        return {"pass": True, "score": 1, "reason": f"not judged: repeat {repeat} (--judge-repeats first: repeat 0 only)",
+                "metadata": {"judge_skipped": f"repeat {repeat}"}}
     try:
         judgment = judge_review(case, review)
     except (JudgeReplyError, LLMError, RuntimeError, httpx.HTTPError) as e:

@@ -37,7 +37,7 @@ def collect(results: dict, cases: list[dict]) -> list[dict]:
             continue
         meta = _component(row, "llm_rubric").get("metadata") or {}
         out.append({"case": by_id[case_id], "repeat": row.get("repeatIndex") or 0, "judgment": meta.get("judgment"),
-                    "error": meta.get("judge_error"), "line_pass": _component(row, "case_expectations").get("pass")})
+                    "error": meta.get("judge_error"), "skipped": meta.get("judge_skipped"), "line_pass": _component(row, "case_expectations").get("pass")})
     return out
 
 
@@ -52,6 +52,7 @@ def summarise(collected: list[dict]) -> dict:
     return {
         "runs": len(collected),
         "judge_errors": sum(bool(e["error"]) for e in collected),
+        "not_judged": sum(bool(e.get("skipped")) for e in collected),
         "mean": {d: _mean([e["judgment"][d]["score"] for e in judged if e["judgment"][d]["score"] is not None])
                  for d in DIMENSIONS},
         "by_group": {g: {d: _mean([e["judgment"][d]["score"] for e in judged
@@ -77,7 +78,8 @@ def print_summary(s: dict) -> None:
     print(f"Judge: {dict(s['models'])}; providers {dict(s['providers'])}")
     # DeepSeek's own API reports no cost per call: the run's cost is then the account balance before and after.
     cost = f"cost ${s['cost']:.4f}" if s["cost_reported"] else "cost not reported by the provider"
-    print(f"Runs: {s['runs']}, judge errors: {s['judge_errors']}, {s['fixed_by_rubric']} fixed by the rubric "
+    skipped = f", {s['not_judged']} not judged (repeat 0 only)" if s["not_judged"] else ""
+    print(f"Runs: {s['runs']}, judge errors: {s['judge_errors']}{skipped}, {s['fixed_by_rubric']} fixed by the rubric "
           f"(no model call), {cost}, {s['tokens']} tokens")
     if s["prompt_tokens"]:
         print(f"Prompt cache: cached {s['cached_tokens']} of {s['prompt_tokens']} prompt tokens "

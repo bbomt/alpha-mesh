@@ -92,3 +92,8 @@ mesh test-alpha-mesh  # broken into test/test/run-all
 - Record false or weak findings from review passes in the "Review-quality log" section of Jira
   PMAT-269's description (edit the description), not in a repo file, so no branch or PR is needed.
   `agents/review-pull-request/QA.md` keeps only its first entries.
+- Evals, like review passes (incremental while iterating, full before DONE): while iterating on the agent,
+  the judge scores repeat 0 of each case only (`run_eval.sh --judge-repeats first`, the default; the free line
+  checks still run on every repeat); before merging an agent change, it scores all k (`--judge-repeats all`).
+  The judge costs money per review; the repeats only add precision to the mean, which matters for the merge
+  decision, not for seeing a change's direction.

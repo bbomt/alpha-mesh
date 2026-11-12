@@ -168,10 +168,40 @@ def test_d_a_stored_review_is_scored_without_running_the_agent(tmp_path, monkeyp
     with patch.object(agent_provider, "review", tripwire), patch.object(agent_provider, "review_case", tripwire):
         result = agent_provider.call_api(c["case_id"], {}, context)
 
-    assert result == {"output": second}, "repeat 1's stored review, unchanged"
+    assert result == {"output": second | {"repeat": 1}}, "repeat 1's stored review, marked with its repeat"
     graded, seen = judged(c, result["output"], reply())
     assert graded["namedScores"]["correctness"] == 4
     assert seen, "the judge must have read it"
+
+
+def test_the_review_says_which_repeat_it_is_so_the_judge_can_skip_the_others(tmp_path, monkeypatch):
+    c = case()
+    monkeypatch.setenv("EVAL_STORED_RESULTS", str(stored_results(tmp_path, [row(c["case_id"], 2, review())])))
+    out = agent_provider.call_api("x", {}, {"vars": {"case_id": c["case_id"], "case": c}, "repeatIndex": 2})["output"]
+    assert out["repeat"] == 2
+
+
+def test_while_iterating_the_judge_scores_repeat_0_only(monkeypatch, judged):
+    """--judge-repeats first (run_eval.sh's default): the other repeats cost no model call (CLAUDE.md, Evals)."""
+    monkeypatch.setenv("EVAL_JUDGE_REPEATS", "first")
+    c = case(min_severity="low")
+    with patch.object(llm_rubric, "judge_review", side_effect=AssertionError("the judge scored repeat 1")):
+        skipped = llm_rubric.judge_results(review(finding()) | {"repeat": 1}, {"vars": {"case": c}})
+    assert skipped["pass"] is True and "namedScores" not in skipped
+    assert skipped["metadata"] == {"judge_skipped": "repeat 1"} and "repeat 0 only" in skipped["reason"]
+    graded, seen = judged(c, review(finding()) | {"repeat": 0}, reply())
+    assert seen and graded["namedScores"]["correctness"] == 4
+
+
+@pytest.mark.parametrize("setting", ["all", None])
+def test_before_a_merge_the_judge_scores_every_repeat(setting, monkeypatch, judged):
+    """--judge-repeats all, and a caller that sets nothing (a direct call), judge every repeat."""
+    if setting:
+        monkeypatch.setenv("EVAL_JUDGE_REPEATS", setting)
+    else:
+        monkeypatch.delenv("EVAL_JUDGE_REPEATS", raising=False)
+    graded, seen = judged(case(min_severity="low"), review(finding()) | {"repeat": 2}, reply())
+    assert seen and graded["namedScores"]["correctness"] == 4
 
 
 def test_d_the_judge_never_runs_the_agent(judged):
@@ -520,6 +550,17 @@ def test_the_report_says_when_the_provider_reports_no_cost_and_counts_cached_tok
     assert "cost not reported by the provider" in out
     assert "cached 60 of 100 prompt tokens (60%)" in out
     assert "1 fixed by the rubric (no model call)" in out
+
+
+def test_the_report_counts_the_repeats_the_judge_skipped_apart_from_its_errors(capsys):
+    c = case() | {"case_id": "a"}
+    skipped = graded_row("a", 1, None)
+    skipped["gradingResult"]["componentResults"][2]["metadata"] = {"judge_skipped": "repeat 1"}
+    summary = judge_report.summarise(judge_report.collect(
+        {"results": {"results": [graded_row("a", 0, judgment()), skipped]}}, [c]))
+    assert summary["not_judged"] == 1 and summary["judge_errors"] == 0
+    judge_report.print_summary(summary)
+    assert "1 not judged (repeat 0 only)" in capsys.readouterr().out
 
 
 def test_the_scores_file_holds_only_the_sample_at_repeat_0():

@@ -108,7 +108,8 @@ rows = [{"vars": {"case_id": t["vars"]["case_id"]}, "repeatIndex": 0, "failureRe
         for t in tests]
 out = sys.argv[sys.argv.index("-o") + 1]
 json.dump({"results": {"results": rows}}, open(out, "w"))
-json.dump({"args": sys.argv[1:], "cases": [t["vars"]["case_id"] for t in tests]}, open(os.environ["FAKE_RECORD"], "w"))
+json.dump({"args": sys.argv[1:], "cases": [t["vars"]["case_id"] for t in tests],
+           "judge_repeats": os.environ.get("EVAL_JUDGE_REPEATS")}, open(os.environ["FAKE_RECORD"], "w"))
 sys.exit(100)
 """
 
@@ -283,3 +284,14 @@ def test_6_the_error_analysis_has_no_entry_for_a_holdout_case():
     analysis = json.loads((EVAL / "error_analysis.json").read_text())
     assert not set(analysis) & HOLDOUT
     assert set(analysis) <= {c["case_id"] for c in CASES}  # none left over from a deleted case
+
+
+def test_a_run_judges_repeat_0_only_unless_asked_for_every_repeat(run_eval):
+    """While iterating, the judge scores repeat 0; before merging an agent change, all k (CLAUDE.md, Evals)."""
+    assert run_eval()[1]["judge_repeats"] == "first"
+    assert run_eval("--judge-repeats", "all")[1]["judge_repeats"] == "all"
+
+
+def test_an_unknown_judge_repeats_value_stops_the_run(run_eval):
+    with pytest.raises(FileNotFoundError):  # the run stops before Promptfoo, so nothing is recorded
+        run_eval("--judge-repeats", "some")

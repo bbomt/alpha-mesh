@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Run the evals (PMAT-304): every development case in eval/cases, reviewed at its raised_sha, k times.
 #
-#   eval/scripts/run_eval.sh [--model <model>] [--k <n>] [--run <name>] [--holdout] [promptfoo eval args...]
-#   eval/scripts/run_eval.sh --stored <run dir> [--k <n>] [--run <name>] [promptfoo eval args...]
+#   eval/scripts/run_eval.sh [--model <model>] [--k <n>] [--run <name>] [--judge-repeats first|all] [--holdout] [promptfoo eval args...]
+#   eval/scripts/run_eval.sh --stored <run dir> [--k <n>] [--run <name>] [--judge-repeats first|all] [promptfoo eval args...]
 #
+# --judge-repeats: the judge scores repeat 0 of each case only (first, the default: while iterating on the agent)
+# or all k repeats (all: before merging an agent change). The line checks run on every repeat either way.
 # --stored runs the judge on that run's stored reviews without running the agent (PMAT-311). Its results go to a
 # new run folder with no run.json, so they can never become the baseline.
 # --holdout runs the hold-out cases instead, into results-holdout.json, and prints only their totals. Use it
@@ -16,7 +18,7 @@ set -euo pipefail
 
 EVAL="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 AGENT="$(dirname "$EVAL")"
-MODEL="" K="" RUN="" HOLDOUT="" STORED=""
+MODEL="" K="" RUN="" HOLDOUT="" STORED="" JUDGE_REPEATS="first"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --model) MODEL="$2"; shift 2 ;;
@@ -24,9 +26,11 @@ while [[ $# -gt 0 ]]; do
     --run) RUN="$2"; shift 2 ;;
     --holdout) HOLDOUT=1; shift ;;
     --stored) STORED="$2"; shift 2 ;;
+    --judge-repeats) JUDGE_REPEATS="$2"; shift 2 ;;
     *) break ;;
   esac
 done
+[[ "$JUDGE_REPEATS" == first || "$JUDGE_REPEATS" == all ]] || { echo "ERROR: --judge-repeats is first or all, not '$JUDGE_REPEATS'" >&2; exit 1; }
 if [[ -n "$STORED" ]]; then
   [[ -z "$HOLDOUT" ]] || { echo "ERROR: --stored scores development cases only: it cannot run with --holdout" >&2; exit 1; }
   [[ -f "$STORED/results.json" && -f "$STORED/run.json" ]] || { echo "ERROR: $STORED has no results.json and run.json" >&2; exit 1; }
@@ -58,7 +62,7 @@ if [[ -z "$STORED" ]]; then
   "$AGENT/.venv/bin/python" "$EVAL/scripts/run_meta.py" "$RUN_DIR/run.json" "$COMMIT" "$MODEL" "$(date +%Y-%m-%d)" "$K" "$DIRTY"
 fi
 
-echo "Run: $RUN_DIR (model $MODEL, k=$K, commit ${COMMIT:0:7}${STORED:+, stored reviews from $STORED})" >&2
+echo "Run: $RUN_DIR (model $MODEL, k=$K, judge repeats $JUDGE_REPEATS, commit ${COMMIT:0:7}${STORED:+, stored reviews from $STORED})" >&2
 cd "$EVAL"
 RESULTS="$RUN_DIR/results.json"
 if [[ -n "$HOLDOUT" ]]; then
@@ -67,7 +71,7 @@ if [[ -n "$HOLDOUT" ]]; then
 fi
 STATUS=0
 # Templating off: Promptfoo renders string vars as Nunjucks, which can run code; the provider ignores the prompt.
-EVAL_RUN_DIR="$RUN_DIR" EVAL_MODEL="$MODEL" EVAL_HOLDOUT="$HOLDOUT" EVAL_STORED_RESULTS="${STORED:+$STORED/results.json}" PROMPTFOO_PYTHON="$AGENT/.venv/bin/python" \
+EVAL_RUN_DIR="$RUN_DIR" EVAL_JUDGE_REPEATS="$JUDGE_REPEATS" EVAL_MODEL="$MODEL" EVAL_HOLDOUT="$HOLDOUT" EVAL_STORED_RESULTS="${STORED:+$STORED/results.json}" PROMPTFOO_PYTHON="$AGENT/.venv/bin/python" \
   PROMPTFOO_DISABLE_TEMPLATING=true PROMPTFOO_DISABLE_TELEMETRY=1 PROMPTFOO_DISABLE_UPDATE=1 PROMPTFOO_CONFIG_DIR="$RUN_DIR/.promptfoo" \
   promptfoo eval -c promptfooconfig.yaml --repeat "$K" --no-cache -o "$RESULTS" "$@" || STATUS=$?
 if [[ -n "$HOLDOUT" ]]; then

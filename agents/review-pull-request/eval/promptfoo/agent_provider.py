@@ -115,4 +115,4 @@ def call_api(prompt, options, context):
     if unreviewed:
         return {"error": f"{', '.join(unreviewed)} not fully reviewed (unusable model response), "
                          "so this case cannot be scored"}
-    return {"output": result}
+    return {"output": result | {"repeat": repeat}}  # so the judge can score repeat 0 only (--judge-repeats first)

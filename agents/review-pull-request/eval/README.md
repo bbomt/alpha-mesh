@@ -345,6 +345,12 @@ JUDGE_LIVE=1 uv run pytest eval/tests/test_judge.py -k live                     
 
 A normal `run_eval.sh` run judges the agent's fresh reviews too. A `--stored` run has no `run.json`, so it can't become the baseline.
 
+**Which repeats the judge scores** (`--judge-repeats`), like review passes (incremental while iterating, full before
+DONE): `first`, the default, judges repeat 0 of each case only, for iterating on the agent; `all` judges every repeat,
+before merging an agent change. The line checks run on every repeat either way. Repeats cost money only through the
+judge, and they mostly add precision to the mean: a change's direction shows on repeat 0 across all cases, while the
+merge decision wants the precise mean. The report counts the skipped repeats (`N not judged (repeat 0 only)`).
+
 **Judge Calibration (meta-evaluation):** humans score 25 development cases blind (gold), a silver labeller scores them
 too (below); together these are the **Calibration Labels**. The judge's scores are compared with them, gold where set, else
 silver, and the result is the **Judge Alignment** (within ±1 point per
