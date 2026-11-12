@@ -306,13 +306,22 @@ A second model (`EVAL_JUDGE_MODEL`) grades each review on three dimensions, 1 to
 **actionability** (could a developer act on it?). Coverage compares the claim itself, so a different bug near the line
 counts for the line window but not for the judge.
 
-**It sees what the agent saw** (owner, PMAT-311): the diff, the PR description and the files the agent read
-(`files_read`, PMAT-322), fetched at the same commit with the agent's `max_file_lines`. It has no tools. A claim that
-depends on code the agent didn't read counts as false, even if it happens to be true, because the agent could only have
-guessed it; the owner scores by the same rule. A review with no `files_read` (a run before PMAT-322), or a file the
-agent read that can't be fetched again, gets a judge error, not a score. Fetching the files again repeats the agent's
-tool calls: at a fixed commit that returns what it read, but a trace of every tool call and result (PMAT-325) will
-replace it, so the judge gets the agent's context even when tools aren't deterministic. `files_read` is one list for the whole review, so the judge can't tell which file's review read what. The
+**It sees what the agent saw** (owner, PMAT-311): the diff, the PR description and the files the agent read. It has
+no tools. A claim that depends on code the agent didn't read counts as false, even if it happens to be true, because
+the agent could only have guessed it; the owner scores by the same rule.
+
+- **From the review's trace** (PMAT-325): each path's first `read_file` result, exactly as the agent got it, with no
+  file read again. That includes a not-found result's hints. A repeat's "already read" note is skipped, and an
+  excluded path is dropped. A trace that is gone, or that lacks a reviewed file, gets a judge error, not a score.
+- **A review without a trace** (a run before PMAT-325) fetches the files in `files_read` (PMAT-322) again at the same
+  commit with the agent's `max_file_lines`. This stays until every run has a trace, and then PMAT-334 makes a missing
+  trace an error (owner, PMAT-325 comment 13728). A review with no `files_read`, or a file that can't be fetched again,
+  gets a judge error.
+- **Both give the same files.** On base6, every file whose content the agent got matched the refetch. The only
+  difference is that a refetch of a missing path lacks the agent's hints. So the calibration below holds for both
+  (owner, PMAT-325 comments 13724 and 13728).
+
+Either way it is one set of files for the whole review, so the judge can't tell which file's review read what. The
 folder listing, the agent's overview and its instructions are left out.
 
 **It never gates.** `judge_results` always passes, so a case's pass or fail, `baseline.json` and the comparison don't

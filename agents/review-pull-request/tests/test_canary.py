@@ -426,7 +426,7 @@ JUDGE_CASE = {"repo": "o/r", "base_sha": "b" * 40, "raised_sha": "a" * 40, "cate
               "finding": {"file": "src/app.py", "line": 1, "severity": "low", "summary": f"Claim {GITHUB_TOKEN}"}}
 
 
-def _judge(exclusions=None):
+def _judge(exclusions=None, review=JUDGE_REVIEW, reader=FakeReader):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "eval" / "promptfoo"))
     import llm_rubric
 
@@ -440,10 +440,10 @@ def _judge(exclusions=None):
 
     with patch.object(llm_rubric, "judge_config", return_value=cfg), \
             patch.object(llm_rubric, "get_diff", return_value=_diff_with_secrets()), \
-            patch.object(llm_rubric, "GitHubFileReader", FakeReader), \
+            patch.object(llm_rubric, "GitHubFileReader", reader), \
             patch.object(llm_rubric, "github_token", return_value=GITHUB_TOKEN), \
             patch.object(llm_rubric, "make_judge_chat_model", lambda meta, **kw: chat_model_factory(model)):
-        llm_rubric.judge_review(JUDGE_CASE, JUDGE_REVIEW)
+        llm_rubric.judge_review(JUDGE_CASE, review)
     return seen
 
 
@@ -466,6 +466,41 @@ def test_the_judge_never_receives_a_token_from_the_case_text():
 
 def test_the_judge_harness_detects_a_leak_when_protection_is_off():
     assert any(CANARY in m for m in _judge(exclusions=[]))
+
+
+# PMAT-325 phase 2: the judge reads the files the agent read from the review's trace. A trace is
+# written inside the review's guard, so it holds refusals for excluded files; but one written under
+# other exclusions (or edited by hand) could hold their content. The judge drops excluded paths itself.
+
+class _NoGitHub(FakeReader):
+    def read_file(self, path, max_lines):
+        raise AssertionError(f"the judge read {path} from GitHub, but the review has a trace")
+
+
+def _traced_review(tmp_path):
+    records = [{"type": "trace", "id": "t", "name": "review", "timestamp": "", "metadata": {}},
+               {"type": "span", "id": "s", "trace_id": "t", "name": "file_review", "input": {"file": "src/app.py"},
+                "output": {}, "start_time": "", "end_time": ""}]
+    reads = {"src/app.py": f"x = 1\nKEY = '{GITHUB_TOKEN}'\n", **{p: f"TOKEN={CANARY}" for p in
+             (".env", "./.env", "svc/../.env", ".claude/settings.json", "config/active.json")}}
+    records += [{"type": "tool", "id": f"r{i}", "trace_id": "t", "parent_observation_id": "s", "name": "read_file",
+                 "input": {"path": p, "reason": "r"}, "output": out, "start_time": ""}
+                for i, (p, out) in enumerate(reads.items())]
+    path = tmp_path / "trace.jsonl"
+    path.write_text("".join(json.dumps(r) + "\n" for r in records))
+    return {**JUDGE_REVIEW, "files": ["src/app.py"], "trace": str(path)}
+
+
+def test_the_judge_never_receives_an_excluded_file_or_a_token_from_the_trace(tmp_path):
+    seen = _judge(review=_traced_review(tmp_path), reader=_NoGitHub)
+
+    assert seen, "the fake judge was never called, so the test proves nothing"
+    assert "x = 1" in seen[0].split("<files_read>")[1], "the traced allowed file must still reach it"
+    assert not [m for m in seen if CANARY in m or GITHUB_TOKEN in m]
+
+
+def test_the_judge_trace_harness_detects_a_leak_when_protection_is_off(tmp_path):
+    assert any(CANARY in m for m in _judge(exclusions=[], review=_traced_review(tmp_path), reader=_NoGitHub))
 
 
 # ── The silver labeller (PMAT-326): a third external model, with the judge's inputs ─────────────
