@@ -174,29 +174,17 @@ The owner's decisions, 2026-11-10. The model IDs are set in `.env`, not here.
        broke the feedback loop.
      - GLM 5.3 Flash generates tokens fast, codes well and has a 1M+ context window, at a fraction of frontier
        prices, so Promptfoo iterations stay quick and within budget.
-2. **Judge: DeepSeek V4 Pro 0813**, called on DeepSeek's own API (`EVAL_JUDGE_URL=https://api.deepseek.com`,
-   `EVAL_JUDGE_MODEL=deepseek/deepseek-v4-pro`; owner, PMAT-311 comment 13696, 2026-11-11). See *Pinning* below.
-   - **Role:** grades each review on the rubric (`llm-rubric`): accuracy, adherence to the JSON format and the
-     constraints.
-   - **Why:**
-     - **Heavy context:** judging a review means reading the PR description, the diff and the files the agent read.
-       DeepSeek V4 Pro 0813 has a 1.05M-token context window, and on DeepSeek's API costs $0.66/M input and
-       $1.98/M output, with cached input at $0.022/M (OpenRouter's listing, 2026-11-11), so large evaluations stay
-       affordable.
-     - **Reasoning over coding rankings:** for a judge, reasoning depth matters more than code-generation benchmarks.
-       So does following instructions precisely, which avoids JSON parsing errors, and resisting positional bias.
-     - **Independence:** a DeepSeek judge grading a GLM agent keeps the grading objective, without Western frontier
-       prices ($10+/M output tokens).
-3. **Silver labeller: GPT-6.1 Terra** (`openai/gpt-6.1-terra`, `SILVER_CALIBRATION_MODEL`).
-   - **Role:** scores the judge's frozen 25-case sample on the same rubric. These are the silver labels, the stand-in
-     for human (gold) scores until a human scores each case.
-   - **Why:**
-     - It is a third family, independent of the agent and the judge.
-     - Three passes cost $0.90, and its passes agree with each other more than a cheaper model's (see
-       *Silver labels* below).
-     - `openai/gpt-6-luna` agreed with itself even more, at $0.11, but it gave almost every case the same score:
-       17 of 20 actionability scores were 5. A reference like that can't tell the judge's scores apart.
-     - Higher models (Sol, Astra) need the Team Lead's sign-off.
+2. **Judge: MiniMax M3.1 Flash** (`minimax/minimax-m3.1-flash`, `EVAL_JUDGE_MODEL`), through OpenRouter, pinned to
+   MiniMax's own host with no fallback (`EVAL_JUDGE_PROVIDER=Minimax`; owner, PMAT-311 comment 13701, 2026-11-12).
+   - **Role:** grades each review on the rubric (`llm-rubric`): correctness, coverage and actionability.
+   - **Why:** of five judges calibrated against the Calibration Labels, it ties for the best agreement, is the most
+     consistent with itself and had no errors, at $0.0050 per judgment on its pinned host (about $0.28 per dev run). The comparison and
+     the rejected models are in [CALIBRATION_AND_MODEL_DECISIONS.md](CALIBRATION_AND_MODEL_DECISIONS.md).
+3. **Silver labeller: GPT-6.1 Sol** (`openai/gpt-6.1-sol`, `SILVER_CALIBRATION_MODEL`; owner, 2026-11-12).
+   - **Role:** scores the frozen 25-case sample on the same rubric: the silver Calibration Labels, the stand-in for
+     human (gold) scores until a human scores each case.
+   - **Why:** a third family, independent of the agent and the judge, and far more consistent across its passes than
+     Terra, the first labeller (correctness within ±1 100% vs 85%), for $1.58 per 3 passes.
 
 ### Baseline
 
@@ -373,13 +361,13 @@ uv run python eval/scripts/silver_labels.py ~/.mesh/eval-runs/<run>   # SILVER_C
 uv run python eval/scripts/silver_labels.py ~/.mesh/eval-runs/<run> --model openai/gpt-5-nano   # dev: cheap
 ```
 
-The labeller is `SILVER_CALIBRATION_MODEL` in `.env` (`openai/gpt-6.1-terra`, owner decision 2026-11-10), or `--model`.
+The labeller is `SILVER_CALIBRATION_MODEL` in `.env` (`openai/gpt-6.1-sol`, owner decision 2026-11-12), or `--model`.
 
 - It gets what the judge and the sheet get (rubric, ground truth, findings, PR description, diff, files the agent read),
   through `llm_rubric.ask` and so `ReviewSession` (`tests/test_canary.py`). It reads only repeat 0's stored review: never
   a judge score, a line-window result or a hold-out case. This sends the sample's repo code to the model's vendor via
   OpenRouter (owner's choice, 2026-11-10), at `SILVER_CALIBRATION_URL` with `SILVER_CALIBRATION_TOKEN`. These are its
-  own, not the judge's, because the judge is on DeepSeek's own API (PMAT-311, 2026-11-11). A missing one stops the run
+  own, not the judge's, so the judge can be on another host. A missing one stops the run
   before anything is sent.
 - Each reply is strict JSON (`structured_outputs`, `why` before `score` per dimension, `reasoning_effort` high by
   default). A missing or out-of-range score stops the run naming the case and pass; it is never defaulted.
@@ -389,14 +377,13 @@ The labeller is `SILVER_CALIBRATION_MODEL` in `.env` (`openai/gpt-6.1-terra`, ow
   model and providers reported, the effort, rubric, repeat, passes, cost, date and self-agreement, so a rerun with
   another model keeps the path. The reasons are in `runs/judge-labelling/silver-ai-calibration.md` (gitignored: it
   quotes reviews and code).
-- **The committed labels are `openai/gpt-6.1-terra`** (owner, 2026-11-10): 3 passes, effort high, $0.90. Passes agree
-  exactly / within ±1 on correctness 60% / 85%, coverage 84% / 84%, actionability 65% / 100%; 6 of 25 cases unstable.
-  A dev run on `openai/gpt-5-nano` ($0.28) agreed with itself far less (correctness 30% / 70%; 9 unstable).
+- **The committed labels are `openai/gpt-6.1-sol`** (owner, 2026-11-12): 3 passes, effort high, $1.58. Passes agree
+  exactly / within ±1 on correctness 85% / 100%, coverage 96% / 96%, actionability 90% / 100%; 1 of 25 cases unstable.
+  They replaced `openai/gpt-6.1-terra` (2026-11-10: correctness 60% / 85%, 6 unstable, $0.90; in git history).
 - **Cost:** one run sends about 1.02M input tokens (339k per pass, measured); passes 2 and 3 repeat pass 1's prompts, so
   OpenRouter mostly bills them at the cached-input price (5% for these models). Output, mostly reasoning, varies by
   model: Terra about 90k–105k over 3 passes (inferred from its cost), nano about 600k. **A higher model run**
-  (`openai/gpt-6.1-sol` about $2–4, `openai/gpt-6-astra` about $9–21 for 3 passes) **needs the Team Lead's sign-off**:
-  develop and test with a cheap model.
+  (`openai/gpt-6-astra` about $9–21 for 3 passes) **needs the Team Lead's sign-off**: develop and test with a cheap model.
 
 **Gold over silver:** `judge_agreement.py` builds the reference per case and dimension when it runs, never in a file: the
 human score where one is set, else silver's. A `TODO` is ignored, so with no human scores the reference is all silver,
@@ -412,24 +399,30 @@ or cases are added; the script refuses, and a test pins the list. A new sample m
 record the iteration here. Changing `EVAL_JUDGE_MODEL` or the rubric means aligning again.
 
 <!-- JUDGE-RESULTS -->
-**Judge Alignment:** not yet published; the first Judge Calibration is in progress.
+**Judge Alignment** (2026-11-12): judge `minimax/minimax-m3.1-flash` on OpenRouter, host Minimax only (every call
+served there), rubric v1, base3 repeat 0, against the silver Calibration Labels (`openai/gpt-6.1-sol`; 0 gold):
 
-**Pinning:** the judge runs on one provider, DeepSeek's own API, so every judgment comes from the same weights.
-- **Why not OpenRouter:** judge1 (2026-11-11) was routed to 10 providers at fp4, mxfp4, fp8 and unstated
-  quantisations, so two judgments of one review could come from different weights, and no prompt was ever cached.
-  The fp8 hosts charged $1.32/M input, twice DeepSeek's price.
-- **The model:** DeepSeek's API names it `deepseek-v4-pro`, with no date, and reports that name back. It is the dated
-  build `20260813` as of 2026-11-11: that is the only build OpenRouter's DeepSeek endpoint serves (its undated
-  `deepseek/deepseek-v4-pro` is the older `-20260423` and isn't served by DeepSeek). DeepSeek can move the name to a
-  new build without notice, so the calibration holds for the build of the date it was measured, recorded below.
-- **What is recorded:** each judgment records the requested and reported model, its tokens, cached and reasoning
-  tokens, and the provider and cost where the reply gives them. DeepSeek's API gives neither, so a run's cost is
-  the account balance before and after.
+| Dimension | One pass (`judge/judge_scores.json`) within ±1 / kappa | Median of 3 passes | Self ±1 across passes | n |
+|---|---|---|---|---|
+| correctness | 85% / 0.74 | 90% / 0.86 | 95% | 20 |
+| coverage | 100% / 1.00 | 100% / 1.00 | 100% | 25 |
+| actionability | 100% / undefined | 100% / undefined | 100% | 20 |
+
+Every dimension is over the ~75% bar, so rubric v1 stands. Actionability's kappa is undefined: almost every review
+passes for both raters, so read its ±1 figure. `judge_scores.json` is pass 2 of 3, the first with no judge error
+(pass 1 had one empty reply). Cost: $0.0050 per judgment ($0.31 for the 3 passes). How the labeller and judge were
+chosen, and the earlier results: [CALIBRATION_AND_MODEL_DECISIONS.md](CALIBRATION_AND_MODEL_DECISIONS.md).
+
+**Pinning:** `EVAL_JUDGE_PROVIDER` (OpenRouter only) sends every judge call to one host, with no fallback, so every
+judgment comes from the same weights. A down host gives judge errors, which the report counts; it never silently
+switches host. Unset, OpenRouter spreads calls across hosts at different quantisations. A pin with a non-OpenRouter
+`EVAL_JUDGE_URL` stops the run before any review.
+- **What is recorded:** each judgment records the requested and reported model, the host, its cost, tokens, and cached
+  and reasoning tokens. The report sums them and lists the hosts that served the run.
 - **Calls the rubric makes unnecessary:** a `raise_nothing` case whose review has no findings scores coverage 5 with
   null correctness and actionability (the rubric fixes every score), so it isn't sent to the model.
 - **Prompt order:** the shared context (the PR description, diff and files read) comes before the findings and the
   case, so the cases of one review share a cached prefix.
-- **The previous judge:** `z-ai/glm-5.3-flash` was an alias whose responses didn't confirm the build.
 
 A security miss in `judge_report.py` is a security case with coverage 2 or below.
 
@@ -438,11 +431,11 @@ A security miss in `judge_report.py` is a security case with coverage 2 or below
 | Role | Model | `.env` variable |
 |---|---|---|
 | Agent | GLM (`z-ai/glm-5.3-flash`) | `CODE_REVIEW_MODEL` |
-| Judge | DeepSeek | `EVAL_JUDGE_MODEL` |
-| Silver labeller | OpenAI | `SILVER_CALIBRATION_MODEL` |
+| Judge | MiniMax (`minimax/minimax-m3.1-flash`) | `EVAL_JUDGE_MODEL` |
+| Silver labeller | OpenAI (`openai/gpt-6.1-sol`) | `SILVER_CALIBRATION_MODEL` |
 
 The warning at the start of a run checks the run's model and `CODE_REVIEW_MODEL` against the judge's family. A run
-reviewed by a DeepSeek model would be graded by its own family. The judge would then have to move family and be aligned
+reviewed by a MiniMax model would be graded by its own family. The judge would then have to move family and be aligned
 again. The warning doesn't check the silver labeller, so keep it out of the agent's family too.
 
 ### Terms

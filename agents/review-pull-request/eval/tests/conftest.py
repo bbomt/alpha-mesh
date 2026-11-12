@@ -16,3 +16,6 @@ def _judge_settings(monkeypatch):
     if os.environ.get("JUDGE_LIVE") != "1":
         for var in ("EVAL_JUDGE_MODEL", "EVAL_JUDGE_URL", "EVAL_JUDGE_TOKEN"):
             monkeypatch.setenv(var, "test-value")
+        # Empty, not deleted: load_dotenv would refill a deleted one from the machine's .env (a host pin there would
+        # then reach every test). Empty counts as unset.
+        monkeypatch.setenv("EVAL_JUDGE_PROVIDER", "")

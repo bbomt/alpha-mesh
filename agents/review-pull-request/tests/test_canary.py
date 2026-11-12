@@ -442,7 +442,7 @@ def _judge(exclusions=None):
             patch.object(llm_rubric, "get_diff", return_value=_diff_with_secrets()), \
             patch.object(llm_rubric, "GitHubFileReader", FakeReader), \
             patch.object(llm_rubric, "github_token", return_value=GITHUB_TOKEN), \
-            patch.object(llm_rubric, "make_judge_chat_model", lambda meta: chat_model_factory(model)):
+            patch.object(llm_rubric, "make_judge_chat_model", lambda meta, **kw: chat_model_factory(model)):
         llm_rubric.judge_review(JUDGE_CASE, JUDGE_REVIEW)
     return seen
 

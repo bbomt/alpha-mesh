@@ -67,8 +67,9 @@ def _family(model: str) -> str:
 def startup_check() -> None:
     """Fail before any review if the judge can't run; print its model, and warn on self-preference bias."""
     _require_env()
-    judge = os.environ["EVAL_JUDGE_MODEL"]
-    print(f"Judge model: {judge} (rubric {RUBRIC_VERSION})", file=sys.stderr)
+    judge, pin = os.environ["EVAL_JUDGE_MODEL"], judge_extra_body()  # a pin off OpenRouter stops the run here
+    host = f", host {pin['provider']['order'][0]} only" if pin else ""
+    print(f"Judge model: {judge} (rubric {RUBRIC_VERSION}{host})", file=sys.stderr)
     for label, model in (("the run's model", os.environ.get("EVAL_MODEL")),
                          ("CODE_REVIEW_MODEL", os.environ.get("CODE_REVIEW_MODEL"))):
         if model and _family(model) == _family(judge):
@@ -148,6 +149,18 @@ class RecordingTransport(httpx.BaseTransport):
 
     def close(self) -> None:
         self._inner.close()
+
+
+def judge_extra_body() -> dict | None:
+    """EVAL_JUDGE_PROVIDER (optional, OpenRouter only): the one host OpenRouter may send the judge to, with no
+    fallback, so every judgment comes from the same weights; a host that is down gives judge errors, not another
+    host's scores. Unset: OpenRouter routes each call as it likes (the report lists the hosts)."""
+    host = os.environ.get("EVAL_JUDGE_PROVIDER")
+    if not host:
+        return None
+    if "openrouter.ai" not in os.environ.get("EVAL_JUDGE_URL", ""):
+        raise JudgeConfigError("EVAL_JUDGE_PROVIDER pins an OpenRouter host: EVAL_JUDGE_URL is not OpenRouter")
+    return {"provider": {"order": [host], "allow_fallbacks": False}}
 
 
 def make_judge_chat_model(meta: dict, temperature: float | None = 0, extra_body: dict | None = None):
@@ -239,7 +252,7 @@ def judge_review(case: dict, review: dict) -> dict:
         fixed = {"why": "fixed by the rubric: a raise_nothing case whose review has no findings", "score": None}
         return {**{d: fixed for d in DIMENSIONS}, "coverage": {**fixed, "score": 5}, "fixed_by_rubric": True,
                 "rubric": RUBRIC_VERSION, "model_requested": config.model}
-    text, findings = ask(case, review, config, make_judge_chat_model(meta))
+    text, findings = ask(case, review, config, make_judge_chat_model(meta, extra_body=judge_extra_body()))
     return {**_parse(text, findings), "rubric": RUBRIC_VERSION, "model_requested": config.model, **meta}
 
 

@@ -74,7 +74,10 @@ def reply(correctness=4, coverage=4, actionability=4):
 
 @pytest.fixture
 def judged():
-    """judge_results through a fake model; returns (the assert's result, the messages the model saw)."""
+    """judge_results through a fake model; returns (the assert's result, the messages the model saw).
+    run.factory_kwargs: what each judge chat model was made with (extra_body)."""
+    factory_kwargs = []
+
     def run(c, r, answer):
         seen = []
 
@@ -88,8 +91,10 @@ def judged():
                 patch.object(llm_rubric, "get_diff", return_value=DIFF), \
                 patch.object(llm_rubric, "GitHubFileReader", FileReader), \
                 patch.object(llm_rubric, "github_token", return_value="gh-token"), \
-                patch.object(llm_rubric, "make_judge_chat_model", lambda meta: chat_model_factory(model)):
+                patch.object(llm_rubric, "make_judge_chat_model",
+                             lambda meta, **kw: factory_kwargs.append(kw) or chat_model_factory(model)):
             return llm_rubric.judge_results(r, {"vars": {"case": c}}), seen
+    run.factory_kwargs = factory_kwargs
     return run
 
 
@@ -406,6 +411,25 @@ def test_the_judge_s_chat_model_asks_for_usage_in_the_stream():
     """DeepSeek's own API sends usage in a stream only when asked (stream_options.include_usage)."""
     cfg = Config(model="deepseek/deepseek-v4-pro", api_url="https://api.deepseek.com", api_token="t")
     assert llm_rubric.make_judge_chat_model({})(cfg).stream_usage is True
+
+
+def test_a_pinned_host_is_the_only_one_openrouter_may_use(monkeypatch, judged):
+    """EVAL_JUDGE_PROVIDER: every judgment from one host's weights, and no fallback (a down host is a judge error)."""
+    monkeypatch.setenv("EVAL_JUDGE_URL", "https://openrouter.ai/api")
+    monkeypatch.setenv("EVAL_JUDGE_PROVIDER", "Minimax")
+    pin = {"provider": {"order": ["Minimax"], "allow_fallbacks": False}}
+    assert llm_rubric.judge_extra_body() == pin
+    judged(case(min_severity="low"), review(finding()), reply())
+    assert [kw.get("extra_body") for kw in judged.factory_kwargs] == [pin], "the judge's requests carry the pin"
+    monkeypatch.delenv("EVAL_JUDGE_PROVIDER")
+    assert llm_rubric.judge_extra_body() is None, "unset: OpenRouter routes as it likes"
+
+
+def test_a_pinned_host_off_openrouter_is_refused(monkeypatch):
+    monkeypatch.setenv("EVAL_JUDGE_PROVIDER", "Minimax")
+    monkeypatch.setenv("EVAL_JUDGE_URL", "https://api.deepseek.com")
+    with pytest.raises(llm_rubric.JudgeConfigError, match="EVAL_JUDGE_PROVIDER.*OpenRouter"):
+        llm_rubric.startup_check()  # before any review
 
 
 def test_the_recording_survives_a_reader_that_stops_at_done_and_a_chunk_split_mid_line():
