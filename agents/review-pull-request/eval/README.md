@@ -413,6 +413,23 @@ passes for both raters, so read its ±1 figure. `judge_scores.json` is pass 2 of
 (pass 1 had one empty reply). Cost: $0.0050 per judgment ($0.31 for the 3 passes). How the labeller and judge were
 chosen, and the earlier results: [CALIBRATION_AND_MODEL_DECISIONS.md](CALIBRATION_AND_MODEL_DECISIONS.md).
 
+**The current agent against the proposal (provisional)** (2026-11-12): base6 (`PMAT-325-base6-nemotron`, agent
+`nvidia/nemotron-3.5-super-vl:free`, k=3, all 3 repeats judged), the judge above. 195 rows: 163 model calls, 22 fixed by
+the rubric, 10 judge errors (6 files GitHub didn't return during a load spike, 2 replies missing a score, 1 timeout),
+$0.93.
+
+| Measure | Agent | Starting proposal |
+|---|---|---|
+| Mean correctness | 2.97 | ≥ 4.0 (fails) |
+| Mean coverage | 3.80 | ≥ 3.8 (meets, just) |
+| Mean actionability | 4.89 | none |
+| Security misses (coverage ≤ 2) | 0 | 0 (meets) |
+| `style_only` pass rate | 93% | 100% (fails) |
+
+Correctness is lowest on `refactor` (1.50), `style_only` (1.75) and `improvable` (2.29): findings that aren't worth fixing
+or aren't real (`judge_report.py` prints every group). These numbers are provisional: the owner sets the final
+thresholds after agent tuning, and PMAT-312 starts as a no-regression gate.
+
 **Pinning:** `EVAL_JUDGE_PROVIDER` (OpenRouter only) sends every judge call to one host, with no fallback, so every
 judgment comes from the same weights. A down host gives judge errors, which the report counts; it never silently
 switches host. Unset, OpenRouter spreads calls across hosts at different quantisations. A pin with a non-OpenRouter

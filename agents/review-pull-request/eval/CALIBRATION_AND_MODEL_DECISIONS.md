@@ -96,6 +96,22 @@ to MiniMax's own host with `allow_fallbacks: false`.
   (correctness 90% / kappa 0.86 for the median, 85% / 0.74 for one pass; coverage 100%; self ±1 95%), 1 empty
   reply in 75, at $0.0050 per judgment: about 40% more than the unpinned run's $0.0036, which went to cheaper or
   better-caching hosts. Consistency of weights was judged worth that.
+- **Cheaper hosts, calibrated (2026-11-12):** all hosts list the same price except fp8 GMICloud, and the difference is
+  how much each writes (Minimax ~6.1k output tokens per judgment, the others ~3.7k). Judged 3 passes each against Sol:
+
+  | Host | Correctness ±1 / kappa | Self ±1 | $/judgment | Errors |
+  |---|---|---|---|---|
+  | Minimax (chosen) | 90% / 0.86 | 95% | $0.0050 | 1 / 63 |
+  | DigitalOcean | 90% / 0.74 | 95% | $0.0038 | 0 / 63 |
+  | GMICloud (fp8) | 90% / 0.47 | 95% | $0.0027 | 0 / 63 |
+
+  Every host agrees within ±1 equally; they differ on pass/fail (kappa), which is what a gate decides. GMICloud's fp8
+  serving loses a lot of it. DigitalOcean is within about one pass/fail decision of Minimax for 24% less. The bar set
+  beforehand was to match Minimax's kappa, so Minimax stays unless the owner prefers DigitalOcean's saving.
+- **One host for every run (owner, 2026-11-12):** DigitalOcean for repeat-0 dev runs and Minimax before a merge was
+  considered and rejected as too complex for about $0.07 per dev run. Hosts score differently, so it would have meant
+  comparing only runs judged by the same host, and judging each baseline twice. Rule kept: never compare judge scores
+  from runs judged by different hosts (the report lists each run's hosts).
 - **Not MiniMax's API directly:** it lists the same price ($0.15 / $0.60 / $0.015); through OpenRouter the judge
   keeps one key and gets each call's cost and host in the reply.
 
@@ -137,8 +153,31 @@ calibration runs):
 | minimax-m3.1-flash, unpinned | ~$0.20 | ~$0.60 |
 | minimax-m3.1-flash, host Minimax (current) | ~$0.28 | ~$0.83 |
 
-## When to calibrate again
+## When to calibrate again, and when to relabel
 
-Judge Calibration holds for one judge identity: model, host, rubric version and prompt. Calibrate again (about $0.31
-for 3 passes with minimax) when any of these change, when a human adds gold scores, or when the labeller changes.
-Record each result here and in `README.md` (`<!-- JUDGE-RESULTS -->`).
+Two different things, with different triggers.
+
+**Judge Calibration again** (rerun the judge on the frozen sample, about $0.31 for 3 passes; no new labels): whenever
+the judge's identity changes, which is its model, host, rubric version, or what it is shown (prompt and context).
+Also when a human adds gold scores, or the labeller changes. Record each result here and in `README.md`
+(`<!-- JUDGE-RESULTS -->`).
+
+**New Calibration Labels** (relabel: draw a sample, have the labeller score it, about $1.58 per 25 cases with sol,
+and gold starts over for the new cases): only when the frozen sample no longer represents what the judge grades.
+Calibration measures **the judge**, not the agent: labels are scores of specific review texts, and the judge's skill
+at grading a review doesn't depend on which agent version wrote it. So a new baseline (base6 after base3) does not by
+itself mean relabelling. Relabel when:
+
+1. **The judge needs something the sample lacks.** Base3 has no traces, so when the judge starts reading the agent's
+   trace (PMAT-325's note in `llm_rubric.py`) instead of refetching files, it can't be calibrated on base3: the
+   sample moves to a base with traces.
+2. **The reviews change in kind.** A major agent release, or an agent model of another family, that writes findings
+   in a different style, length or format than the sample's. A drift check catches this cheaply: label 5–10 cases
+   from the newest base and see whether the judge's agreement on them holds.
+3. **New kinds of case.** Categories the sample doesn't cover (the sample was drawn per group).
+4. **More cases make a bigger sample possible.** 25 is small: correctness covers 20 cases, so one case moves agreement
+   5 points. If mining grows the development cases substantially, draw a larger sample (for example 50, about $3.20
+   with sol), keeping the current 25 inside it so the results stay comparable. The hold-out stays untouched.
+5. **The rubric changes in a way the old labels can't answer**, such as a new dimension or a redefined score.
+
+Never change the sample and the judge in the same step: if agreement moves, you can't tell which change moved it.
