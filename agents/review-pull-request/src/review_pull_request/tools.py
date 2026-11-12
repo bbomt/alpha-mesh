@@ -41,6 +41,20 @@ READ_FILE_TOOL_SCHEMA = {
 }
 
 
+def _is_directory_listing(response: httpx.Response) -> bool:
+    """True if GitHub answered with a directory's JSON listing, which it sends even when raw is asked for.
+
+    The listing must never reach the model: each entry has a signed download_url, and excluded
+    entries are named in it. A JSON file shaped exactly like a listing would read as "not found".
+    """
+    try:
+        body = response.json()
+    except ValueError:
+        return False
+    return (isinstance(body, list) and bool(body)
+            and all(isinstance(e, dict) and {"path", "type", "sha"} <= e.keys() for e in body))
+
+
 class GitHubFileReader:
     """Fetch file contents from GitHub API at a specific commit SHA, with in-memory caching.
 
@@ -140,6 +154,9 @@ class GitHubFileReader:
 
         if response.status_code != 200:
             return ReadError(f"Error: GitHub API returned {response.status_code} for {path}")
+
+        if _is_directory_listing(response):
+            return NotFound(f"Error: file not found: {path}")  # as LocalFileReader answers a directory
 
         # Binary detection — same logic as local reads
         try:
