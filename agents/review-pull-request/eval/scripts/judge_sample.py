@@ -22,6 +22,8 @@ import case_rules  # noqa: E402
 SAMPLE = case_rules.EVAL / "judge" / "sample.json"
 SEED = 311
 REPEAT = 0  # the stored review scored for each case
+# The `mined/...` groups are kept as a record of how the frozen sample was drawn (PMAT-321). Mined cases now have a
+# real category, so `group()` never returns them: a redraw, which `main()` refuses, would need a new QUOTA.
 QUOTA = {"mined/skip_false_bug": 6, "mined/raise_true_bug": 5, "public": 3, "security": 3, "logic": 2, "style_only": 2,
          "concurrency": 1, "improvable": 1, "refactor": 1, "degenerate": 1}  # owner, 2026-11-06
 
