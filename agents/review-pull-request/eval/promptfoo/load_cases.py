@@ -5,7 +5,7 @@ One test per development case in eval/cases/*/*.json, or per hold-out case when 
 travels whole in vars, so the provider and the asserts read the same one. The asserts are in
 promptfooconfig.yaml (defaultTest).
 
-A development run also needs the judge (PMAT-311), so a missing JUDGE_* variable stops it here, before any review.
+A development run also needs the judge (PMAT-311), so a missing EVAL_JUDGE_* variable stops it here, before any review.
 """
 
 import os

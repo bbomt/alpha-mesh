@@ -1,9 +1,9 @@
 """Silver labels (PMAT-326): a model scores the judge's frozen sample on the judge's rubric, where a human has not.
 
-    uv run python eval/scripts/silver_labels.py ~/.mesh/eval-runs/<run>   # SILVER_CALIBRATION_MODEL from .env
-    uv run python eval/scripts/silver_labels.py ~/.mesh/eval-runs/<run> --model <model-id>   # e.g. a cheap dev model
+    uv run python eval/scripts/generate_silver_calibration_labels.py ~/.mesh/eval-runs/<run>   # SILVER_CALIBRATION_MODEL from .env
+    uv run python eval/scripts/generate_silver_calibration_labels.py ~/.mesh/eval-runs/<run> --model <model-id>   # e.g. a cheap dev model
 
-Humans remain the gold standard (eval/judge/gold-human-calibration.json); judge_agreement.py takes a human score where
+Humans remain the gold standard (eval/judge/gold-human-calibration.json); judge_calibration_alignment.py takes a human score where
 one is set, else this file's. The labeller gets what the judge and the human sheet get: the rubric, the case's ground
 truth, the review's findings, the PR description, the diff and the files the agent read. It goes through llm_rubric.ask,
 so through ReviewSession: an excluded file never reaches it, and secrets are redacted. It reads only the stored review

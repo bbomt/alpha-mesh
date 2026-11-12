@@ -18,7 +18,7 @@ import yaml
 
 import agent_provider
 import case_rules
-import judge_agreement
+import judge_calibration_alignment
 import judge_report
 import judge_sample
 import llm_rubric
@@ -98,7 +98,7 @@ def judged():
     return run
 
 
-# (b) ── a missing JUDGE_* variable fails fast, before any review ─────────────────────────────────
+# (b) ── a missing EVAL_JUDGE_* variable fails fast, before any review ─────────────────────────────────
 @pytest.mark.parametrize("var", llm_rubric.REQUIRED)
 def test_b_a_missing_variable_stops_the_loader_and_names_it(var, tmp_path, monkeypatch):
     monkeypatch.setattr(llm_rubric.config_module, "ENV_FILE", tmp_path / "no.env")
@@ -486,7 +486,7 @@ def scores(correctness=4, coverage=4, actionability=4):
 def test_c_agreement_within_one_point_per_dimension_leaves_out_nulls():
     human = {"a": scores(5, 2, None), "b": scores(3, 2, 4), "c": scores(1, 5, 4)}
     judge = {"a": scores(4, 4, 4), "b": scores(3, 3, None), "c": scores(3, 5, 5)}
-    out = judge_agreement.agreement(human, judge)
+    out = judge_calibration_alignment.agreement(human, judge)
     assert out["correctness"]["within_1"] == pytest.approx(2 / 3) and out["correctness"]["n"] == 3
     assert out["coverage"]["within_1"] == pytest.approx(2 / 3)
     assert out["actionability"]["n"] == 1 and out["actionability"]["within_1"] == 1
@@ -496,19 +496,19 @@ def test_c_kappa_corrects_for_chance_on_pass_fail():
     # 8 of 10 agree, but both raters pass nearly everything, so kappa is well below 0.8.
     h = [5, 5, 5, 5, 5, 5, 5, 5, 2, 5]
     j = [5, 5, 5, 5, 5, 5, 5, 5, 5, 2]
-    assert judge_agreement.kappa(list(zip(h, j))) == pytest.approx(-1 / 9)
-    assert judge_agreement.kappa([(5, 5), (2, 2), (5, 5), (1, 1)]) == 1
-    assert judge_agreement.kappa([(5, 5), (5, 5)]) is None, "one class only: kappa is undefined"
+    assert judge_calibration_alignment.kappa(list(zip(h, j))) == pytest.approx(-1 / 9)
+    assert judge_calibration_alignment.kappa([(5, 5), (2, 2), (5, 5), (1, 1)]) == 1
+    assert judge_calibration_alignment.kappa([(5, 5), (5, 5)]) is None, "one class only: kappa is undefined"
 
 
 def test_c_the_script_refuses_unfinished_labels_and_a_case_the_judge_lacks(tmp_path, capsys):
     labels, judged_scores = tmp_path / "h.json", tmp_path / "j.json"
     judged_scores.write_text(json.dumps({"model": "m", "rubric": "v1", "cases": {"a": scores()}}))
     labels.write_text(json.dumps({"cases": {"a": scores("TODO")}}))
-    assert judge_agreement.main(["--gold-calibration", str(labels), str(judged_scores)]) == 1
+    assert judge_calibration_alignment.main(["--gold-calibration", str(labels), str(judged_scores)]) == 1
     assert "a: correctness" in capsys.readouterr().err
     labels.write_text(json.dumps({"cases": {"a": scores(), "b": scores()}}))
-    assert judge_agreement.main(["--gold-calibration", str(labels), str(judged_scores)]) == 1
+    assert judge_calibration_alignment.main(["--gold-calibration", str(labels), str(judged_scores)]) == 1
     assert "no judge score for b" in capsys.readouterr().err
 
 
@@ -517,7 +517,7 @@ def test_c_the_script_prints_each_dimensions_agreement_and_the_judge_model(tmp_p
     labels.write_text(json.dumps({"cases": {"a": scores(5, 5, 5), "b": scores(1, 1, 1)}}))
     judged_scores.write_text(json.dumps({"model": "z-ai/glm", "rubric": "v1",
                                          "cases": {"a": scores(4, 4, 4), "b": scores(5, 1, 1)}}))
-    assert judge_agreement.main(["--gold-calibration", str(labels), str(judged_scores)]) == 0
+    assert judge_calibration_alignment.main(["--gold-calibration", str(labels), str(judged_scores)]) == 0
     out = capsys.readouterr().out
     assert "z-ai/glm" in out and "rubric v1" in out
     assert "correctness" in out and "50%" in out and "coverage" in out and "actionability" in out

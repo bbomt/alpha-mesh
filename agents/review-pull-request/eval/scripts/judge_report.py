@@ -97,7 +97,7 @@ def print_summary(s: dict) -> None:
 
 
 def sample_scores(collected: list[dict], sample: list[str]) -> dict:
-    """The judge's scores for the hand-scored sample (repeat 0 of each), for judge_agreement.py."""
+    """The judge's scores for the hand-scored sample (repeat 0 of each), for judge_calibration_alignment.py."""
     first = {e["case"]["case_id"]: e["judgment"] for e in collected if e["repeat"] == judge_sample.REPEAT and e["judgment"]}
     if missing := [c for c in sample if c not in first]:
         raise ValueError(", ".join(f"no judgment for {c}" for c in missing))

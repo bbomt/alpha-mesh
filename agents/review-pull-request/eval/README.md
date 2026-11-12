@@ -116,7 +116,7 @@ a real bug here that no one raised. Use these for instructive comparison.
 | `schema/review.schema.json`, `schema/baseline.schema.json` | the provider's output, the baseline's guard |
 | `promptfoo/llm_rubric.py`, `judge/rubric.v1.md` | the judge and its versioned rubric ([The judge](#the-judge)) |
 | `judge/sample.json`, `judge/gold-human-calibration.json`, `judge/silver-ai-calibration.json`, `judge/judge_scores.json` | the 25 calibration cases, the human (gold) scores, the silver labeller's scores, the judge's scores for them |
-| `scripts/judge_sample.py`, `scripts/judge_labelling_sheet.py`, `scripts/silver_labels.py`, `scripts/judge_report.py`, `scripts/judge_agreement.py` | draw the sample, write the scoring sheet, write the silver labels, report a run's scores, compute the judge's agreement with the reference |
+| `scripts/judge_sample.py`, `scripts/judge_labelling_sheet.py`, `scripts/generate_silver_calibration_labels.py`, `scripts/judge_report.py`, `scripts/judge_calibration_alignment.py` | draw the sample, write the scoring sheet, write the silver labels, report a run's scores, compute the judge's agreement with the reference |
 | `baseline.json`, `error_analysis.json` | the committed baseline and the error analysis behind it (development cases only) |
 | `holdout.json` | the hold-out's seed and case IDs |
 | `runs/` | eval runs (gitignored) |
@@ -347,7 +347,7 @@ dimension, and Cohen's kappa on pass/fail, score >= 4).
 ```bash
 uv run python eval/scripts/judge_labelling_sheet.py ~/.mesh/eval-runs/PMAT-322-base3   # sheet and labels file; no scores shown
 uv run python eval/scripts/judge_report.py eval/runs/judge1/results.json --write-scores  # after the labels are committed
-uv run python eval/scripts/judge_agreement.py --silver-calibration eval/judge/silver-ai-calibration.json \
+uv run python eval/scripts/judge_calibration_alignment.py --silver-calibration eval/judge/silver-ai-calibration.json \
     --gold-calibration eval/judge/gold-human-calibration.json eval/judge/judge_scores.json
 ```
 
@@ -357,8 +357,8 @@ standard**. The cases are about code (is the finding real, was the bug caught, c
 a strong model can stand in until humans score.
 
 ```bash
-uv run python eval/scripts/silver_labels.py ~/.mesh/eval-runs/<run>   # SILVER_CALIBRATION_MODEL in .env
-uv run python eval/scripts/silver_labels.py ~/.mesh/eval-runs/<run> --model openai/gpt-5-nano   # dev: cheap
+uv run python eval/scripts/generate_silver_calibration_labels.py ~/.mesh/eval-runs/<run>   # SILVER_CALIBRATION_MODEL in .env
+uv run python eval/scripts/generate_silver_calibration_labels.py ~/.mesh/eval-runs/<run> --model openai/gpt-5-nano   # dev: cheap
 ```
 
 The labeller is `SILVER_CALIBRATION_MODEL` in `.env` (`openai/gpt-6.1-sol`, owner decision 2026-11-12), or `--model`.
@@ -385,7 +385,7 @@ The labeller is `SILVER_CALIBRATION_MODEL` in `.env` (`openai/gpt-6.1-sol`, owne
   model: Terra about 90k–105k over 3 passes (inferred from its cost), nano about 600k. **A higher model run**
   (`openai/gpt-6-astra` about $9–21 for 3 passes) **needs the Team Lead's sign-off**: develop and test with a cheap model.
 
-**Gold over silver:** `judge_agreement.py` builds the reference per case and dimension when it runs, never in a file: the
+**Gold over silver:** `judge_calibration_alignment.py` builds the reference per case and dimension when it runs, never in a file: the
 human score where one is set, else silver's. A `TODO` is ignored, so with no human scores the reference is all silver,
 and adding human scores later needs no silver rerun. It prints how many reference scores per dimension came from each
 source (`correctness: 1 gold, 24 silver`) and lists every silver-vs-gold difference over 1 point: where silver was wrong.

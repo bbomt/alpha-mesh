@@ -7,10 +7,10 @@ from unittest.mock import patch
 import pytest
 
 import case_rules
-import judge_agreement
+import judge_calibration_alignment
 import judge_sample
 import llm_rubric
-import silver_labels
+import generate_silver_calibration_labels
 from review_pull_request.config import Config, SENSITIVE_PATTERNS
 from tests.helpers import chat_model_factory
 
@@ -63,12 +63,12 @@ def reply(correctness=4, coverage=4, actionability=4):
 
 @pytest.fixture
 def labelled(run_dir, tmp_path, monkeypatch):
-    """silver_labels.main through a fake model; returns (exit code, prompts seen, schemas sent, outputs)."""
+    """generate_silver_calibration_labels.main through a fake model; returns (exit code, prompts seen, schemas sent, outputs)."""
     scores, reasons = tmp_path / "silver.json", tmp_path / "out" / "silver.md"
     monkeypatch.setenv("SILVER_CALIBRATION_URL", "http://silver")
     monkeypatch.setenv("SILVER_CALIBRATION_TOKEN", "silver-token")
-    monkeypatch.setattr(silver_labels, "SCORES", scores)
-    monkeypatch.setattr(silver_labels, "REASONS", reasons)
+    monkeypatch.setattr(generate_silver_calibration_labels, "SCORES", scores)
+    monkeypatch.setattr(generate_silver_calibration_labels, "REASONS", reasons)
 
     def run(answers, argv=(), model_argv=("--model", "openai/labeller")):
         seen, schemas, answers = [], [], iter(answers)
@@ -89,8 +89,8 @@ def labelled(run_dir, tmp_path, monkeypatch):
                 patch.object(llm_rubric, "GitHubFileReader", Reader), \
                 patch.object(llm_rubric, "github_token", return_value="gh-token"), \
                 patch.object(llm_rubric, "get_pr_description", return_value="The PR description."), \
-                patch.object(silver_labels, "make_labeller_chat_model", factory):
-            code = silver_labels.main([str(run_dir), *model_argv, *argv])
+                patch.object(generate_silver_calibration_labels, "make_labeller_chat_model", factory):
+            code = generate_silver_calibration_labels.main([str(run_dir), *model_argv, *argv])
         return code, seen, schemas, scores, reasons
     return run
 
@@ -121,21 +121,21 @@ def test_b_the_schema_puts_why_before_score_in_every_dimension_and_asks_null_dim
 
 def test_b_the_labeller_refuses_a_holdout_case():
     held = sorted(case_rules.holdout_ids())[0]
-    with pytest.raises(silver_labels.LabelError, match="hold-out"):
-        silver_labels.label_once({"case_id": held}, stored_review(held), "openai/labeller", "high")
+    with pytest.raises(generate_silver_calibration_labels.LabelError, match="hold-out"):
+        generate_silver_calibration_labels.label_once({"case_id": held}, stored_review(held), "openai/labeller", "high")
 
 
 def test_b_the_chat_model_sends_the_schema_and_effort_without_a_temperature():
     cfg = Config(model="openai/labeller", api_url="https://openrouter.ai/api/v1", api_token="t")
-    schema = silver_labels.response_schema(True)
-    chat = silver_labels.make_labeller_chat_model({}, "high", schema)(cfg)
+    schema = generate_silver_calibration_labels.response_schema(True)
+    chat = generate_silver_calibration_labels.make_labeller_chat_model({}, "high", schema)(cfg)
     assert chat.temperature is None and chat.model_name == "openai/labeller"
     assert chat.extra_body == {"response_format": schema, "reasoning": {"effort": "high"},
                                "provider": {"require_parameters": True}}
 
 
 # (c) ── the reply is parsed from its JSON, and a bad score is an error, never a default ──────────
-def test_c_a_stubbed_reply_gives_a_scores_file_that_judge_agreement_reads(labelled, tmp_path, capsys):
+def test_c_a_stubbed_reply_gives_a_scores_file_that_judge_calibration_alignment_reads(labelled, tmp_path, capsys):
     code, _, _, scores, reasons = labelled([reply()] * 75)
     assert code == 0
     silver = json.loads(scores.read_text())
@@ -153,7 +153,7 @@ def test_c_a_stubbed_reply_gives_a_scores_file_that_judge_agreement_reads(labell
     judge = tmp_path / "judge.json"
     judge.write_text(json.dumps({"model": "z-ai/judge", "rubric": "v1",
                                  "cases": {c: silver["cases"][c] for c in SAMPLE}}))
-    assert judge_agreement.main(["--silver-calibration", str(scores), str(judge)]) == 0
+    assert judge_calibration_alignment.main(["--silver-calibration", str(scores), str(judge)]) == 0
     assert "correctness: 0 gold" in capsys.readouterr().out
 
 
@@ -174,17 +174,17 @@ def test_c_a_missing_or_out_of_range_score_is_an_error_naming_the_case_and_pass(
 def test_c_the_median_of_the_passes_and_the_unstable_flag():
     passes = [reply(2, 5, 4), reply(4, 5, 4), reply(5, 4, 4)]
     judged = [llm_rubric._parse(json.dumps(p), [{"file": "f"}]) for p in passes]
-    assert silver_labels.combine(judged) == {"correctness": 4, "coverage": 5, "actionability": 4, "note": "",
+    assert generate_silver_calibration_labels.combine(judged) == {"correctness": 4, "coverage": 5, "actionability": 4, "note": "",
                                              "unstable": True}
-    assert silver_labels.combine(judged[1:])["unstable"] is False
-    agreement = silver_labels.self_agreement({"a": judged, "b": judged[1:]})
+    assert generate_silver_calibration_labels.combine(judged[1:])["unstable"] is False
+    agreement = generate_silver_calibration_labels.self_agreement({"a": judged, "b": judged[1:]})
     assert agreement["actionability"] == {"n": 2, "exact": 1.0, "within_1": 1.0}
     assert agreement["correctness"] == {"n": 2, "exact": 0.0, "within_1": 0.5}
 
 
 def test_c_an_even_number_of_passes_is_refused(capsys):
     with pytest.raises(SystemExit):
-        silver_labels.main(["run", "--model", "m", "--passes", "2"])
+        generate_silver_calibration_labels.main(["run", "--model", "m", "--passes", "2"])
     assert "odd" in capsys.readouterr().err
 
 
@@ -196,7 +196,7 @@ def test_c_without_model_the_labeller_is_silver_model_from_env(labelled, monkeyp
 
 def test_c_with_neither_model_nor_silver_model_nothing_is_sent(labelled, monkeypatch, tmp_path, capsys):
     monkeypatch.delenv("SILVER_CALIBRATION_MODEL", raising=False)
-    monkeypatch.setattr(silver_labels.config_module, "ENV_FILE", tmp_path / "no.env")  # not the real .env
+    monkeypatch.setattr(generate_silver_calibration_labels.config_module, "ENV_FILE", tmp_path / "no.env")  # not the real .env
     code, seen, _, scores, _ = labelled([], model_argv=())
     assert code == 1 and "SILVER_CALIBRATION_MODEL" in capsys.readouterr().err
     assert not seen and not scores.exists()
@@ -224,7 +224,7 @@ def files(tmp_path):
 def test_d_a_gold_score_replaces_silver_for_that_dimension_only(files):
     silver = json.loads(files["silver"].read_text())["cases"]
     gold = json.loads(files["gold"].read_text())["cases"]
-    labels, sources, discrepancies = judge_agreement.reference(silver, gold)
+    labels, sources, discrepancies = judge_calibration_alignment.reference(silver, gold)
     assert labels[SAMPLE[0]] == scores(2, 4, 4), "correctness from gold; the case's other dimensions stay silver"
     assert all(labels[c] == silver[c] for c in SAMPLE[1:])
     assert sources["correctness"] == {"gold": 1, "silver": 24} and sources["coverage"] == {"gold": 0, "silver": 25}
@@ -232,7 +232,7 @@ def test_d_a_gold_score_replaces_silver_for_that_dimension_only(files):
 
 
 def test_d_the_agreement_the_source_counts_and_the_discrepancy_reflect_the_override(files, capsys):
-    assert judge_agreement.main(["--silver-calibration", str(files["silver"]),
+    assert judge_calibration_alignment.main(["--silver-calibration", str(files["silver"]),
                                 "--gold-calibration", str(files["gold"]), str(files["judge"])]) == 0
     out = capsys.readouterr().out
     assert "correctness: 1 gold, 24 silver" in out and "coverage: 0 gold, 25 silver" in out
@@ -241,9 +241,9 @@ def test_d_the_agreement_the_source_counts_and_the_discrepancy_reflect_the_overr
 
 
 def test_d_an_all_todo_gold_file_equals_silver_only(files, capsys):
-    assert judge_agreement.main(["--silver-calibration", str(files["silver"]), str(files["judge"])]) == 0
+    assert judge_calibration_alignment.main(["--silver-calibration", str(files["silver"]), str(files["judge"])]) == 0
     silver_only = capsys.readouterr().out
-    assert judge_agreement.main(["--silver-calibration", str(files["silver"]),
+    assert judge_calibration_alignment.main(["--silver-calibration", str(files["silver"]),
                                 "--gold-calibration", str(files["todo"]), str(files["judge"])]) == 0
     assert capsys.readouterr().out == silver_only
     assert "correctness: 0 gold, 25 silver" in silver_only and "Silver vs gold" not in silver_only
@@ -253,17 +253,17 @@ def test_d_a_close_disagreement_is_not_listed(files, capsys):
     gold = json.loads(files["gold"].read_text())
     gold["cases"][SAMPLE[0]]["correctness"] = 4  # silver 5: within 1 point
     files["gold"].write_text(json.dumps(gold))
-    assert judge_agreement.main(["--silver-calibration", str(files["silver"]),
+    assert judge_calibration_alignment.main(["--silver-calibration", str(files["silver"]),
                                 "--gold-calibration", str(files["gold"]), str(files["judge"])]) == 0
     assert "Silver vs gold" not in capsys.readouterr().out
 
 
 def test_d_unfinished_silver_and_a_missing_source_are_refused(files, capsys):
-    assert judge_agreement.main(["--silver-calibration", str(files["todo"]), str(files["judge"])]) == 1
+    assert judge_calibration_alignment.main(["--silver-calibration", str(files["todo"]), str(files["judge"])]) == 1
     assert "unfinished silver labels" in capsys.readouterr().err
     with pytest.raises(SystemExit):
-        judge_agreement.main([str(files["judge"])])
-    assert judge_agreement.main(["--gold-calibration", str(files["todo"]), str(files["judge"])]) == 1, \
+        judge_calibration_alignment.main([str(files["judge"])])
+    assert judge_calibration_alignment.main(["--gold-calibration", str(files["todo"]), str(files["judge"])]) == 1, \
         "gold alone (no silver) must have every score set, so an all-TODO gold file is refused"
 
 
@@ -284,7 +284,7 @@ def test_c_the_labeller_goes_to_its_own_url_and_token_not_the_judge_s(labelled):
 
 @pytest.mark.parametrize("var", ["SILVER_CALIBRATION_URL", "SILVER_CALIBRATION_TOKEN"])
 def test_c_a_missing_silver_url_or_token_stops_before_anything_is_sent(labelled, monkeypatch, tmp_path, capsys, var):
-    monkeypatch.setattr(silver_labels.config_module, "ENV_FILE", tmp_path / "no.env")  # not the real .env
+    monkeypatch.setattr(generate_silver_calibration_labels.config_module, "ENV_FILE", tmp_path / "no.env")  # not the real .env
     monkeypatch.setenv(var, "")
     code, seen, _, scores, _ = labelled([reply()] * 75)
     assert code == 1 and var in capsys.readouterr().err

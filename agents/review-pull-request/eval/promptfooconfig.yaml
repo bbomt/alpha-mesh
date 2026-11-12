@@ -3,7 +3,7 @@
 #
 # How it fits together, for each case in eval/cases (development cases, or the hold-out with --holdout):
 #
-#   tests      promptfoo/load_cases.py        one test per case; stops the run first if a JUDGE_* variable is missing
+#   tests      promptfoo/load_cases.py        one test per case; stops the run first if an EVAL_JUDGE_* variable is missing
 #   providers  promptfoo/agent_provider.py    the output: runs the agent on the case's commit, or with --stored
 #                                             returns its stored review, so the agent does not run
 #   assert     (defaultTest below)            checks that output, in this order

@@ -474,7 +474,7 @@ def _silver(exclusions=None):
     eval_dir = Path(__file__).resolve().parents[1] / "eval"
     with patch.object(sys, "path", [str(eval_dir / "promptfoo"), str(eval_dir / "scripts"), *sys.path]):
         import llm_rubric
-        import silver_labels
+        import generate_silver_calibration_labels
 
     cfg = Config(model="judge", api_url="http://x", api_token="judge-secret-token",
                  exclusions=list(SENSITIVE_PATTERNS) if exclusions is None else exclusions)
@@ -488,9 +488,9 @@ def _silver(exclusions=None):
             patch.object(llm_rubric, "get_diff", return_value=_diff_with_secrets()), \
             patch.object(llm_rubric, "GitHubFileReader", FakeReader), \
             patch.object(llm_rubric, "github_token", return_value=GITHUB_TOKEN), \
-            patch.object(silver_labels, "make_labeller_chat_model", lambda *a, **k: chat_model_factory(model)), \
+            patch.object(generate_silver_calibration_labels, "make_labeller_chat_model", lambda *a, **k: chat_model_factory(model)), \
             patch.dict(os.environ, {"SILVER_CALIBRATION_URL": "http://silver", "SILVER_CALIBRATION_TOKEN": "silver-tok"}):
-        silver_labels.label_once({**JUDGE_CASE, "case_id": "R1-a-001"}, JUDGE_REVIEW, "openai/labeller", "high")
+        generate_silver_calibration_labels.label_once({**JUDGE_CASE, "case_id": "R1-a-001"}, JUDGE_REVIEW, "openai/labeller", "high")
     return seen
 
 

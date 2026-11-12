@@ -46,7 +46,7 @@ DIMENSIONS = ("correctness", "coverage", "actionability")
 
 
 class JudgeConfigError(Exception):
-    """A JUDGE_* variable is missing."""
+    """An EVAL_JUDGE_* variable is missing."""
 
 
 class JudgeReplyError(Exception):

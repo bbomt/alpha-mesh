@@ -1,6 +1,7 @@
-"""Judge agreement (PMAT-311): how far the judge's scores can be trusted, per dimension, against the reference labels.
+"""Judge Calibration Alignment (PMAT-311): how far the judge's scores can be trusted, per dimension, against the
+Calibration Labels.
 
-    uv run python eval/scripts/judge_agreement.py --silver-calibration eval/judge/silver-ai-calibration.json \
+    uv run python eval/scripts/judge_calibration_alignment.py --silver-calibration eval/judge/silver-ai-calibration.json \
         --gold-calibration eval/judge/gold-human-calibration.json eval/judge/judge_scores.json
 
 The reference (PMAT-326) is built per case and dimension, never written: the human (gold) score where one is set,
@@ -73,7 +74,7 @@ def reference(silver: dict | None, gold: dict | None) -> tuple[dict, dict, list[
 
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description="Judge agreement with the reference labels, per dimension.")
+    parser = argparse.ArgumentParser(description="Judge Alignment with the Calibration Labels, per dimension.")
     parser.add_argument("scores", type=Path, help="the judge's scores")
     parser.add_argument("--silver-calibration", type=Path, help="the silver labeller's scores")
     parser.add_argument("--gold-calibration", type=Path, help="the human scores; a set score overrides silver's")
@@ -94,7 +95,7 @@ def main(argv=None) -> int:
         print("ERROR: " + ", ".join(f"no judge score for {c}" for c in missing), file=sys.stderr)
         return 1
     result = agreement(labels, scored["cases"])
-    print(f"Judge agreement: {len(labels)} cases, judge model {scored['model']}, rubric {scored['rubric']}")
+    print(f"Judge Alignment: {len(labels)} cases, judge model {scored['model']}, rubric {scored['rubric']}")
     if silver:
         print(f"Reference: gold where set, else silver ({silver['labeller']['requested']}, rubric {silver['rubric']})")
     for dimension in DIMENSIONS:
