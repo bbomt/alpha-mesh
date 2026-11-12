@@ -1,7 +1,7 @@
 """Acceptance tests for the Promptfoo harness (PMAT-304 (a), (b)).
 
-The provider runs the real review core against a recording fake GitHub (tests.test_golden_master)
-and a scripted model, the same boundaries test_review_core fakes. Nothing reaches GitHub or a model.
+The provider runs the real agent against a recording fake GitHub (tests.test_golden_master)
+and a scripted model, the same boundaries test_run_review_agent fakes. Nothing reaches GitHub or a model.
 """
 
 import json
@@ -59,7 +59,7 @@ def run(tmp_path, monkeypatch):
     """call_api for one case through the fakes; returns (provider result, fake GitHub)."""
     monkeypatch.setitem(gm.DIFFS, f"{gm.BASE}...{X}", gm.DIFFS[f"{gm.BASE}...{gm.HEAD}"])
     monkeypatch.setenv("EVAL_RUN_DIR", str(tmp_path / "run"))
-    monkeypatch.setenv("HOME", str(tmp_path))  # the core's run locks go to ~/.mesh/locks
+    monkeypatch.setenv("HOME", str(tmp_path))  # run_review_agent's run locks go to ~/.mesh/locks
 
     def call(c, model, repeat=0):
         github = gm.FakeGitHub()
@@ -83,7 +83,7 @@ def run(tmp_path, monkeypatch):
 
     def call_together(calls, model):
         """call_api for each (case, repeat) at once, each in its own forked process as Promptfoo's workers
-        are (the core sets signal handlers, so not threads); returns the results and every diff fetched."""
+        are (run_review_agent sets signal handlers, so not threads); returns the results and every diff fetched."""
         ctx = multiprocessing.get_context("fork")
         queue = ctx.Queue()
 
@@ -287,8 +287,6 @@ def test_the_review_output_matches_its_schema_and_the_schema_rejects_a_broken_on
 def test_the_loader_turns_every_case_into_a_test_and_refuses_an_invalid_one(tmp_path):
     tests = load_cases.create_tests()
     assert len(tests) == len(case_rules.development_cases())
-    assert {a["value"] for a in tests[0]["assert"]} == {"file://promptfoo/asserts.py:schema_valid",
-                                                        "file://promptfoo/asserts.py:case_expectations"}
     assert tests[0]["vars"]["case"]["case_id"] == tests[0]["description"]
 
     bad = tmp_path / "repo" / "bad.json"

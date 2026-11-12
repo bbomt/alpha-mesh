@@ -1,7 +1,7 @@
 """Acceptance tests for the review trace (PMAT-325): every tool call and its result, exactly as the
 model received them, in a local JSONL file shaped like Langfuse observations.
 
-The review core runs with a scripted model and a stub reader; the model records every message list
+run_review_agent runs with a scripted model and a stub reader; the model records every message list
 it is sent, so the trace can be compared with what the model actually got.
 """
 
@@ -15,7 +15,7 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 from review_pull_request import trace
 from review_pull_request.config import Config, SENSITIVE_PATTERNS
 from review_pull_request.llm import LLMError
-from review_pull_request.review import main, review_commit
+from review_pull_request.review import main, run_review_agent
 from tests.helpers import StubReader, chat_model_factory
 
 FILES = {"src/a.py": "a = 1\n", "src/b.py": "b = 2\n", "src/helper.py": "def helper(): ...\n",
@@ -59,7 +59,7 @@ def _review(trace_path, model, checkpointer=None, files=("src/a.py", "src/b.py")
     with patch("review_pull_request.review.GitHubFileReader", lambda *a, **k: StubReader(dict(FILES))), \
             patch("review_pull_request.review.get_diff", return_value=_diff(files)), \
             patch("review_pull_request.session.make_chat_model", chat_model_factory(model)):
-        return review_commit("o", "r", "b" * 40, "c" * 40, "Adds a and b.", config=_config(), token="tok",
+        return run_review_agent("o", "r", "b" * 40, "c" * 40, "Adds a and b.", config=_config(), token="tok",
                              publish=lambda report: None, all_excluded=lambda paths: 0,
                              checkpointer=checkpointer, trace_path=trace_path)
 

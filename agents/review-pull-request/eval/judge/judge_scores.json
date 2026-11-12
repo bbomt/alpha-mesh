@@ -1,0 +1,131 @@
+{
+  "model": "minimax/minimax-m3.1-flash",
+  "rubric": "v1",
+  "cases": {
+    "R36-812f904-001": {
+      "correctness": 3,
+      "coverage": 5,
+      "actionability": 5
+    },
+    "R36-812f904-002": {
+      "correctness": 3,
+      "coverage": 5,
+      "actionability": 5
+    },
+    "R36-812f904-003": {
+      "correctness": 2,
+      "coverage": 1,
+      "actionability": 5
+    },
+    "R36-c3e9e57-001": {
+      "correctness": 4,
+      "coverage": 5,
+      "actionability": 5
+    },
+    "R36-d2309a5-001": {
+      "correctness": 2,
+      "coverage": 4,
+      "actionability": 4
+    },
+    "R36-d2309a5-002": {
+      "correctness": 3,
+      "coverage": 5,
+      "actionability": 5
+    },
+    "R37-1fbb920-001": {
+      "correctness": 1,
+      "coverage": 1,
+      "actionability": 4
+    },
+    "R37-1fbb920-002": {
+      "correctness": 3,
+      "coverage": 5,
+      "actionability": 5
+    },
+    "R45-02d37e7-001": {
+      "correctness": 2,
+      "coverage": 1,
+      "actionability": 5
+    },
+    "R45-fee8a9a-004": {
+      "correctness": 2,
+      "coverage": 4,
+      "actionability": 5
+    },
+    "R45-fee8a9a-015": {
+      "correctness": 2,
+      "coverage": 1,
+      "actionability": 4
+    },
+    "con-003": {
+      "correctness": 5,
+      "coverage": 5,
+      "actionability": 5
+    },
+    "deg-001": {
+      "correctness": null,
+      "coverage": 5,
+      "actionability": null
+    },
+    "imp-001": {
+      "correctness": null,
+      "coverage": 1,
+      "actionability": null
+    },
+    "log-002": {
+      "correctness": 5,
+      "coverage": 5,
+      "actionability": 5
+    },
+    "log-005": {
+      "correctness": 5,
+      "coverage": 5,
+      "actionability": 5
+    },
+    "pub-ansible-66192": {
+      "correctness": 3,
+      "coverage": 5,
+      "actionability": 5
+    },
+    "pub-pyenv-1646": {
+      "correctness": 2,
+      "coverage": 1,
+      "actionability": 5
+    },
+    "pub-trio-1832": {
+      "correctness": 5,
+      "coverage": 1,
+      "actionability": 5
+    },
+    "ref-003": {
+      "correctness": null,
+      "coverage": 5,
+      "actionability": null
+    },
+    "sec-002": {
+      "correctness": 3,
+      "coverage": 5,
+      "actionability": 4
+    },
+    "sec-005": {
+      "correctness": 2,
+      "coverage": 5,
+      "actionability": 4
+    },
+    "sec-007": {
+      "correctness": 5,
+      "coverage": 5,
+      "actionability": 5
+    },
+    "sty-002": {
+      "correctness": null,
+      "coverage": 5,
+      "actionability": null
+    },
+    "sty-004": {
+      "correctness": null,
+      "coverage": 5,
+      "actionability": null
+    }
+  }
+}

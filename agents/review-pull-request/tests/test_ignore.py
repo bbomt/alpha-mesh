@@ -281,3 +281,16 @@ def test_a_negation_line_in_the_ignore_file_aborts_because_it_is_not_supported(t
 
     assert exc.value.code != 0
     assert "!keep.log" in capsys.readouterr().err
+
+
+def test_the_shipped_config_keeps_every_common_lockfile_away_from_the_llm():
+    # Lockfiles are machine-written and can be huge: pure token burn for the reviewer and the judge (PMAT-311).
+    import tomllib
+    from review_pull_request.config import normalise_patterns
+    shipped = Path(__file__).resolve().parents[1] / "review_config.toml"
+    patterns = normalise_patterns(tomllib.loads(shipped.read_text())["exclusions"]["patterns"])
+    lockfiles = ["uv.lock", "agents/x/uv.lock", "package-lock.json", "web/package-lock.json", "npm-shrinkwrap.json",
+                 "yarn.lock", "pnpm-lock.yaml", "bun.lock", "bun.lockb", "poetry.lock", "Pipfile.lock",
+                 "Cargo.lock", "Gemfile.lock", "composer.lock", "go.sum", "svc/go.sum"]
+
+    assert [c.file_path for c in build_chunks(_diff(*lockfiles, "src/a.py"), patterns)] == ["src/a.py"]

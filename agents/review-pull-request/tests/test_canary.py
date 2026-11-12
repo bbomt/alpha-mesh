@@ -6,13 +6,16 @@ records every message it receives; the secret must appear in none of them.
 """
 
 import json
+import os
 import sys
+from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from review_pull_request.config import Config, SENSITIVE_PATTERNS
-from review_pull_request.review import main, review_commit
+from review_pull_request.review import main, run_review_agent
 from review_pull_request.guard import Redactor
 from tests.helpers import chat_model_factory
 
@@ -153,29 +156,29 @@ def test_the_harness_itself_detects_a_leak_when_protection_is_off():
     assert any(CANARY in m for m in model.seen)
 
 
-def _run_core(diff, exclusions=None):
-    """The review core called directly, as the evals call it (no PR adapter in front)."""
+def _run_agent(diff, exclusions=None):
+    """run_review_agent called directly, as the evals call it (no PR adapter in front)."""
     cfg = Config(model="m", api_url="http://x", api_token="t",
                  exclusions=list(SENSITIVE_PATTERNS) if exclusions is None else exclusions)
     model = RecordingModel()
     with patch("review_pull_request.review.GitHubFileReader", FakeReader), \
             patch("review_pull_request.review.get_diff", return_value=diff), \
             patch("review_pull_request.session.make_chat_model", chat_model_factory(model)):
-        review_commit("o", "r", "b" * 40, "abc123", "Adds an app.", config=cfg, token=GITHUB_TOKEN,
+        run_review_agent("o", "r", "b" * 40, "abc123", "Adds an app.", config=cfg, token=GITHUB_TOKEN,
                       publish=lambda report: None, all_excluded=lambda paths: 0)
     return model
 
 
-def test_canary_never_reaches_the_model_through_the_review_core():
-    model = _run_core(_diff_with_secrets())
+def test_canary_never_reaches_the_model_through_run_review_agent():
+    model = _run_agent(_diff_with_secrets())
 
     assert model.seen, "the fake model was never called, so the test proves nothing"
     assert set(model.requested) == set(READ_ATTEMPTS), "every read attempt must actually be exercised"
     assert not [m for m in model.seen if CANARY in m]
 
 
-def test_the_core_harness_detects_a_leak_when_protection_is_off():
-    model = _run_core(_diff_with_secrets(), exclusions=[])
+def test_the_run_agent_harness_detects_a_leak_when_protection_is_off():
+    model = _run_agent(_diff_with_secrets(), exclusions=[])
 
     assert any(CANARY in m for m in model.seen)
 
@@ -405,6 +408,113 @@ def test_the_stream_harness_detects_a_leak_when_protection_is_off(capsys):
     assert CANARY in events
 
 
+# ── The judge (PMAT-311): a second external model, so a second path out ──────────────────────────
+# Paths into the judge's prompt: the diff, the stored review's findings, the files the agent read,
+# the PR description, and the case's own text.
+
+JUDGE_REPLY = json.dumps({"correctness": {"why": "w", "score": 3}, "coverage": {"why": "w", "score": 3},
+                          "actionability": {"why": "w", "score": 3}})
+LOOKS_LIKE_A_KEY = "sk-" + "canarycanarycanarycanary"
+JUDGE_REVIEW = {"files_read": ["src/app.py", ".env", ".claude/settings.json", "config/active.json"], "findings": [
+    {"file": "src/app.py", "line": 1, "severity": "low", "summary": "The visible finding.", "suggestion": None},
+    {"file": ".env", "line": 1, "severity": "high", "summary": f"TOKEN={CANARY} is exposed", "suggestion": CANARY},
+]}
+JUDGE_CASE = {"repo": "o/r", "base_sha": "b" * 40, "raised_sha": "a" * 40, "category": "logic",
+              "description": f"Adds an app. {GITHUB_TOKEN}",
+              "notes": f"From a PR comment: {GITHUB_TOKEN} {LOOKS_LIKE_A_KEY}", "label_reason": LOOKS_LIKE_A_KEY,
+              "expected": {"action": "raise_true_bug", "flag_file": "src/app.py", "min_severity": "low"},
+              "finding": {"file": "src/app.py", "line": 1, "severity": "low", "summary": f"Claim {GITHUB_TOKEN}"}}
+
+
+def _judge(exclusions=None):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "eval" / "promptfoo"))
+    import llm_rubric
+
+    cfg = Config(model="judge", api_url="http://x", api_token="judge-secret-token",
+                 exclusions=list(SENSITIVE_PATTERNS) if exclusions is None else exclusions)
+    seen = []
+
+    def model(messages, tools):
+        seen.append(json.dumps(messages))
+        return SimpleNamespace(content=JUDGE_REPLY, tool_calls=[])
+
+    with patch.object(llm_rubric, "judge_config", return_value=cfg), \
+            patch.object(llm_rubric, "get_diff", return_value=_diff_with_secrets()), \
+            patch.object(llm_rubric, "GitHubFileReader", FakeReader), \
+            patch.object(llm_rubric, "github_token", return_value=GITHUB_TOKEN), \
+            patch.object(llm_rubric, "make_judge_chat_model", lambda meta, **kw: chat_model_factory(model)):
+        llm_rubric.judge_review(JUDGE_CASE, JUDGE_REVIEW)
+    return seen
+
+
+def test_the_judge_never_receives_an_excluded_file_by_the_diff_or_a_stored_finding():
+    seen = _judge()
+
+    assert seen, "the fake judge was never called, so the test proves nothing"
+    assert "x = 1" in seen[0] and "The visible finding." in seen[0], "the allowed content must still reach it"
+    assert "src/app.py" in seen[0].split("<files_read>")[1], "the file the agent read must still reach it"
+    assert not [m for m in seen if CANARY in m]
+
+
+def test_the_judge_never_receives_a_token_from_the_case_text():
+    text = _judge()[0]
+
+    assert "Claim [REDACTED]" in text, "the case's claim must still reach it, with the token removed"
+    assert "Adds an app. [REDACTED]" in text, "the PR description must still reach it, with the token removed"
+    assert GITHUB_TOKEN not in text and LOOKS_LIKE_A_KEY not in text
+
+
+def test_the_judge_harness_detects_a_leak_when_protection_is_off():
+    assert any(CANARY in m for m in _judge(exclusions=[]))
+
+
+# ── The silver labeller (PMAT-326): a third external model, with the judge's inputs ─────────────
+
+def _silver(exclusions=None):
+    eval_dir = Path(__file__).resolve().parents[1] / "eval"
+    with patch.object(sys, "path", [str(eval_dir / "promptfoo"), str(eval_dir / "scripts"), *sys.path]):
+        import llm_rubric
+        import generate_silver_calibration_labels
+
+    cfg = Config(model="judge", api_url="http://x", api_token="judge-secret-token",
+                 exclusions=list(SENSITIVE_PATTERNS) if exclusions is None else exclusions)
+    seen = []
+
+    def model(messages, tools):
+        seen.append(json.dumps(messages))
+        return SimpleNamespace(content=JUDGE_REPLY, tool_calls=[])
+
+    with patch.object(llm_rubric, "judge_config", return_value=cfg), \
+            patch.object(llm_rubric, "get_diff", return_value=_diff_with_secrets()), \
+            patch.object(llm_rubric, "GitHubFileReader", FakeReader), \
+            patch.object(llm_rubric, "github_token", return_value=GITHUB_TOKEN), \
+            patch.object(generate_silver_calibration_labels, "make_labeller_chat_model", lambda *a, **k: chat_model_factory(model)), \
+            patch.dict(os.environ, {"SILVER_CALIBRATION_URL": "http://silver", "SILVER_CALIBRATION_TOKEN": "silver-tok"}):
+        generate_silver_calibration_labels.label_once({**JUDGE_CASE, "case_id": "R1-a-001"}, JUDGE_REVIEW, "openai/labeller", "high")
+    return seen
+
+
+def test_the_silver_labeller_never_receives_an_excluded_file_by_any_path():
+    seen = _silver()
+
+    assert seen, "the fake labeller was never called, so the test proves nothing"
+    assert "x = 1" in seen[0] and "The visible finding." in seen[0], "the allowed content must still reach it"
+    assert "src/app.py" in seen[0].split("<files_read>")[1], "the file the agent read must still reach it"
+    assert not [m for m in seen if CANARY in m]
+
+
+def test_the_silver_labeller_never_receives_a_token_from_the_case_text():
+    text = _silver()[0]
+
+    assert "Adds an app. [REDACTED]" in text, "the PR description must still reach it, with the token removed"
+    assert "Claim [REDACTED]" in text
+    assert GITHUB_TOKEN not in text and LOOKS_LIKE_A_KEY not in text
+
+
+def test_the_silver_harness_detects_a_leak_when_protection_is_off():
+    assert any(CANARY in m for m in _silver(exclusions=[]))
+
+
 # --- PMAT-325: the review trace is a new path out of the run ------------------------------------
 # Invariant: an excluded file's content and the tokens never reach the trace file, by any path.
 # The trace is recorded inside the guard, so it holds what the model was sent: refusals for excluded
@@ -436,7 +546,7 @@ def _run_traced(tmp_path, exclusions=None, redact=True):
             patch("review_pull_request.review.get_diff", return_value=_diff_with_secrets()), \
             patch("review_pull_request.session.make_chat_model", chat_model_factory(model)), \
             patch("review_pull_request.session.Redactor", Redactor if redact else _NoRedaction):
-        review_commit("o", "r", "b" * 40, "abc123", "Adds an app.", config=cfg, token=GITHUB_TOKEN,
+        run_review_agent("o", "r", "b" * 40, "abc123", "Adds an app.", config=cfg, token=GITHUB_TOKEN,
                       publish=lambda report: None, all_excluded=lambda paths: 0, trace_path=trace_path)
     return model, trace_path.read_text()
 

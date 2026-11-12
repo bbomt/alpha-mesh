@@ -231,7 +231,7 @@ Rerunning the same command after a failure resumes from the file it stopped at.
     _verbose_print(config, f"Model: {config.model}")
     _verbose_print(config, f"API URL: {_safe_url(config.api_url)}")
 
-    diff = None  # None: review_commit fetches the full diff base_sha...head_sha
+    diff = None  # None: run_review_agent fetches the full diff base_sha...head_sha
     incremental_info = None
     prior_review_exists = False
     try:
@@ -336,7 +336,7 @@ Rerunning the same command after a failure resumes from the file it stopped at.
             if not post_comment(report, args.pr_url, config):
                 raise PostFailed()
 
-    return review_commit(
+    return run_review_agent(
         owner, repo, base_sha, head_sha, pr_desc,
         config=config, token=_token, publish=publish, all_excluded=all_excluded,
         pr_number=pr_number, diff=diff, incremental_info=incremental_info,
@@ -350,7 +350,7 @@ def default_trace_path(thread: str) -> Path:
     return Path.home() / ".mesh" / "review-traces" / f"{hashlib.sha256(thread.encode()).hexdigest()[:16]}.jsonl"
 
 
-def review_commit(
+def run_review_agent(
     owner: str,
     repo: str,
     base_sha: str,
@@ -373,7 +373,7 @@ def review_commit(
 ) -> int:
     """Review the diff base_sha...head_sha of owner/repo, reading files at head_sha; return the exit code.
 
-    The review core: `mesh review-pull-request` (main, the PR adapter) and the evals call it with
+    Runs the agent: `mesh review-pull-request` (main, the PR adapter) and the evals call it with
     the same inputs. It never posts: publish(report) gets the finished report, and
     all_excluded(paths) -> exit code handles a diff whose changed files are all excluded.
     diff is base_sha...head_sha when the caller has already fetched it; None fetches it.

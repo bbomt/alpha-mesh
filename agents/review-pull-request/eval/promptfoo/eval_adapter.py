@@ -1,6 +1,6 @@
-"""The eval adapter (PMAT-304): a case -> the review core's inputs -> the review's findings.
+"""The eval adapter (PMAT-304): a case -> the inputs of run_review_agent -> the review's findings.
 
-`mesh review-pull-request` (the PR adapter) and this adapter call the same core, review_commit,
+`mesh review-pull-request` (the PR adapter) and this adapter call the same function, run_review_agent,
 with (owner, repo, base, head, description): here the case's base_sha, its raised_sha and the PR's
 description. Nothing is posted. The findings come from the review's final graph state (the data the
 report is rendered from), read back from the checkpointer this adapter passes in. The review's trace
@@ -11,7 +11,7 @@ from pathlib import Path
 
 from review_pull_request.checkpoints import thread_id
 from review_pull_request.graph import build_review_graph
-from review_pull_request.review import review_commit
+from review_pull_request.review import run_review_agent
 from review_pull_request.trace import load as load_trace
 
 
@@ -23,7 +23,7 @@ def review_case(case: dict, *, config, token: str, description: str, checkpointe
     """Review the case's commit, or reuse the finished review of it in this checkpointer.
 
     The caller must hold a lock per commit and repeat over checkpointer and trace_path (agent_provider
-    does): the core's own run lock is off here, so two unlocked calls would write one thread at once."""
+    does): run_review_agent's own run lock is off here, so two unlocked calls would write one thread at once."""
     owner, repo = case["repo"].split("/")
     head = case["raised_sha"]
     thread = thread_id(owner, repo, case.get("pr_number"), head, "full", config.exclusions)
@@ -37,7 +37,7 @@ def review_case(case: dict, *, config, token: str, description: str, checkpointe
             excluded.extend(paths)
             return 0
 
-        code = review_commit(owner, repo, case["base_sha"], head, description, config=config, token=token,
+        code = run_review_agent(owner, repo, case["base_sha"], head, description, config=config, token=token,
                              publish=lambda report: None, all_excluded=all_excluded,
                              pr_number=case.get("pr_number"), checkpointer=checkpointer, trace_path=trace_path,
                              run_lock=False)  # the caller holds a lock per commit and repeat

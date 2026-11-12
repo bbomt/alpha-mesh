@@ -114,6 +114,9 @@ a real bug here that no one raised. Use these for instructive comparison.
 | `scripts/run_eval.sh`, `scripts/baseline.py`, `scripts/compare_baseline.py` | run, baseline, compare |
 | `scripts/split_holdout.py`, `scripts/holdout_report.py` | draw the hold-out, report its totals |
 | `schema/review.schema.json`, `schema/baseline.schema.json` | the provider's output, the baseline's guard |
+| `promptfoo/llm_rubric.py`, `judge/rubric.v1.md` | the judge and its versioned rubric ([The judge](#the-judge)) |
+| `judge/sample.json`, `judge/gold-human-calibration.json`, `judge/silver-ai-calibration.json`, `judge/judge_scores.json` | the 25 calibration cases, the human (gold) scores, the silver labeller's scores, the judge's scores for them |
+| `scripts/judge_sample.py`, `scripts/judge_labelling_sheet.py`, `scripts/generate_silver_calibration_labels.py`, `scripts/judge_report.py`, `scripts/judge_calibration_alignment.py` | draw the sample, write the scoring sheet, write the silver labels, report a run's scores, compute the judge's agreement with the reference |
 | `baseline.json`, `error_analysis.json` | the committed baseline and the error analysis behind it (development cases only) |
 | `holdout.json` | the hold-out's seed and case IDs |
 | `runs/` | eval runs (gitignored) |
@@ -159,6 +162,29 @@ another case's file at the same repo and `raised_sha`: a file cannot be both cle
 
 `promptfoo eval` runs the real agent on every case's commit and checks its findings against the case's
 `expected` block (PMAT-304). `promptfoo view` shows the results.
+
+### Models (decision record)
+
+The owner's decisions, 2026-11-10. The model IDs are set in `.env`, not here.
+
+1. **Agent: GLM 5.3 Flash** (`z-ai/glm-5.3-flash`, `CODE_REVIEW_MODEL`).
+   - **Role:** runs the multi-step review graph, which fetches diffs, PR descriptions and dependency files through tools.
+   - **Why:** development speed and cost.
+     - The free OpenRouter tiers were unusable for evals: runs hit 8-hour timeouts and corrupted checkpoints, which
+       broke the feedback loop.
+     - GLM 5.3 Flash generates tokens fast, codes well and has a 1M+ context window, at a fraction of frontier
+       prices, so Promptfoo iterations stay quick and within budget.
+2. **Judge: MiniMax M3.1 Flash** (`minimax/minimax-m3.1-flash`, `EVAL_JUDGE_MODEL`), through OpenRouter, pinned to
+   MiniMax's own host with no fallback (`EVAL_JUDGE_PROVIDER=Minimax`; owner, PMAT-311 comment 13701, 2026-11-12).
+   - **Role:** grades each review on the rubric (`llm-rubric`): correctness, coverage and actionability.
+   - **Why:** of five judges calibrated against the Calibration Labels, it ties for the best agreement, is the most
+     consistent with itself and had no errors, at $0.0050 per judgment on its pinned host (about $0.28 per dev run). The comparison and
+     the rejected models are in [CALIBRATION_AND_MODEL_DECISIONS.md](CALIBRATION_AND_MODEL_DECISIONS.md).
+3. **Silver labeller: GPT-6.1 Sol** (`openai/gpt-6.1-sol`, `SILVER_CALIBRATION_MODEL`; owner, 2026-11-12).
+   - **Role:** scores the frozen 25-case sample on the same rubric: the silver Calibration Labels, the stand-in for
+     human (gold) scores until a human scores each case.
+   - **Why:** a third family, independent of the agent and the judge, and far more consistent across its passes than
+     Terra, the first labeller (correctness within ±1 100% vs 85%), for $1.58 per 3 passes.
 
 ### Baseline
 
@@ -273,10 +299,173 @@ This is a coarse check, good for catching a large drop, not a small one. Per-cat
 A new case changes the draw, so `test_5_...` fails on purpose: keep the list by adding the new case to development (and
 changing the test to rerun the draw on the old cases), or redraw knowingly and say so on the ticket.
 
+### The judge
+
+A second model (`EVAL_JUDGE_MODEL`) grades each review on three dimensions, 1 to 5, each with its reason first: **correctness**
+(are the findings real?), **coverage** (did it catch what matters, against the case's `expected` and `notes`?) and
+**actionability** (could a developer act on it?). Coverage compares the claim itself, so a different bug near the line
+counts for the line window but not for the judge.
+
+**It sees what the agent saw** (owner, PMAT-311): the diff, the PR description and the files the agent read
+(`files_read`, PMAT-322), fetched at the same commit with the agent's `max_file_lines`. It has no tools. A claim that
+depends on code the agent didn't read counts as false, even if it happens to be true, because the agent could only have
+guessed it; the owner scores by the same rule. A review with no `files_read` (a run before PMAT-322), or a file the
+agent read that can't be fetched again, gets a judge error, not a score. Fetching the files again repeats the agent's
+tool calls: at a fixed commit that returns what it read, but a trace of every tool call and result (PMAT-325) will
+replace it, so the judge gets the agent's context even when tools aren't deterministic. `files_read` is one list for the whole review, so the judge can't tell which file's review read what. The
+folder listing, the agent's overview and its instructions are left out.
+
+**It never gates.** `judge_results` always passes, so a case's pass or fail, `baseline.json` and the comparison don't
+change. A judge error is recorded, not failed. A review with no findings has `null` correctness and actionability.
+
+It is an LLM judge in a python assert, not Promptfoo's built-in `llm-rubric` (owner, PMAT-311), because everything sent to
+a model has to go through `ReviewSession`, so an excluded file's content never reaches it
+(`tests/test_canary.py`), and one call has to return all three scores. It refuses hold-out cases.
+`promptfooconfig.yaml` shows how it fits with the other asserts.
+
+Set `EVAL_JUDGE_MODEL`, `EVAL_JUDGE_URL` and `EVAL_JUDGE_TOKEN` in `.env`. A missing one stops the run before any review.
+
+```bash
+eval/scripts/run_eval.sh --stored ~/.mesh/eval-runs/PMAT-322-base3 --run judge1   # judge stored reviews; the agent doesn't run
+uv run python eval/scripts/judge_report.py eval/runs/judge1/results.json           # means, proposal, cost
+JUDGE_LIVE=1 uv run pytest eval/tests/test_judge.py -k live                        # the checks that need the real model
+```
+
+A normal `run_eval.sh` run judges the agent's fresh reviews too. A `--stored` run has no `run.json`, so it can't become the baseline.
+
+**Which repeats the judge scores** (`--judge-repeats`), like review passes (incremental while iterating, full before
+DONE): `first`, the default, judges repeat 0 of each case only, for iterating on the agent; `all` judges every repeat,
+before merging an agent change. The line checks run on every repeat either way. Repeats cost money only through the
+judge, and they mostly add precision to the mean: a change's direction shows on repeat 0 across all cases, while the
+merge decision wants the precise mean. The report counts the skipped repeats (`N not judged (repeat 0 only)`).
+
+**Judge Calibration (meta-evaluation):** humans score 25 development cases blind (gold), a silver labeller scores them
+too (below); together these are the **Calibration Labels**. The judge's scores are compared with them, gold where set, else
+silver, and the result is the **Judge Alignment** (within ±1 point per
+dimension, and Cohen's kappa on pass/fail, score >= 4).
+
+```bash
+uv run python eval/scripts/judge_labelling_sheet.py ~/.mesh/eval-runs/PMAT-322-base3   # sheet and labels file; no scores shown
+uv run python eval/scripts/judge_report.py eval/runs/judge1/results.json --write-scores  # after the labels are committed
+uv run python eval/scripts/judge_calibration_alignment.py --silver-calibration eval/judge/silver-ai-calibration.json \
+    --gold-calibration eval/judge/gold-human-calibration.json eval/judge/judge_scores.json
+```
+
+**Silver labels (PMAT-326):** the owner has no time to score the 25 cases by hand yet, so a model of another family scores
+them on the same rubric: the **silver standard**, a shortcut to the first calibration values. Humans remain the **gold
+standard**. The cases are about code (is the finding real, was the bug caught, can a developer act on it), not tone, so
+a strong model can stand in until humans score.
+
+```bash
+uv run python eval/scripts/generate_silver_calibration_labels.py ~/.mesh/eval-runs/<run>   # SILVER_CALIBRATION_MODEL in .env
+uv run python eval/scripts/generate_silver_calibration_labels.py ~/.mesh/eval-runs/<run> --model openai/gpt-5-nano   # dev: cheap
+```
+
+The labeller is `SILVER_CALIBRATION_MODEL` in `.env` (`openai/gpt-6.1-sol`, owner decision 2026-11-12), or `--model`.
+
+- It gets what the judge and the sheet get (rubric, ground truth, findings, PR description, diff, files the agent read),
+  through `llm_rubric.ask` and so `ReviewSession` (`tests/test_canary.py`). It reads only repeat 0's stored review: never
+  a judge score, a line-window result or a hold-out case. This sends the sample's repo code to the model's vendor via
+  OpenRouter (owner's choice, 2026-11-10), at `SILVER_CALIBRATION_URL` with `SILVER_CALIBRATION_TOKEN`. These are its
+  own, not the judge's, so the judge can be on another host. A missing one stops the run
+  before anything is sent.
+- Each reply is strict JSON (`structured_outputs`, `why` before `score` per dimension, `reasoning_effort` high by
+  default). A missing or out-of-range score stops the run naming the case and pass; it is never defaulted.
+- 3 passes (odd), the median per dimension. A case whose passes differ by more than 1 point is `unstable` and worth a
+  human check first. The run prints the cost and the passes' self-agreement per dimension.
+- `judge/silver-ai-calibration.json` (committed) holds the scores only; its header names the model requested and the
+  model and providers reported, the effort, rubric, repeat, passes, cost, date and self-agreement, so a rerun with
+  another model keeps the path. The reasons are in `runs/judge-labelling/silver-ai-calibration.md` (gitignored: it
+  quotes reviews and code).
+- **The committed labels are `openai/gpt-6.1-sol`** (owner, 2026-11-12): 3 passes, effort high, $1.58. Passes agree
+  exactly / within ±1 on correctness 85% / 100%, coverage 96% / 96%, actionability 90% / 100%; 1 of 25 cases unstable.
+  They replaced `openai/gpt-6.1-terra` (2026-11-10: correctness 60% / 85%, 6 unstable, $0.90; in git history).
+- **Cost:** one run sends about 1.02M input tokens (339k per pass, measured); passes 2 and 3 repeat pass 1's prompts, so
+  OpenRouter mostly bills them at the cached-input price (5% for these models). Output, mostly reasoning, varies by
+  model: Terra about 90k–105k over 3 passes (inferred from its cost), nano about 600k. **A higher model run**
+  (`openai/gpt-6-astra` about $9–21 for 3 passes) **needs the Team Lead's sign-off**: develop and test with a cheap model.
+
+**Gold over silver:** `judge_calibration_alignment.py` builds the reference per case and dimension when it runs, never in a file: the
+human score where one is set, else silver's. A `TODO` is ignored, so with no human scores the reference is all silver,
+and adding human scores later needs no silver rerun. It prints how many reference scores per dimension came from each
+source (`correctness: 1 gold, 24 silver`) and lists every silver-vs-gold difference over 1 point: where silver was wrong.
+**Humans score blind:** from `sheet.md` into `gold-human-calibration.json`, never after reading the silver scores or
+reasons. **Caveat:** the silver labeller and the judge read the same rubric, so an ambiguity both read the same way is
+invisible to this calibration. That is what gold is for.
+
+The sample (`scripts/judge_sample.py`, seed 311) was drawn from the case files only, per group, from the development
+cases. **It is frozen:** your labels are on these 25 cases, so it is never redrawn, even when categories change (PMAT-321)
+or cases are added; the script refuses, and a test pins the list. A new sample means new labels. Under about 75% on a dimension: read the disagreements, tighten the rubric in a new version (`rubric.v2.md`), and
+record the iteration here. Changing `EVAL_JUDGE_MODEL` or the rubric means aligning again.
+
+<!-- JUDGE-RESULTS -->
+**Judge Alignment** (2026-11-12): judge `minimax/minimax-m3.1-flash` on OpenRouter, host Minimax only (every call
+served there), rubric v1, base3 repeat 0, against the silver Calibration Labels (`openai/gpt-6.1-sol`; 0 gold):
+
+| Dimension | One pass (`judge/judge_scores.json`) within ±1 / kappa | Median of 3 passes | Self ±1 across passes | n |
+|---|---|---|---|---|
+| correctness | 85% / 0.74 | 90% / 0.86 | 95% | 20 |
+| coverage | 100% / 1.00 | 100% / 1.00 | 100% | 25 |
+| actionability | 100% / undefined | 100% / undefined | 100% | 20 |
+
+Every dimension is over the ~75% bar, so rubric v1 stands. Actionability's kappa is undefined: almost every review
+passes for both raters, so read its ±1 figure. `judge_scores.json` is pass 2 of 3, the first with no judge error
+(pass 1 had one empty reply). Cost: $0.0050 per judgment ($0.31 for the 3 passes). How the labeller and judge were
+chosen, and the earlier results: [CALIBRATION_AND_MODEL_DECISIONS.md](CALIBRATION_AND_MODEL_DECISIONS.md).
+
+**The current agent against the proposal (provisional)** (2026-11-12): base6 (`PMAT-325-base6-nemotron`, agent
+`nvidia/nemotron-3.5-super-vl:free`, k=3, all 3 repeats judged), the judge above. 195 rows: 163 model calls, 22 fixed by
+the rubric, 10 judge errors (6 files GitHub didn't return during a load spike, 2 replies missing a score, 1 timeout),
+$0.93.
+
+| Measure | Agent | Starting proposal |
+|---|---|---|
+| Mean correctness | 2.97 | ≥ 4.0 (fails) |
+| Mean coverage | 3.80 | ≥ 3.8 (meets, just) |
+| Mean actionability | 4.89 | none |
+| Security misses (coverage ≤ 2) | 0 | 0 (meets) |
+| `style_only` pass rate | 93% | 100% (fails) |
+
+Correctness is lowest on `refactor` (1.50), `style_only` (1.75) and `improvable` (2.29): findings that aren't worth fixing
+or aren't real (`judge_report.py` prints every group). These numbers are provisional: the owner sets the final
+thresholds after agent tuning, and PMAT-312 starts as a no-regression gate.
+
+**Pinning:** `EVAL_JUDGE_PROVIDER` (OpenRouter only) sends every judge call to one host, with no fallback, so every
+judgment comes from the same weights. A down host gives judge errors, which the report counts; it never silently
+switches host. Unset, OpenRouter spreads calls across hosts at different quantisations. A pin with a non-OpenRouter
+`EVAL_JUDGE_URL` stops the run before any review.
+- **What is recorded:** each judgment records the requested and reported model, the host, its cost, tokens, and cached
+  and reasoning tokens. The report sums them and lists the hosts that served the run.
+- **Calls the rubric makes unnecessary:** a `raise_nothing` case whose review has no findings scores coverage 5 with
+  null correctness and actionability (the rubric fixes every score), so it isn't sent to the model.
+- **Prompt order:** the shared context (the PR description, diff and files read) comes before the findings and the
+  case, so the cases of one review share a cached prefix.
+
+A security miss in `judge_report.py` is a security case with coverage 2 or below.
+
+**Family:** each role uses a different model family, so no model grades its own family's output.
+
+| Role | Model | `.env` variable |
+|---|---|---|
+| Agent | GLM (`z-ai/glm-5.3-flash`) | `CODE_REVIEW_MODEL` |
+| Judge | MiniMax (`minimax/minimax-m3.1-flash`) | `EVAL_JUDGE_MODEL` |
+| Silver labeller | OpenAI (`openai/gpt-6.1-sol`) | `SILVER_CALIBRATION_MODEL` |
+
+The warning at the start of a run checks the run's model and `CODE_REVIEW_MODEL` against the judge's family. A run
+reviewed by a MiniMax model would be graded by its own family. The judge would then have to move family and be aligned
+again. The warning doesn't check the silver labeller, so keep it out of the agent's family too.
+
 ### Terms
 
 | Term | What it is | Changes when |
 | :-- | :-- | :-- |
+| **The agent** | The review agent, the thing being evaluated | With its code |
+| **Running the agent** | `run_review_agent`: the slow step that produces a review | |
+| **Stored review** | A review saved from an earlier run | Never |
+| **The judge** | The separate model that scores a review | With `EVAL_JUDGE_MODEL` or the rubric |
+| **Calibration Labels** | Trusted scores on the 25 frozen sample reviews, the yardstick for the judge: **gold** (a human's) where set, else **silver** (a model of another family) | Gold when a human scores; silver when the labeller reruns |
+| **Judge Calibration** | Running the judge on the sample reviews and comparing its scores with the Calibration Labels | With `EVAL_JUDGE_MODEL` or the rubric |
+| **Judge Alignment** | The result of Judge Calibration: how often the judge agrees with the Calibration Labels (within ±1 point, and kappa) per dimension | Each Judge Calibration |
 | **Golden dataset** (labelled dataset, eval set) | The cases: input + **ground truth** (`real_issue` / `false_positive`, and the `expected` block), split into **development cases** and a **hold-out** | A **label error** is found and fixed |
 | **Ground truth** | The correct answer for a case, decided independently of the agent: the label (a fix commit citing the finding ID, or a dismissal) and the `expected` block derived from it | Only through a label-error fix |
 | **Run** | One `promptfoo eval`: the agent's output and pass / fail / error for every case, k times | Every run |
@@ -294,7 +483,7 @@ A PR is a repo plus a base and a head commit; what it shows is the three-dot dif
 `base_sha...raised_sha`, with files read at `raised_sha` and the PR's description.
 
 `mesh review-pull-request` (the PR adapter) and the **eval adapter** (`promptfoo/eval_adapter.py`) call the
-same review core, `review_commit(owner, repo, base, head, description)`. The eval adapter posts nothing. It
+same function, `run_review_agent(owner, repo, base, head, description)`. The eval adapter posts nothing. It
 reads the findings (file, line, severity, summary) from the review's final graph state, the data the PR
 comment is rendered from, so nothing parses markdown. The provider (`promptfoo/agent_provider.py`) returns
 them as JSON (`schema/review.schema.json`; extra fields are allowed, for later asserts).
@@ -397,8 +586,8 @@ findings are on the ticket.
 - **Selection bias.** Mined cases were selected by the model that raised them, so they favour or penalise
   that model. Compare agent versions on the full set; compare models on the synthetic and public cases.
   Each case's `model` field records its source; no per-model split is reported.
-- **Line matching is a proxy** until the judge (PMAT-311): the same claim cited outside the window (at a
-  call site, say) is missed, and a different bug inside the window counts as the same one.
+- **Line matching is a proxy:** the same claim cited outside the window (at a call site, say) is missed, and a different
+  bug inside the window counts as the same one. The judge's coverage score compares the claim (`judge_report.py`).
 - **The PR description is today's**, fetched at run time; it may have been edited since `raised_sha`.
 - **Mined cases leave out large commits** (`--max-files 22`): 3 real and 19 false findings on 7 commits.
 - **Long reviews can time out in Promptfoo.** The time a case waits on its lock counts towards the provider's
