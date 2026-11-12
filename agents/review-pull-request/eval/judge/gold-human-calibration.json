@@ -94,7 +94,7 @@
     },
     "deg-001": {
       "correctness": null,
-      "coverage": "TODO",
+      "coverage": null,
       "actionability": null,
       "note": ""
     },
@@ -118,7 +118,7 @@
     },
     "ref-003": {
       "correctness": null,
-      "coverage": "TODO",
+      "coverage": null,
       "actionability": null,
       "note": ""
     },
@@ -142,13 +142,13 @@
     },
     "sty-002": {
       "correctness": null,
-      "coverage": "TODO",
+      "coverage": null,
       "actionability": null,
       "note": ""
     },
     "sty-004": {
       "correctness": null,
-      "coverage": "TODO",
+      "coverage": null,
       "actionability": null,
       "note": ""
     }

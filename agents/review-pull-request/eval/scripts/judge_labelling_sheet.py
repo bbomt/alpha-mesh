@@ -31,8 +31,11 @@ def template(sampled: list[tuple[dict, dict]]) -> dict:
     cases = {}
     for case, review in sampled:
         empty = not review["findings"]
-        cases[case["case_id"]] = {
-            "correctness": None if empty else TODO, "coverage": TODO, "actionability": None if empty else TODO, "note": ""}
+        # Nothing to raise and nothing raised: the rubric fixes coverage at 5 (llm_rubric.judge_review), so no human
+        # score is asked for. None, not 5: judge_agreement counts any set value as a human's (gold).
+        fixed = empty and case["expected"]["action"] == "raise_nothing"
+        cases[case["case_id"]] = {"correctness": None if empty else TODO, "coverage": None if fixed else TODO,
+                                  "actionability": None if empty else TODO, "note": ""}
     return {"rubric": llm_rubric.RUBRIC_VERSION, "repeat": judge_sample.REPEAT, "cases": cases}
 
 

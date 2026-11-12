@@ -673,5 +673,6 @@ def test_the_labels_template_asks_only_for_what_needs_a_judgement():
     full = case(min_severity="low") | {"case_id": "c"}
     cases = labelling.template([(empty_true, review()), (empty_clean, review()), (full, review(finding()))])["cases"]
     assert cases["a"] == {"correctness": None, "coverage": "TODO", "actionability": None, "note": ""}
-    assert cases["b"]["coverage"] == "TODO"
+    assert cases["b"] == {"correctness": None, "coverage": None, "actionability": None, "note": ""}, \
+        "nothing to raise and nothing raised: the rubric fixes every score (no human score asked; never counted as gold)"
     assert cases["c"]["correctness"] == "TODO" and cases["c"]["actionability"] == "TODO"
