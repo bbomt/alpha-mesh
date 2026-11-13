@@ -5,9 +5,11 @@ built-in llm-rubric (owner, 2026-11-06) because it has to go through ReviewSessi
 reaches a model, by any path. It also returns its three scores from one call.
 
 The judge sees what the agent saw (owner, PMAT-311): the diff, the PR description and the files the agent read, fetched
-at the same commit with the agent's own line limit. It has no tools. A review with no files_read, or a file the agent
-read that can't be fetched again, can't be judged fairly, so it is a recorded judge error, not a score. Refetching
-repeats the agent's tool calls; a trace of its calls and results will replace it (PMAT-325).
+from the review's trace: what each read_file call returned, exactly as the agent got it (PMAT-325). It has no tools.
+A review without a trace (a run from before PMAT-325) refetches the files in files_read at the same commit with the
+agent's own line limit, until PMAT-334 makes it an error. A review that can't be judged on the agent's context (a
+trace that is gone or lacks a reviewed file, no files_read, a file that can't be fetched again) is a recorded judge
+error, not a score.
 
 The judge never gates: judge_results always passes, and a judge error is recorded, not failed. Hold-out cases are
 refused here, so nothing about them reaches it: rubric iterations must not use them. Thresholds are
@@ -33,10 +35,12 @@ from review_pull_request.git import get_pr_description
 from review_pull_request.github import _get_github_token
 from review_pull_request.incremental import get_diff
 from review_pull_request.llm import LLMError
-from review_pull_request.policy import PathPolicy
-from review_pull_request.readers import PolicyFileReader, ReadError
+from review_pull_request.policy import PathPolicy, normalise
+from review_pull_request.readers import PolicyFileReader, ReadError, _safe_name
 from review_pull_request.session import ReviewSession, _sent, http_transport
+from review_pull_request.stage2 import ALREADY_READ_NOTE, NOT_FOUND_AGAIN_NOTE, READ_LIMIT_NOTE
 from review_pull_request.tools import GitHubFileReader
+from review_pull_request.trace import load as load_trace
 from review_pull_request.watchdog import WatchdogTransport
 
 RUBRIC_VERSION = "v1"  # a change to the rubric is a new file and a new version
@@ -181,17 +185,46 @@ def file_reader(case: dict, token: str):
     return GitHubFileReader(owner, repo, case["raised_sha"], token)
 
 
+NOT_A_READ = (ALREADY_READ_NOTE, NOT_FOUND_AGAIN_NOTE, READ_LIMIT_NOTE)  # notes about a repeat, not the path's result
+
+
+def traced_files(review: dict, policy: PathPolicy) -> dict:
+    """{path: what the agent's first read of it returned}, from the review's trace, in the order read.
+    A repeat's note is skipped (the first result is the one the agent kept), and an excluded or unsafe path is
+    dropped: a trace is written behind the review's guard, but maybe under other exclusions."""
+    if not os.path.isfile(review["trace"]):
+        raise RuntimeError(f"the review's trace {review['trace']} is gone: not judged")
+    spans = load_trace(review["trace"])
+    missing = [f for f in review.get("files", []) if f not in spans]
+    if missing:
+        raise RuntimeError(f"the review's trace has no review of {', '.join(missing)}: not judged")
+    files = {}
+    for span in spans.values():
+        for call in span["tools"]:
+            path = (call.get("input") or {}).get("path") if isinstance(call.get("input"), dict) else None
+            if (call.get("name") != "read_file" or not isinstance(path, str) or not _safe_name(path)
+                    or call.get("output") in NOT_A_READ or not isinstance(call.get("output"), str)):
+                continue
+            path = normalise(path)
+            if path not in files and not policy.is_excluded(path):
+                files[path] = call["output"]
+    return files
+
+
 def agent_context(case: dict, review: dict, reader, policy: PathPolicy, max_lines: int, token: str) -> dict:
     """The PR description and the files the agent read: {"description", "files": {path: content}}.
-    `reader` is a PolicyFileReader, and an excluded path is dropped: the agent could not have read it either.
-    A file the agent read that can't be fetched now is an error: judging without it would not be the agent's context."""
-    if "files_read" not in review:
+    From the review's trace if it has one, with no read. Otherwise refetched through `reader`, a PolicyFileReader:
+    an excluded path is dropped, as the agent could not have read it either, and a file the agent read that can't
+    be fetched now is an error: judging without it would not be the agent's context."""
+    if not review.get("trace") and "files_read" not in review:
         raise RuntimeError("the review has no files_read, so the judge can't see what the agent saw: "
                            "use a run from PMAT-322 or later")
     description = case.get("description")  # as agent_provider: a fixture commit states its own, a PR's is today's
     if description is None:
         description = get_pr_description(f"https://github.com/{case['repo']}/pull/{case['pr_number']}", token) \
             if case.get("pr_number") else ""
+    if review.get("trace"):
+        return {"description": description, "files": traced_files(review, policy)}
     paths = [p for p in review["files_read"] if not policy.is_excluded(p)]
     files = {p: reader.read_file(p, max_lines) for p in paths}
     failed = [p for p, content in files.items() if isinstance(content, ReadError)]
