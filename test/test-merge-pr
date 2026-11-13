@@ -23,6 +23,8 @@ case "$1 $2" in
   "api repos/o/r/compare/master...abc123") printf '{"behind_by":%s,"ahead_by":1}\n' "$STUB_BEHIND" ;;
   "pr merge") echo "merged" ;;
   "pr diff") printf '%s\n' "$STUB_FILES" ;;
+  "api repos/o/r/commits/master/status") printf '{"statuses":[{"context":"eval-audit","state":"%s"}]}\n' "${STUB_AUDIT:-success}" ;;
+  "api repos/o/r/pulls/15/commits?per_page=100") printf '[{"sha":"abc123"}]\n' ;;
   "api repos/o/r/commits/abc123/status")
     if [ -n "$STUB_EVALS" ]; then
       printf '{"statuses":[{"context":"lint","state":"success"},{"context":"evals","state":"%s"}]}\n' "$STUB_EVALS"
@@ -40,7 +42,7 @@ run() {  # run <name> <state> <behind> <want exit 0|1> <want merge call yes|no> 
   : > "$WORK/log"
   set +e
   out="$(PATH="$WORK/bin:$PATH" STUB_LOG="$WORK/log" STUB_STATE="$2" STUB_BEHIND="$3" \
-         STUB_FILES="${FILES:-README.md}" STUB_EVALS="${EVALS:-}" \
+         STUB_FILES="${FILES:-README.md}" STUB_EVALS="${EVALS:-}" STUB_AUDIT="${AUDIT:-success}" \
          "$MESH_DIR/bin/mesh" merge-pr "$URL" 2>&1)"
   code=$?
   set -e
@@ -72,6 +74,7 @@ FILES="$AGENT_FILE" EVALS="pending" run "an agent PR whose evals is still pendin
 FILES="$(printf 'README.md\n%s' "$AGENT_FILE")" EVALS="success" \
   run "an agent PR whose evals passed on its head is merged" OPEN 0 0 yes "merged"
 FILES="agents/dream/dream/core.py" EVALS="" run "a PR that changes no gated file needs no evals" OPEN 0 0 yes "merged"
+AUDIT="failure" run "nothing merges while master's eval-audit is red" OPEN 0 1 no "eval-gate --master"
 if FILES="agents/dream/dream/core.py" EVALS="" run "(status not read)" OPEN 0 0 yes "merged" >/dev/null \
    && grep -q "commits/abc123/status" "$WORK/log"; then
   echo "  FAIL: a PR that changes no gated file must not read the evals status"; fails=$((fails + 1))
