@@ -3,6 +3,7 @@
 # mesh merge-pr <PR url>: the owner's merge. Squash-merges the PR only if it is open and its branch already
 # has the latest commit of its base branch, so nothing merges onto a base it was not tested against.
 # --match-head-commit makes the merge fail if the branch moves between the check and the merge.
+# A PR that changes a file the review-pull-request eval gate covers also needs `evals` = success on its head commit.
 
 set -euo pipefail
 
@@ -25,6 +26,23 @@ if [ "$behind" != "0" ]; then
   echo "Not merged: stale. The branch is $behind commit(s) behind $base." >&2
   echo "Ask the worker to merge $base in, rerun its tests and push; then run this again." >&2
   exit 1
+fi
+
+# The review-pull-request eval gate (PMAT-312): a PR that changes a file it covers needs `evals` = success on this
+# head commit, posted by `mesh eval-gate`. A status on an older commit is not this commit's, so it never counts.
+mesh_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+gated="$(gh pr diff "$url" --name-only \
+  | python3 "$mesh_dir/agents/review-pull-request/eval/scripts/gate_triggers.py")"
+if [ -n "$gated" ]; then
+  evals="$(gh api "repos/$repo/commits/$head/status" \
+    | jq -r '[.statuses[] | select(.context == "evals")][0].state // "missing"')"
+  if [ "$evals" != "success" ]; then
+    echo "Not merged: the PR changes files the review-pull-request eval gate covers:" >&2
+    printf '  %s\n' $gated >&2
+    echo "and its head $head has no passing evals status (evals: $evals)." >&2
+    echo "Run: mesh eval-gate $url   (then run this again)" >&2
+    exit 1
+  fi
 fi
 
 gh pr merge "$url" --squash --match-head-commit "$head"

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # alpha-mesh/test/test-merge-pr
 # Runs `mesh merge-pr` against a stand-in `gh` and checks it merges only a PR that is open and has the latest
-# base commit, and then with --match-head-commit.
+# base commit, and then with --match-head-commit. A PR that changes a file the review-pull-request eval gate covers
+# also needs an `evals` status of success on its head commit (PMAT-312).
 
 set -euo pipefail
 
@@ -11,7 +12,8 @@ trap 'rm -rf "$WORK"' EXIT
 URL="https://github.com/o/r/pull/15"
 HEAD_SHA="abc123"
 
-# The stand-in gh: answers from STUB_STATE and STUB_BEHIND, and logs every call.
+# The stand-in gh: answers from STUB_STATE, STUB_BEHIND, STUB_FILES (the PR's changed files) and STUB_EVALS (the
+# head commit's `evals` status: empty for none), and logs every call.
 mkdir "$WORK/bin"
 cat > "$WORK/bin/gh" <<'EOF'
 #!/usr/bin/env bash
@@ -20,6 +22,13 @@ case "$1 $2" in
   "pr view") printf '{"state":"%s","headRefOid":"abc123","baseRefName":"master"}\n' "$STUB_STATE" ;;
   "api repos/o/r/compare/master...abc123") printf '{"behind_by":%s,"ahead_by":1}\n' "$STUB_BEHIND" ;;
   "pr merge") echo "merged" ;;
+  "pr diff") printf '%s\n' "$STUB_FILES" ;;
+  "api repos/o/r/commits/abc123/status")
+    if [ -n "$STUB_EVALS" ]; then
+      printf '{"statuses":[{"context":"lint","state":"success"},{"context":"evals","state":"%s"}]}\n' "$STUB_EVALS"
+    else
+      printf '{"statuses":[{"context":"lint","state":"success"}]}\n'
+    fi ;;
   *) echo "unexpected gh call: $*" >&2; exit 9 ;;
 esac
 EOF
@@ -31,6 +40,7 @@ run() {  # run <name> <state> <behind> <want exit 0|1> <want merge call yes|no> 
   : > "$WORK/log"
   set +e
   out="$(PATH="$WORK/bin:$PATH" STUB_LOG="$WORK/log" STUB_STATE="$2" STUB_BEHIND="$3" \
+         STUB_FILES="${FILES:-README.md}" STUB_EVALS="${EVALS:-}" \
          "$MESH_DIR/bin/mesh" merge-pr "$URL" 2>&1)"
   code=$?
   set -e
@@ -54,5 +64,17 @@ echo "=== merge-pr tests ==="
 run "a branch behind its base is refused, not merged" OPEN 2 1 no "stale"
 run "a PR that is not open is refused" MERGED 0 1 no "not open"
 run "a current branch is squash-merged at the checked head" OPEN 0 0 yes "merged"
+
+AGENT_FILE="agents/review-pull-request/src/review_pull_request/stage2.py"
+FILES="$AGENT_FILE" EVALS="" run "an agent PR with no evals status is refused" OPEN 0 1 no "mesh eval-gate"
+FILES="$AGENT_FILE" EVALS="failure" run "an agent PR whose evals failed is refused" OPEN 0 1 no "failure"
+FILES="$AGENT_FILE" EVALS="pending" run "an agent PR whose evals is still pending is refused" OPEN 0 1 no "pending"
+FILES="$(printf 'README.md\n%s' "$AGENT_FILE")" EVALS="success" \
+  run "an agent PR whose evals passed on its head is merged" OPEN 0 0 yes "merged"
+FILES="agents/dream/dream/core.py" EVALS="" run "a PR that changes no gated file needs no evals" OPEN 0 0 yes "merged"
+if FILES="agents/dream/dream/core.py" EVALS="" run "(status not read)" OPEN 0 0 yes "merged" >/dev/null \
+   && grep -q "commits/abc123/status" "$WORK/log"; then
+  echo "  FAIL: a PR that changes no gated file must not read the evals status"; fails=$((fails + 1))
+fi
 
 [ "$fails" -eq 0 ] || exit 1
