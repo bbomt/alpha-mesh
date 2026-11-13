@@ -83,6 +83,35 @@ OPS = loop.Ops(windows=tmux.windows, new_window=tmux.new_window, send=tmux.send,
 # Seconds one Jira check may take. An MCP call can wait for a reply for ever, which froze the loop (PMAT-306).
 JIRA_DEADLINE = 120
 
+
+async def check(keys: list[str], deadline: float | None, show=None) -> dict:
+    """The Jira snapshot, cut off at `deadline`. `show(elapsed)` (if given) is called every second meanwhile, and
+    with the full deadline on a timeout, so the owner sees the check is running rather than a frozen screen."""
+    start = time.monotonic()
+
+    async def redraw():
+        while True:
+            show(time.monotonic() - start)
+            await asyncio.sleep(1)
+
+    ticker = asyncio.create_task(redraw()) if show else None
+    try:
+        return await asyncio.wait_for(jira.snapshot(keys), deadline)
+    except TimeoutError:
+        if show:
+            show(deadline)
+        raise
+    finally:
+        if ticker:
+            ticker.cancel()
+
+
+def paint(screen: str) -> None:
+    """Draw a screen over the last one, in place."""
+    screen = screen.replace("\n", display.CLEAR_LINE + "\n")
+    print(display.HOME + screen + display.CLEAR_LINE + display.CLEAR_BELOW, end="", flush=True)
+
+
 # A key is a tab name, part of the shell command tmux runs, and a status file name, so it must be a plain Jira key.
 KEY = re.compile(r"[A-Z][A-Z0-9]*-[0-9]+")
 
@@ -164,13 +193,22 @@ def main(argv: list[str] | None = None, once: bool = False) -> int:
         if key in args.tickets:
             event(f"{key}: queued, {args.max_workers} workers already running")
 
+    draw = None  # the last screen drawn: on later checks the Jira check's bar goes in its header
     while True:
         start_queued()
         keys = status.active()
         try:
-            # No deadline while logging in: the owner is pasting the redirect URL.
+            # No deadline while logging in: the owner is pasting the redirect URL, so no bar over the prompt.
             deadline = JIRA_DEADLINE if jira.logged_in() else None
-            tickets = asyncio.run(asyncio.wait_for(jira.snapshot(keys), deadline)) if keys else {}
+            show = None
+            if keys and deadline:
+                if tty:
+                    def show(elapsed, draw=draw, deadline=deadline):
+                        bar = display.checking(elapsed, deadline)
+                        paint(draw(next_in=None, checking=bar) if draw else bar)
+                else:  # piped to a log: one line, as redrawing a bar would fill it
+                    print(f"Checking Jira… (up to {deadline // 60} min)", flush=True)
+            tickets = asyncio.run(check(keys, deadline, show)) if keys else {}
         except TimeoutError:  # an MCP call that never answers (PMAT-306): same as Jira down
             event("Jira check timed out, retrying next check")
             tickets = {}
@@ -211,8 +249,7 @@ def main(argv: list[str] | None = None, once: bool = False) -> int:
             continue
         for left in range(args.interval, 0, -1):  # in a terminal, the header counts down to the next check
             if draw:
-                screen = draw(next_in=left).replace("\n", display.CLEAR_LINE + "\n")
-                print(display.HOME + screen + display.CLEAR_LINE + display.CLEAR_BELOW, end="", flush=True)
+                paint(draw(next_in=left))
             time.sleep(1)
 
 

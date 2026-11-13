@@ -65,12 +65,25 @@ def worker(s: dict, alive: bool, background: bool = False) -> tuple[str, str]:
 
 
 DISK_FULL = 0.90
+BAR_WIDTH = 24
+
+
+def checking(elapsed: float, deadline: float) -> str:
+    """A one-line bar filling over the Jira check's deadline, e.g. `Checking Jira  [████░░…]  0:48 / 2:00`."""
+    elapsed = min(elapsed, deadline)
+    n = round(BAR_WIDTH * elapsed / deadline)
+
+    def clock(seconds: float) -> str:
+        return f"{int(seconds) // 60}:{int(seconds) % 60:02d}"
+
+    return f"Checking Jira  [{'█' * n}{'░' * (BAR_WIDTH - n)}]  {clock(elapsed)} / {clock(deadline)}"
 
 
 def render(keys: list[str], statuses: dict[str, dict], tickets: dict[str, Ticket], prs: dict[str, Pr | None],
-           alive: set[str], events: list[tuple[datetime, str]], now: datetime, next_in: int,
+           alive: set[str], events: list[tuple[datetime, str]], now: datetime, next_in: int | None,
            grace_minutes: int, color: bool = True, background: set[str] = frozenset(),
-           disk: float | None = None, queued: list[str] = ()) -> str:
+           disk: float | None = None, queued: list[str] = (), checking: str = "") -> str:
+    """`checking`, while a Jira check runs, replaces the countdown in the header."""
     def paint(text: str, code: str) -> str:
         return f"{code}{text}{RESET}" if color and code and text else text
 
@@ -89,7 +102,7 @@ def render(keys: list[str], statuses: dict[str, dict], tickets: dict[str, Ticket
     table[0] = (table[0][0], paint(table[0][0], DIM))
 
     head = (f"{len(keys)} worker{'s' if len(keys) != 1 else ''} · checked {now.astimezone():%H:%M:%S} · "
-            f"next check in {next_in}s")
+            f"{checking or f'next check in {next_in}s'}")
     full = disk is not None and disk >= DISK_FULL
     if disk is not None:  # the fraction of the home disk in use; red when nearly full, before installs and tests fail
         head += f" · disk {round(disk * 100)}%" + (" nearly full" if full else "")

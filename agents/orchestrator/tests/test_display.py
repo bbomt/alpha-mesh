@@ -2,7 +2,7 @@
 
 from datetime import datetime, timedelta, timezone
 
-from orchestrator.display import Pr, ago, needs, render, worker
+from orchestrator.display import Pr, ago, checking, needs, render, worker
 from orchestrator.jira import Ticket
 
 NOW = datetime(2026, 10, 22, 15, 0, tzinfo=timezone.utc)
@@ -164,3 +164,23 @@ def test_a_lost_jira_connector_says_how_to_reconnect_and_comes_before_other_acti
     assert need(s={**lost, "jira_lost": None}) == ""  # cleared by the hook
     # Busy, e.g. retrying after the owner typed "continue".
     assert needs({**lost, "state": "working"}, None, None, True, NOW, grace_minutes=5, busy=True)[0] == ""
+
+
+def test_the_jira_check_bar_fills_over_the_deadline_and_stays_full_past_it():
+    def filled(elapsed):
+        bar = checking(elapsed, 120)
+        assert bar.startswith("Checking Jira  [") and bar.endswith(" / 2:00")
+        return bar.count("█"), bar.count("░")
+
+    assert filled(0) == (0, 24)
+    assert filled(60) == (12, 12)
+    assert filled(120) == (24, 0)
+    assert filled(200) == (24, 0)
+    assert checking(48, 120).endswith("]  0:48 / 2:00")
+    assert checking(200, 120).endswith("]  2:00 / 2:00")
+
+
+def test_while_jira_is_checked_the_header_shows_the_bar_instead_of_the_countdown():
+    bar = checking(48, 120)
+    screen = render([], {}, {}, {}, set(), [], NOW, next_in=None, grace_minutes=5, color=False, checking=bar)
+    assert bar in screen and "next check in" not in screen
