@@ -342,3 +342,46 @@ def test_the_jira_access_hook_matches_both_atlassian_connectors_but_not_their_lo
     for name in ("mcp__plugin_atlassian_atlassian__authenticate", "mcp__atlassian__complete_authentication",
                  "mcp__claude_ai_Gmail__authenticate", "Bash", "ToolSearch"):
         assert not re.search(matcher, name), name
+
+
+def blocking_check(tmp_path, monkeypatch, capsys, seconds, tty):
+    """One worker, a Jira check that blocks for `seconds`; returns stdout as it was when the check began
+    answering, and stdout after the first countdown."""
+    import asyncio
+    monkeypatch.setattr(status, "DIR", tmp_path)
+    monkeypatch.setattr(cli.jira, "logged_in", lambda: True)
+    monkeypatch.setattr(cli, "prs", lambda keys, repo_dir: {})
+    monkeypatch.setattr(cli, "OPS", loop.Ops(windows=lambda: {"PMAT-1"}, new_window=None, send=None, kill=None))
+    monkeypatch.setattr(cli.sys.stdout, "isatty", lambda: tty)
+    status.update("PMAT-1", ticket="PMAT-1", session_id="s1", launch_dir="/repos/a", state="idle")
+    during = []
+
+    async def snapshot(keys):
+        await asyncio.sleep(seconds)
+        during.append(capsys.readouterr().out)  # what the owner saw while the check was still running
+        return {}
+
+    monkeypatch.setattr(cli.jira, "snapshot", snapshot)
+
+    def sleep(seconds):
+        raise KeyboardInterrupt  # stop at the first countdown or the gap between checks
+
+    monkeypatch.setattr(cli.time, "sleep", sleep)
+    with pytest.raises(KeyboardInterrupt):
+        cli.main([])
+    return during[0]
+
+
+def test_without_a_terminal_a_line_says_jira_is_being_checked_before_the_check_returns(tmp_path, monkeypatch,
+                                                                                      capsys):
+    # PMAT-335: on start nothing was printed until the first Jira check returned, up to 2 minutes of blank screen.
+    during = blocking_check(tmp_path, monkeypatch, capsys, 0.1, tty=False)
+    assert "Checking Jira… (up to 2 min)" in during
+    assert "█" not in during  # no bar: redrawing would fill a log
+
+
+def test_in_a_terminal_the_jira_check_bar_grows_while_the_check_runs(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(cli, "JIRA_DEADLINE", 4)
+    during = blocking_check(tmp_path, monkeypatch, capsys, 2.5, tty=True)
+    frames = [f.count("█") for f in re.findall(r"Checking Jira  \[[█░]+\]", during)]
+    assert len(frames) >= 2 and frames == sorted(frames) and frames[-1] > frames[0], frames
