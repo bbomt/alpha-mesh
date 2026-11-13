@@ -70,8 +70,8 @@ echo "uv $*" >> "$STUB_LOG"
 # uv run python eval/scripts/check_gate.py <run> --baseline <f> --tolerance <t> --markdown <md>
 cp "$6" "$STUB_BASELINE_SEEN"
 case "$STUB_GATE" in
-  pass) echo "runs passed 142/195 (baseline 140), drop -2, tolerance 7 (model \`m\`, k=3)" > "${10}"; exit 0 ;;
-  fail) echo "runs passed 90/195 (baseline 140), drop 50, tolerance 7 (model \`m\`, k=3)" > "${10}"; exit 1 ;;
+  pass) echo "runs passed 142/195 · baseline 140/195 · needs at least 133/195 (tolerance 7) · change +2" > "${10}"; exit 0 ;;
+  fail) echo "runs passed 90/195 · baseline 140/195 · needs at least 133/195 (tolerance 7) · change -50" > "${10}"; exit 1 ;;
   crash) exit 2 ;;
 esac
 EOF
@@ -106,7 +106,7 @@ run "a stale branch is refused before any run or status" 3 pass 1 "" no || true
 if grep -q "run_eval" "$WORK/log"; then echo "  FAIL: a stale branch must not start the eval"; fails=$((fails + 1)); fi
 
 if run "a passing run posts pending, then success, and comments the report" 0 pass 0 "pending,success" yes; then
-  grep -q 'description=runs passed 142/195 (baseline 140), drop -2, tolerance 7' "$WORK/log" \
+  grep -q 'description=runs passed 142/195 · baseline 140/195 · needs at least 133/195 (tolerance 7) · change +2' "$WORK/log" \
     || { echo "  FAIL: the success status lacks the count"; fails=$((fails + 1)); }
   grep -q -- "--tolerance 7 " "$WORK/log" || { echo "  FAIL: not scored with master's tolerance"; fails=$((fails + 1)); }
   grep -q '"master-baseline"' "$WORK/baseline-seen" \
@@ -172,6 +172,22 @@ if [ "$code" -ne 0 ] && grep -q "\[ \] evals on head abc1234: missing" <<<"$out"
   echo "  PASS: --check prints the checklist and the next command"
 else
   echo "  FAIL: --check: exit $code"; echo "$out" | sed 's/^/    /'; fails=$((fails + 1))
+fi
+
+# --quick: k=1, the first repeat judged, scored with --quick; a PR comment, and never an evals status.
+: > "$WORK/log"; rm -f "$WORK/comment"
+set +e
+PATH="$WORK/bin:$PATH" HOME="$WORK/home" MESH_EVAL_GATE_DIR="$WORK/gates" STUB_LOG="$WORK/log" STUB_HEAD="$HEAD_SHA" \
+  STUB_GATE=pass STUB_COMMENT="$WORK/comment" STUB_BASELINE_SEEN="$WORK/baseline-seen" \
+  "$MESH_DIR/bin/mesh" eval-gate --quick "$URL" >/dev/null 2>&1
+code=$?
+set -e
+if [ "$code" -eq 0 ] && grep -q -- "--run quick-pr15-abc1234 --k 1 --judge-repeats first" "$WORK/log" \
+   && grep -q -- "--quick" <(grep "check_gate.py" "$WORK/log") && ! grep -q "context=evals" "$WORK/log" \
+   && grep -q "not the gate" "$WORK/comment"; then
+  echo "  PASS: --quick runs k=1, comments an early warning and posts no evals status"
+else
+  echo "  FAIL: --quick (exit $code)"; sed 's/^/    log: /' "$WORK/log"; fails=$((fails + 1))
 fi
 
 [ "$fails" -eq 0 ] || exit 1

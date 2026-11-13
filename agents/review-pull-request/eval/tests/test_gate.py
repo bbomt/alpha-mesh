@@ -54,11 +54,19 @@ def test_a_drop_within_the_tolerance_passes():
     assert (out["baseline_passed"], out["run_passed"], out["runs"], out["drop"]) == (20, 15, 30, 5)
 
 
-def test_a_drop_beyond_the_tolerance_fails_and_says_by_how_much():
+def test_a_drop_beyond_the_tolerance_fails_and_says_what_was_needed():
     out = gate(base(20), run_results(14))
     assert not out["passed"]
-    assert "runs passed 14/30 (baseline 20), drop 6 > tolerance 5" in out["reasons"]
-    assert "runs passed 14/30 (baseline 20), drop 6 > tolerance 5" in check_gate.render(out)
+    why = "runs passed 14/30, below the 15/30 needed (the baseline's 20 minus the tolerance 5)"
+    assert why in out["reasons"]
+    text = check_gate.render(out)
+    assert why in text
+    assert "runs passed 14/30 · baseline 20/30 · needs at least 15/30 (tolerance 5) · change -6" in text
+
+
+def test_exactly_the_tolerance_below_the_baseline_still_passes():
+    out = gate(base(20), run_results(15))
+    assert out["passed"] and "needs at least 15/30" in out["count"]
 
 
 def test_an_improvement_passes():
@@ -118,3 +126,39 @@ def test_results_holding_a_holdout_case_are_refused():
     res["results"]["results"].append(row(held, 0, review()))
     with pytest.raises(ValueError, match="hold-out"):
         gate(base(20), res)
+
+
+# The quick check (mesh eval-gate --quick): k=1 against the baseline's first repeat ───────────────────────────────
+
+def quick(baseline, res, **kw):
+    return check_gate.gate(baseline, res, {"model": MODEL, "k": kw.get("k", 1)}, cases(), tolerance=5, quick=True)
+
+
+def test_quick_compares_a_k1_run_with_the_baselines_first_repeat_and_a_scaled_tolerance():
+    baseline = base(20)  # first repeats: C0-C6 pass, 7 of 10
+    assert check_gate.quick_tolerance(5, 3) == 3 and check_gate.quick_tolerance(10, 3) == 6
+    ok = quick(baseline, run_results(4, k=1))
+    assert ok["passed"] and (ok["baseline_passed"], ok["runs"], ok["tolerance"]) == (7, 10, 3)
+    assert not quick(baseline, run_results(3, k=1))["passed"]
+    assert "quick check" in check_gate.render(ok)
+
+
+def test_quick_refuses_a_run_with_more_repeats():
+    out = quick(base(20), run_results(30), k=3)
+    assert not out["passed"] and any("k=1" in r for r in out["reasons"])
+
+
+# When to rebaseline ───────────────────────────────────────────────────────────────────────────────────────────────
+
+def test_a_rise_of_at_least_the_tolerance_suggests_a_rebaseline():
+    out = gate(base(10), run_results(15))
+    assert out["rebaseline"] and "raise the bar" in check_gate.render(out)
+    assert not gate(base(10), run_results(14))["rebaseline"]
+
+
+def test_enough_new_cases_suggest_a_rebaseline_and_a_drop_never_does():
+    baseline = base(20)
+    for case_id in IDS[5:]:
+        del baseline["cases"][case_id]
+    assert any("5 cases are new" in h for h in gate(baseline, run_results(30))["rebaseline"])
+    assert not gate(base(20), run_results(16))["rebaseline"]

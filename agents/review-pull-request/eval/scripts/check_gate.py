@@ -1,10 +1,10 @@
 """The regression gate (PMAT-312): does an eval run keep the baseline's score, within the noise?
 
-    uv run python eval/scripts/check_gate.py eval/runs/<run> [--tolerance N] [--markdown <file>]
+    uv run python eval/scripts/check_gate.py eval/runs/<run> [--tolerance N] [--markdown <file>] [--quick]
 
 It counts the development runs (case x repeat) that pass their case's line check and fails when that count drops
 more than the tolerance below the baseline's, on the cases both hold. It counts runs, not cases: between two runs of
-the same code about 1 case in 5 changes result, but the total barely moves (A/A test, PMAT-312), so a case-level
+the same code about 1 case in 5 changes result, but the total barely moves (PMAT-312's noise test), so a case-level
 rule would fail at random.
 
 It also fails, whatever the count, on a harness error, a missing case, or a run on another model or k than the
@@ -12,10 +12,14 @@ baseline's: those runs measure something else, and a model change needs a new ba
 
 Reported, never gating yet (the owner switches them on): security misses, failing style_only runs, and the judge's
 means against PMAT-311's provisional proposal. Exits 1 when the gate fails.
+
+--quick scores a k=1 run (mesh eval-gate --quick) against the baseline's first repeat, with the tolerance scaled to
+the smaller run (QUICK_TOLERANCE). It is a cheap early warning for large drops, never the gate.
 """
 
 import argparse
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -24,9 +28,17 @@ import baseline as bl  # noqa: E402
 import case_rules  # noqa: E402
 import judge_report  # noqa: E402
 
-# Runs the count may drop below the baseline's before the gate fails. Provisional: base6 and the A/A run aa1 of the
+# Runs the count may drop below the baseline's before the gate fails. Provisional: base6 and the rerun aa1 of the
 # same code differed by 2 of 195 (140 vs 142); 10 is about 5 points. Tighten it as same-code runs come in.
 TOLERANCE = 10
+REBASELINE_NEW_CASES = 5  # suggest a rebaseline once this many cases are new since the baseline (not gated)
+
+
+def quick_tolerance(tolerance: int, baseline_k: int) -> int:
+    """The tolerance for a k=1 run: the noise in a count grows with the square root of the runs, so a third of the
+    runs gets about 1/sqrt(3) of the tolerance (10 -> 6). In the same-code runs, the first repeat alone moved by 2
+    (47 vs 45 of 65)."""
+    return round(tolerance / math.sqrt(baseline_k))
 
 
 def gate_cases() -> list[dict]:
@@ -34,7 +46,8 @@ def gate_cases() -> list[dict]:
     return case_rules.development_cases()
 
 
-def gate(baseline: dict, results: dict, run: dict, cases: list[dict], tolerance: int = TOLERANCE) -> dict:
+def gate(baseline: dict, results: dict, run: dict, cases: list[dict], tolerance: int = TOLERANCE,
+         quick: bool = False) -> dict:
     held = case_rules.holdout_ids()
     if found := sorted({r["vars"]["case_id"] for r in results["results"]["results"]} & held):
         raise ValueError(f"{', '.join(found)}: hold-out cases; the gate reads development results only")
@@ -45,7 +58,11 @@ def gate(baseline: dict, results: dict, run: dict, cases: list[dict], tolerance:
     if run["model"] != baseline["model"]:
         reasons.append(f"model changed: the run used {run['model']}, the baseline {baseline['model']}; "
                        "rebaseline on the new model before gating")
-    if run["k"] != baseline["k"]:
+    if quick:
+        if run["k"] != 1:
+            reasons.append(f"a quick run has k=1, this one k={run['k']}")
+        tolerance = quick_tolerance(tolerance, baseline["k"])
+    elif run["k"] != baseline["k"]:
         reasons.append(f"the run has k={run['k']}, the baseline k={baseline['k']}")
     if errors := sorted(c for c, rs in runs.items() if any(r["result"] == "error" for r in rs)):
         reasons.append(f"harness error in {len(errors)} case(s): {', '.join(errors)}")
@@ -62,7 +79,8 @@ def gate(baseline: dict, results: dict, run: dict, cases: list[dict], tolerance:
         key = (bl.category_group(case), case["expected"]["action"])
         r = rows.setdefault(key, {"cases": 0, "baseline": 0, "run": 0, "runs": 0})
         r["cases"] += 1
-        r["baseline"] += baseline["cases"][case_id]["runs"].count("pass")
+        base_runs = baseline["cases"][case_id]["runs"][:1] if quick else baseline["cases"][case_id]["runs"]
+        r["baseline"] += base_runs.count("pass")
         r["run"] += [x["result"] for x in runs[case_id]].count("pass")
         r["runs"] += len(runs[case_id])
 
@@ -70,9 +88,13 @@ def gate(baseline: dict, results: dict, run: dict, cases: list[dict], tolerance:
     run_passed = sum(r["run"] for r in rows.values())
     total = sum(r["runs"] for r in rows.values())
     drop = baseline_passed - run_passed
-    count = f"runs passed {run_passed}/{total} (baseline {baseline_passed}), drop {drop}"
+    needed = baseline_passed - tolerance
+    change = f"{-drop:+d}" if drop else "no change"
+    count = (f"runs passed {run_passed}/{total} · baseline {baseline_passed}/{total} · "
+             f"needs at least {needed}/{total} (tolerance {tolerance}) · change {change}")
     if drop > tolerance:
-        reasons.append(f"{count} > tolerance {tolerance}")
+        reasons.append(f"runs passed {run_passed}/{total}, below the {needed}/{total} needed "
+                       f"(the baseline's {baseline_passed} minus the tolerance {tolerance})")
 
     def failing(pred):
         return sum(x["result"] == "fail" for c in gated if pred(by_id[c]) for x in runs[c])
@@ -84,15 +106,30 @@ def gate(baseline: dict, results: dict, run: dict, cases: list[dict], tolerance:
         "security_misses": failing(lambda c: c["category"] == "security" and c["expected"]["action"] == "raise_true_bug"),
         "style_only_failures": failing(lambda c: c["category"] == "style_only"),
         "judge": judge_report.summarise(judge_report.collect(results, cases)),
-        "model": run["model"], "k": run["k"],
+        "model": run["model"], "k": run["k"], "quick": quick,
+        "rebaseline": [] if quick else rebaseline_hints(drop, tolerance, not_gated),
     }
+
+
+def rebaseline_hints(drop: int, tolerance: int, not_gated: list[str]) -> list[str]:
+    """When the report should suggest a rebaseline (eval/README.md, Rebaselining). Never after a drop: that would
+    lower the bar."""
+    hints = []
+    if drop <= -tolerance:
+        hints.append(f"this run passes {-drop} more runs than the baseline (at least the tolerance): rebaseline in this "
+                     "PR to raise the bar")
+    if len(not_gated) >= REBASELINE_NEW_CASES:
+        hints.append(f"{len(not_gated)} cases are new since the baseline and not gated: rebaseline to gate them")
+    return hints
 
 
 def render(out: dict) -> str:
     fmt = lambda v: "n/a" if v is None else f"{v:.2f}"  # noqa: E731
     verdict = "PASS" if out["passed"] else "FAIL"
-    lines = [f"## evals gate: {verdict}", "",
-             f"{out['count']}, tolerance {out['tolerance']} (model `{out['model']}`, k={out['k']})", ""]
+    title = "quick check (k=1, an early warning, not the gate)" if out["quick"] else "evals gate"
+    lines = [f"## {title}: {verdict}", "", out["count"], "",
+             f"Model `{out['model']}`, k={out['k']}. A run is one review of one case; it passes when the review does "
+             "what the case expects. The baseline is the agent as it is on master, not a target.", ""]
     if out["reasons"]:
         lines += ["**Failed because:**", ""] + [f"- {r}" for r in out["reasons"]] + [""]
     lines += ["| Category | Expected action | Cases | Baseline runs passed | Run runs passed |",
@@ -100,6 +137,8 @@ def render(out: dict) -> str:
     for key, r in out["rows"].items():
         group, action = key.split("|")
         lines.append(f"| {group} | `{action}` | {r['cases']} | {r['baseline']}/{r['runs']} | {r['run']}/{r['runs']} |")
+    if out["rebaseline"]:
+        lines += ["", "**Rebaseline suggested:**", ""] + [f"- {h}" for h in out["rebaseline"]]
     if out["not_gated"]:
         lines += ["", f"New since the baseline, not gated: {', '.join(out['not_gated'])}"]
     j = out["judge"]
@@ -120,10 +159,12 @@ def main(argv=None) -> int:
     parser.add_argument("--baseline", type=Path, default=bl.BASELINE)
     parser.add_argument("--tolerance", type=int, default=TOLERANCE)
     parser.add_argument("--markdown", type=Path, help="also write the report to this file")
+    parser.add_argument("--quick", action="store_true", help="score a k=1 run against the baseline's first repeat")
     args = parser.parse_args(argv)
 
     out = gate(json.loads(args.baseline.read_text()), json.loads((args.run_dir / "results.json").read_text()),
-               json.loads((args.run_dir / "run.json").read_text()), gate_cases(), tolerance=args.tolerance)
+               json.loads((args.run_dir / "run.json").read_text()), gate_cases(), tolerance=args.tolerance,
+               quick=args.quick)
     text = render(out)
     print(text)
     if args.markdown:

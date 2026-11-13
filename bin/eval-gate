@@ -3,6 +3,7 @@
 # The review-pull-request eval gate (PMAT-312).
 #
 #   mesh eval-gate <PR url>                        run the gate on the PR's head; post `evals` and the score table
+#   mesh eval-gate --quick <PR url>                a k=1 early warning (a third of the quota): a PR comment, no status
 #   mesh eval-gate --check <PR url>                the checklist mesh merge-pr enforces, with the next command
 #   mesh eval-gate --override <PR url> --reason R  post `evals` = success by hand ("override: R"), recorded on the PR
 #   mesh eval-gate --master                        run the gate on master's head; post `eval-audit` there; on a
@@ -20,7 +21,7 @@ scripts="$mesh_dir/$agent_rel/eval/scripts"
 pr_re='^https://github\.com/([^/]+/[^/]+)/pull/([0-9]+)$'
 
 usage() {
-  sed -n '5,8p' "${BASH_SOURCE[0]}" | sed 's/^# */usage: /' >&2
+  sed -n '5,9p' "${BASH_SOURCE[0]}" | sed 's/^# */usage: /' >&2
   exit 2
 }
 
@@ -28,11 +29,13 @@ post_status() {  # post_status <repo> <sha> <context> <state> <description>
   gh api "repos/$1/statuses/$2" -f state="$4" -f context="$3" -f description="${5:0:140}" >/dev/null
 }
 
-# run_gate <head> <run name> <base ref>: run the eval at <head> and score it against <base ref>'s baseline and
-# tolerance. Leaves the report in $run_dir/gate.md and the verdict in $gate (0 pass, else fail); exits on a run the
-# gate could not score, after posting $context = error on <head>.
+# run_gate <head> <run name> <base ref> [quick]: run the eval at <head> and score it against <base ref>'s baseline
+# and tolerance. Leaves the report in $run_dir/gate.md and the verdict in $gate (0 pass, else fail); exits on a run
+# the gate could not score, after posting $context = error on <head> (unless $context is empty: the quick check).
 run_gate() {
-  local head="$1" run="$2" ref="$3" baseline_json tolerance
+  local head="$1" run="$2" ref="$3" mode="${4:-}" baseline_json tolerance
+  local eval_args=(--judge-repeats all) check_args=()
+  [ "$mode" = quick ] && eval_args=(--k 1 --judge-repeats first) check_args=(--quick)
   baseline_json="$(git -C "$mesh_dir" show "$ref:$agent_rel/eval/baseline.json")"
   tolerance="$(git -C "$mesh_dir" show "$ref:$agent_rel/eval/scripts/check_gate.py" \
     | sed -n 's/^TOLERANCE = \([0-9][0-9]*\).*/\1/p')"
@@ -57,17 +60,17 @@ run_gate() {
   echo "Eval gate: ${head:0:7}, run $run, tolerance $tolerance (worktree $wt)" >&2
 
   # The eval's own exit code says only whether every case passed; the gate decides.
-  "$agent/eval/scripts/run_eval.sh" --run "$run" --judge-repeats all || true
+  "$agent/eval/scripts/run_eval.sh" --run "$run" "${eval_args[@]}" || true
   gate=0
   rm -f "$run_dir/gate.md"  # a report left by an earlier gate run on this head must never be posted as this one's
   (cd "$agent" && uv run python eval/scripts/check_gate.py "eval/runs/$run" --baseline "$run_dir/baseline-${ref##*/}.json" \
-     --tolerance "$tolerance" --markdown "$run_dir/gate.md") || gate=$?
+     --tolerance "$tolerance" --markdown "$run_dir/gate.md" "${check_args[@]}") || gate=$?
   if [ ! -s "$run_dir/gate.md" ]; then
-    post_status "$repo" "$head" "$context" error "the gate could not score run $run: see its log"
+    [ -z "$context" ] || post_status "$repo" "$head" "$context" error "the gate could not score run $run: see its log"
     echo "ERROR: check_gate.py wrote no report (exit $gate)" >&2
     exit 1
   fi
-  summary="$(grep -m1 '^runs passed' "$run_dir/gate.md" | cut -d'(' -f1-2)"
+  summary="$(grep -m1 '^runs passed' "$run_dir/gate.md")"
 }
 
 remove_worktree() {
@@ -162,6 +165,23 @@ Team lead, next:
 Developer of $from: redo the change on a new branch and gate it before merging.
 MSG
     exit 1 ;;
+
+  --quick)
+    [ $# -eq 2 ] && [[ "$2" =~ $pr_re ]] || usage
+    url="$2" repo="${BASH_REMATCH[1]}" number="${BASH_REMATCH[2]}"
+    read -r state head base < <(gh pr view "$url" --json state,headRefOid,baseRefName \
+      | jq -r '"\(.state) \(.headRefOid) \(.baseRefName)"')
+    [ "$state" = OPEN ] || { echo "Not run: the PR is not open (it is $state)." >&2; exit 1; }
+    git -C "$mesh_dir" fetch -q origin "$base" "pull/$number/head"
+    context=""  # an early warning only: it never posts evals, so it can never let a PR merge
+    run_gate "$head" "quick-pr$number-${head:0:7}" "origin/$base" quick
+    { echo "**mesh eval-gate --quick** on \`${head:0:7}\`: an early warning (k=1), **not the gate**. It catches only a"
+      echo "large drop; the full gate runs at merge (\`mesh merge-pr\` offers it)."; echo; cat "$run_dir/gate.md"
+    } > "$run_dir/gate-comment.md"
+    gh pr comment "$url" --body-file "$run_dir/gate-comment.md" >/dev/null
+    cat "$run_dir/gate.md"
+    remove_worktree
+    exit "$gate" ;;
 
   -*) usage ;;
 esac

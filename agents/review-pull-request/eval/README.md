@@ -552,9 +552,11 @@ An agent PR merges only if its eval keeps the baseline's score, within the noise
 not in GitHub Actions: no Actions minutes, no secrets in GitHub.
 
 **The steps for an agent PR.** The full gate is expensive (about a day's free quota), so it runs once, at merge time,
-after the team lead has accepted the rest of the ticket's code:
+after the team lead has accepted the rest of the ticket's code. Before that, the worker runs the quick check:
 
 ```bash
+mesh eval-gate --quick https://github.com/bbomt/alpha-mesh/pull/<n>   # the worker, before AWAITING-MERGE: k=1, a third
+                                                                     #   of the quota; a PR comment, never a status
 mesh eval-gate --check https://github.com/bbomt/alpha-mesh/pull/<n>   # anyone: the checklist and the next command
 mesh merge-pr  https://github.com/bbomt/alpha-mesh/pull/<n>           # the team lead: if the gate is all that is missing,
                                                                      #   it offers to run it now, then merges [y/N]
@@ -594,7 +596,7 @@ uv run python eval/scripts/check_gate.py eval/runs/<run>        # the gate rule 
   test fix after review), and otherwise needs a new gate run.
 - **The rule (`check_gate.py`):** it counts the runs (case × repeat) that pass their case's line check, on the cases
   the baseline also holds, and fails when the count drops more than `TOLERANCE` (10) below the baseline's. It counts
-  runs, not cases: in the A/A test (the same code as base6, run again as `PMAT-312-aa1`), 14 of the 65 cases changed
+  runs, not cases: in the noise test (the same, unchanged code as base6, run again as `PMAT-312-aa1`), 14 of the 65 cases changed
   result (10 new failures, 4 new passes) while the runs passed moved from 140/195 to 142/195. The rows per category
   move too (`public` went from 19/24 to 14/24), so only the total gates. 10 is provisional, from that one sample:
   tighten it as same-code runs come in, or as the agent gets less flaky.
@@ -603,9 +605,13 @@ uv run python eval/scripts/check_gate.py eval/runs/<run>        # the gate rule 
   first.
 - **Reported, not gating yet** (the owner switches them on): security misses, failing `style_only` runs, and the
   judge's means against PMAT-311's provisional proposal.
+- **The quick check (`mesh eval-gate --quick`)** runs each case once (k=1, 65 reviews, only the judge's first
+  repeat) and compares it with the baseline's first repeat, with the tolerance scaled down to 6 (`quick_tolerance`: the
+  noise grows with the square root of the runs; between base6 and aa1 the first repeat moved by 2 of 65). It catches a
+  large drop early and cheaply, and posts only a PR comment: it can never let a PR merge.
 - **Cost:** the agent is free; the judge is about $0.005 per judged run, so about $1 per gate run. **Time:** about
   75 min (`PMAT-312-aa1`: 1 h 16 min at concurrency 8). **Quota:** a full run uses about a day's free-model quota
-  on OpenRouter (`free-models-per-day-high-balance`; the second A/A run on 2026-11-13 hit it after 32 minutes), shared
+  on OpenRouter (`free-models-per-day-high-balance`; the second noise-test run on 2026-11-13 hit it after 32 minutes), shared
   with every `mesh review-pull-request`. Run `mesh eval-gate` again after the reset: it resumes.
 - **A merge that skips the gate is caught, not prevented.** The repo is private on GitHub's free plan, so `evals`
   cannot be a required check and GitHub's merge button ignores it. So on every push to master the `eval-audit`
@@ -624,7 +630,7 @@ uv run python eval/scripts/check_gate.py eval/runs/<run>        # the gate rule 
 run, and `promptfoo view` (see [How to run](#how-to-run)) shows each review.
 
 ```
-runs passed 142/195 (baseline 140), drop -2, tolerance 10
+runs passed 142/195 · baseline 140/195 · needs at least 130/195 (tolerance 10) · change +2
 | Category | Expected action | Cases | Baseline runs passed | Run runs passed |
 | security | `raise_true_bug` | 6 | 18/18 | 18/18 |
 | public   | `raise_true_bug` | 8 | 19/24 | 14/24 |
@@ -632,7 +638,9 @@ runs passed 142/195 (baseline 140), drop -2, tolerance 10
 
 - **The first line is the verdict.** 195 runs = 65 development cases × 3 repeats; each run passes when the review
   does what its case expects (raise the true bug, skip the false one, say nothing on clean code). The baseline passed
-  140 (72%): that is the agent **today**, not a target. The gate asks only "no worse than today, beyond the noise".
+  140 (72%): that is the agent **today**, not a target. "Needs at least 130/195" is the baseline minus the tolerance:
+  the gate fails at 129 or below. "Change +2" is this run against the baseline (2 more runs passed). The gate asks
+  only "no worse than today, beyond the noise".
 - **The rows say where a drop comes from.** They are noisy on their own (a row of 24 runs moved by 5 between two runs
   of the same code), so read a row's change as a lead for error analysis, not a verdict.
 - **"Reported, not gating yet"** is how good the agent is in absolute terms (PMAT-311's provisional proposal, for
@@ -643,13 +651,21 @@ runs passed 142/195 (baseline 140), drop -2, tolerance 10
 `TOLERANCE` in `scripts/check_gate.py`, committed: the drop in runs passed the gate allows. Smaller is stricter; 0
 fails any drop at all, which the noise alone would trip often. `mesh eval-gate` always uses master's value, so a PR
 cannot loosen its own gate, and there is no flag for it: retrying a failed gate with a larger T until it passes would
-make the gate meaningless. Change T in its own reviewed PR, from same-code runs (A/A). To see a finished run under
+make the gate meaningless. Change T in its own reviewed PR, from how far runs of the same, unchanged code differ (a
+noise test). To see a finished run under
 another T, without running anything again: `check_gate.py eval/runs/<run> --tolerance 5`.
 
 #### Rebaselining, and new cases
 
-Rebaselines are made by hand, never automatically, in the PR whose change is meant to move the score (a prompt
-rework, the temperature, a new model):
+Rebaselines are made by hand, never automatically. **When:**
+
+- **Always, for a model change.** The gate refuses to compare runs of two different models.
+- **When a change is meant to improve the score and does:** the run passes at least the tolerance more runs than the
+  baseline. The gate report then says "Rebaseline suggested", so the bar moves up and the gain can't be lost quietly.
+- **When cases change:** 5 or more cases new since the baseline (the report suggests it too), or a fixed label.
+- **Never after a drop.** That lowers the bar; only the owner can accept a deliberate trade-off.
+
+**How**, in the PR whose change moved the score:
 
 1. The gate runs on the PR as usual. A **model** change always fails it (the run's model is not the baseline's): the
    owner reads the new run's report and uses `mesh eval-gate --override <PR url> --reason "new model: rebaselined"`.
