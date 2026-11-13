@@ -140,6 +140,17 @@ timed out, retrying next check"), that tick passes on no comments and closes no 
 still resumed, and the next tick tries Jira again. The same applies to the first check after a start.
 There is no deadline while logging in, since the owner is pasting the redirect URL.
 
+While a check runs, the screen shows it is waiting on Jira rather than looking hung (PMAT-335). In a terminal
+a bar fills over the deadline, redrawn each second: on its own line before the first check (the rest of the
+screen comes after it), and in the header in place of the countdown on later checks:
+
+```
+Checking Jira  [██████████░░░░░░░░░░░░░░]  0:48 / 2:00
+```
+
+Without a terminal (e.g. piped to a log) one line `Checking Jira… (up to 2 min)` is printed before each check
+instead. Neither shows while logging in, so the login prompt is never drawn over.
+
 ### The screen
 
 Redrawn in place each tick, as three boxes, plus a Queue box under Workers while tickets wait (colour when run in a terminal; the header counts down to the next
