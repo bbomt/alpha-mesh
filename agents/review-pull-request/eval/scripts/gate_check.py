@@ -59,29 +59,37 @@ def check(url: str, gh=_gh) -> Result:
     if behind:
         nxt = f"merge {base} into the branch, rerun the tests, push"
 
-    audit = _state(gh, repo, base, "eval-audit")
-    revert = branch.startswith(REVERT_PREFIX)
-    red = audit in ("failure", "error")
-    item(not red or revert, f"{base} audit: {audit}" + (" (this is the revert PR)" if red and revert else ""))
-    if red and not revert:
-        nxt = nxt or "mesh eval-gate --master   (master holds an agent change merged without a passing gate)"
-
     gated = gate_triggers.triggers(gh("pr", "diff", url, "--name-only").split())
+    gate_lines, gate_ok = [], True
     if not gated:
-        item(True, "changes no gated file: no eval needed")
+        gate_lines.append((True, "changes no gated file: no eval needed"))
     else:
-        item(True, "changes gated files: " + ", ".join(gated))
+        gate_lines.append((True, "changes gated files: " + ", ".join(gated)))
         state = _state(gh, repo, head, "evals")
+        carried = None if state == "success" else _carried(gh, repo, number, head)
         if state == "success":
-            item(True, f"evals on head {head[:7]}: success")
+            gate_lines.append((True, f"evals on head {head[:7]}: success"))
+        elif carried:
+            gate_lines.append((True, f"evals on head {head[:7]}: {state}, carried from {carried[:7]} "
+                                     "(success there, no gated file changed since)"))
         else:
-            carried = _carried(gh, repo, number, head)
-            if carried:
-                item(True, f"evals on head {head[:7]}: {state}, carried from {carried[:7]} "
-                           "(success there, no gated file changed since)")
-            else:
-                item(False, f"evals on head {head[:7]}: {state}")
-                nxt = nxt or f"mesh eval-gate {url}"
+            gate_ok = False
+            gate_lines.append((False, f"evals on head {head[:7]}: {state}"))
+
+    # Red master: only a PR that recovers it may merge, the revert PR or a gated PR whose gate passed on this
+    # up-to-date head (the gate then ran on the whole code, as eval_audit.py counts it).
+    audit = _state(gh, repo, base, "eval-audit")
+    red = audit in ("failure", "error")
+    revert = branch.startswith(REVERT_PREFIX)
+    recovers = revert or (bool(gated) and gate_ok)
+    note = " (this is the revert PR)" if red and revert else " (this PR's passing gate recovers it)" if red and recovers else ""
+    item(not red or recovers, f"{base} audit: {audit}{note}")
+    if red and not recovers:
+        nxt = nxt or "mesh eval-gate --master   (master holds an agent change merged without a passing gate)"
+    for passed, text in gate_lines:
+        item(passed, text)
+    if not gate_ok:
+        nxt = nxt or f"mesh eval-gate {url}"
     if nxt:
         lines.append(f"next: {nxt}")
     return Result(ok, "\n".join(lines))

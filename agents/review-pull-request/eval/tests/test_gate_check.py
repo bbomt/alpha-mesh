@@ -95,3 +95,13 @@ def test_a_stale_branch_is_shown_unticked():
     result, _ = check(head_evals="success", behind=2)
     assert not result.ok
     assert "[ ] up to date with master: 2 commit(s) behind" in result.text
+
+
+def test_a_red_master_lets_a_gated_pr_with_a_passing_gate_through():
+    result, _ = check(audit="failure", head_evals="success")
+    assert result.ok and "recovers it" in result.text
+
+
+def test_a_red_master_blocks_a_gated_pr_whose_gate_has_not_passed():
+    result, _ = check(audit="failure")
+    assert not result.ok and "mesh eval-gate --master" in result.text
