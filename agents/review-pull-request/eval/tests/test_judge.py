@@ -78,7 +78,7 @@ def judged():
     run.factory_kwargs: what each judge chat model was made with (extra_body)."""
     factory_kwargs = []
 
-    def run(c, r, answer):
+    def run(c, r, answer, reader=FileReader):
         seen = []
 
         def model(messages, tools):
@@ -89,7 +89,7 @@ def judged():
                      exclusions=list(SENSITIVE_PATTERNS))
         with patch.object(llm_rubric, "judge_config", return_value=cfg), \
                 patch.object(llm_rubric, "get_diff", return_value=DIFF), \
-                patch.object(llm_rubric, "GitHubFileReader", FileReader), \
+                patch.object(llm_rubric, "GitHubFileReader", reader), \
                 patch.object(llm_rubric, "github_token", return_value="gh-token"), \
                 patch.object(llm_rubric, "make_judge_chat_model",
                              lambda meta, **kw: factory_kwargs.append(kw) or chat_model_factory(model)):
@@ -263,6 +263,71 @@ def test_a_stored_review_without_files_read_is_an_error_not_an_unfair_score(judg
     graded, seen = judged(case(min_severity="low"), r, reply())
     assert graded["pass"] is True and "files_read" in graded["metadata"]["judge_error"]
     assert not seen, "the judge must not score without the agent's context"
+
+
+# PMAT-325 phase 2: a review with a trace is judged on what its tool calls returned, with no GitHub read.
+
+HINT = "Error: file not found: src/lop.py\nFiles with the same name: src/loop.py"
+
+
+def traced(tmp_path, reads, files=("src/queue.py",)):
+    """A review whose trace holds `reads`, (span file, path, output) in order, plus one span per file."""
+    records = [{"type": "trace", "id": "t", "name": "review", "timestamp": "", "metadata": {}}]
+    for f in files:
+        records.append({"type": "span", "id": f, "trace_id": "t", "name": "file_review", "input": {"file": f},
+                        "output": {}, "start_time": "", "end_time": ""})
+    records += [{"type": "tool", "id": f"r{i}", "trace_id": "t", "parent_observation_id": f, "name": "read_file",
+                 "input": {"path": p, "reason": "r"}, "output": out, "start_time": ""}
+                for i, (f, p, out) in enumerate(reads)]
+    path = tmp_path / "trace.jsonl"
+    path.write_text("".join(json.dumps(r) + "\n" for r in records))
+    r = review(finding())
+    del r["files_read"]  # a trace alone must be enough
+    return {**r, "files": list(files), "trace": str(path)}
+
+
+class NoGitHub(FileReader):
+    def read_file(self, path, max_lines):
+        raise AssertionError(f"the judge read {path} from GitHub, but the review has a trace")
+
+
+def test_a_traced_review_is_judged_on_what_the_tools_returned_without_reading_github(tmp_path, judged):
+    from review_pull_request.stage2 import ALREADY_READ_NOTE, NOT_FOUND_AGAIN_NOTE
+
+    r = traced(tmp_path, [("src/queue.py", "src/loop.py", "TRACED-LOOP-PY"),
+                          ("src/queue.py", "src/lop.py", HINT),
+                          ("src/queue.py", "src/loop.py", ALREADY_READ_NOTE),
+                          ("src/queue.py", "src/lop.py", NOT_FOUND_AGAIN_NOTE)])
+    graded, seen = judged(case(min_severity="low"), r, reply(), reader=NoGitHub)
+    files = seen[0][1]["content"].split("<files_read>")[1].split("</files_read>")[0]
+    assert "namedScores" in graded, graded["reason"]
+    assert '<file path="src/loop.py">\nTRACED-LOOP-PY\n</file>' in files
+    assert f'<file path="src/lop.py">\n{HINT}\n</file>' in files, "the not-found hint the agent got"
+    assert ALREADY_READ_NOTE not in files and NOT_FOUND_AGAIN_NOTE not in files and "LOOP-PY-MARKER" not in files
+
+
+def test_a_traced_review_that_read_nothing_is_judged_as_reading_nothing(tmp_path, judged):
+    _, seen = judged(case(min_severity="low"), traced(tmp_path, []), reply(), reader=NoGitHub)
+    assert "The agent read no files" in seen[0][1]["content"]
+
+
+def test_a_review_without_a_trace_still_refetches_what_it_read(judged):
+    """Until PMAT-334: runs from before the trace (owner, PMAT-325 comment 13728)."""
+    _, seen = judged(case(min_severity="low"), review(finding()), reply())
+    assert "LOOP-PY-MARKER" in seen[0][1]["content"]
+
+
+def test_a_trace_that_is_gone_is_an_error_not_a_score(tmp_path, judged):
+    r = traced(tmp_path, [])
+    os.remove(r["trace"])
+    graded, seen = judged(case(min_severity="low"), r, reply(), reader=NoGitHub)
+    assert r["trace"] in graded["metadata"]["judge_error"] and not seen
+
+
+def test_a_trace_missing_a_reviewed_file_is_an_error_not_a_score(tmp_path, judged):
+    r = {**traced(tmp_path, []), "files": ["src/queue.py", "src/other.py"]}
+    graded, seen = judged(case(min_severity="low"), r, reply(), reader=NoGitHub)
+    assert "src/other.py" in graded["metadata"]["judge_error"] and not seen
 
 
 def test_a_case_from_a_pr_gets_its_description_from_the_pr(judged):

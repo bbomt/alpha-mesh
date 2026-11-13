@@ -4,7 +4,8 @@
 
 Writes eval/runs/judge-labelling/sheet.md (gitignored: it holds reviews and diffs) and, if it does not exist yet,
 eval/judge/gold-human-calibration.json. Scoring is blind, so the sheet shows no judge score and no line-window result. Reads the
-stored run for the sampled cases only, so no hold-out review is opened.
+stored run for the sampled cases only, so no hold-out review is opened. The files the agent read are the judge's
+(llm_rubric.agent_context): from each review's trace, or fetched again for a run without one.
 """
 
 import argparse
