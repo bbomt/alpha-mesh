@@ -13,7 +13,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-REQUIRED_ENV_VARS = ["CODE_REVIEW_URL", "CODE_REVIEW_TOKEN", "CODE_REVIEW_MODEL"]
+# The model is not here: it is [model] review in review_config.toml, committed, so a model change is a PR (PMAT-312).
+REQUIRED_ENV_VARS = ["CODE_REVIEW_URL", "CODE_REVIEW_TOKEN"]
 
 # Always excluded, even if .pr-review-ignore is missing or misplaced: token-bearing paths.
 SENSITIVE_PATTERNS = ["**/.env", "**/.env.*", "**/.envrc", "**/.claude/*", "**/.mesh/*", "**/config/active.json"]
@@ -100,6 +101,17 @@ def _load_toml(config_path: str | None) -> dict:
     return toml.load(str(p))
 
 
+def configured_model(role: str, config_path: str | None = None) -> str:
+    """[model] <role> in review_config.toml: `review` for mesh review-pull-request, `gate` for the eval gate. Exits
+    naming the setting when it is missing."""
+    model = _load_toml(config_path).get("model", {}).get(role, "")
+    if not isinstance(model, str) or not model:
+        print(f"ERROR: [model] {role} is not set in review_config.toml. Set it there: the agent's model is "
+              "committed, not in .env (PMAT-312).", file=sys.stderr)
+        sys.exit(1)
+    return model
+
+
 @dataclass
 class Config:
     model: str
@@ -149,12 +161,13 @@ def load_config(args) -> Config:
             )
             sys.exit(1)
 
-    model = os.environ.get("CODE_REVIEW_MODEL", "")
+    if os.environ.get("CODE_REVIEW_MODEL"):
+        print("WARNING: CODE_REVIEW_MODEL in .env is no longer read: the model is [model] review in "
+              "agents/review-pull-request/review_config.toml (PMAT-312). Remove it from .env.", file=sys.stderr)
+    model = args.model or configured_model("review", args.config)
     api_url = os.environ.get("CODE_REVIEW_URL", "")
     api_token = os.environ.get("CODE_REVIEW_TOKEN", "")
 
-    if args.model:
-        model = args.model
     if args.base:
         base_branch = args.base
     else:

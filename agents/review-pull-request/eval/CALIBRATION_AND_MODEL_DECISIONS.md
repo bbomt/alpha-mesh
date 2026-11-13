@@ -21,7 +21,7 @@ must be cheap and consistent. Judge Calibration is what shows the cheap judge gr
 
 | Role | Model | Where | `.env` |
 |---|---|---|---|
-| Agent (eval runs) | `z-ai/glm-5.3-flash` | OpenRouter | `CODE_REVIEW_MODEL` / `--model` |
+| Agent (eval runs) | `z-ai/glm-5.3-flash` | OpenRouter | `[model] gate` in `review_config.toml` / `--model` |
 | Judge | `minimax/minimax-m3.1-flash` | OpenRouter, pinned to the **Minimax** host, no fallback | `EVAL_JUDGE_MODEL`, `EVAL_JUDGE_URL`, `EVAL_JUDGE_TOKEN`, `EVAL_JUDGE_PROVIDER` |
 | Silver labeller | `openai/gpt-6.1-sol` (effort high, 3 passes, median) | OpenRouter | `SILVER_CALIBRATION_MODEL`, `_URL`, `_TOKEN` |
 

@@ -27,7 +27,8 @@ mesh review-pull-request https://github.com/org/repo/pull/123 --force-rerun
 ## Prerequisites
 
 - `gh` CLI installed and authenticated (`gh auth login`), or a `GITHUB_TOKEN` environment variable
-- `.env` file populated with `CODE_REVIEW_URL`, `CODE_REVIEW_TOKEN`, `CODE_REVIEW_MODEL`
+- `.env` file populated with `CODE_REVIEW_URL`, `CODE_REVIEW_TOKEN`. The model is `[model] review` in
+  `review_config.toml`, committed, so a model change is a PR the eval gate sees (PMAT-312)
 - AWS credentials for the checkpoint store (DynamoDB + S3, see [Checkpoint infrastructure](#checkpoint-infrastructure-aws-cdk)):
   on the dev EC2 the SSO `dev-EC2` permission set (`aws sso login` when the session expires). Without
   them the run stops before reviewing anything. `--dry-run` needs no AWS.
@@ -148,7 +149,7 @@ compare API's limit) fails the review instead of reviewing a possibly truncated 
 | `--no-output` | Suppress stdout output (useful with `--no-post-comment` in CI) |
 | `--hide-pr-comment` | Post to PR but don't print the report to stdout |
 | `--verbose` | Print detailed logs to stderr |
-| `--model <name>` | Override `CODE_REVIEW_MODEL` from `.env` |
+| `--model <name>` | Override `[model] review` from `review_config.toml` |
 | `--config <path>` | Custom TOML config file (default: `review_config.toml`) |
 | `--repo-path <path>` | Local repo path (default: current directory) |
 
@@ -210,12 +211,12 @@ GitHub rejects comments over 65,536 characters, so a report longer than 65,000 i
 
 ## Failure behaviour
 
-If an LLM API call fails (for example a `404` because the model in `CODE_REVIEW_MODEL` is not available), the review **aborts**. The agent never posts partial results and never posts a "No issues found" comment for files it could not review. The files already reviewed are saved: run the same command again to resume (see [Resuming a review](#resuming-a-review)).
+If an LLM API call fails (for example a `404` because the model in `[model] review` is not available), the review **aborts**. The agent never posts partial results and never posts a "No issues found" comment for files it could not review. The files already reviewed are saved: run the same command again to resume (see [Resuming a review](#resuming-a-review)).
 
 On failure it:
 
 - prints the error, the step or file being reviewed, the model and the API host to stderr (the token is never printed)
-- tells you to check `CODE_REVIEW_MODEL` / `CODE_REVIEW_URL` / `CODE_REVIEW_TOKEN` in `.env`
+- tells you to check `[model] review` in `review_config.toml` and `CODE_REVIEW_URL` / `CODE_REVIEW_TOKEN` in `.env`
 - posts nothing to the PR
 - says how much completed work is kept (`Completed work is kept: overview + N file(s)`)
 - exits with a non-zero code (`1`)
@@ -405,7 +406,7 @@ from any directory. The bash wrapper does not read it. Rules:
 |----------|-------------|
 | `CODE_REVIEW_URL` | Base URL of the LLM API (e.g. OpenRouter endpoint) |
 | `CODE_REVIEW_TOKEN` | API token / bearer token |
-| `CODE_REVIEW_MODEL` | Model used for the whole review, both the overview pass and the per-file reviews (e.g. `deepseek/deepseek-r1`); `--model` overrides it |
+| `CODE_REVIEW_MODEL` | No longer read (PMAT-312): the model is `[model] review` in `review_config.toml`; a review warns if it is still set |
 
 Model names use `{provider}/{modelname}` (the OpenRouter standard, e.g. `openai/gpt-oss-120b`). For
 `openrouter.ai` the full name is sent; for any other endpoint (OpenAI, MiniMax, Ollama, Anthropic's

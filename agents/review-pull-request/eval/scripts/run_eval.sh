@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Run the evals (PMAT-304): every development case in eval/cases, reviewed at its raised_sha, k times.
+# Run the evals (PMAT-304): every development case in eval/cases, reviewed at its raised_sha, k times, on the
+# model --model names, else [model] gate in review_config.toml.
 #
 #   eval/scripts/run_eval.sh [--model <model>] [--k <n>] [--run <name>] [--judge-repeats first|all] [--holdout] [promptfoo eval args...]
 #   eval/scripts/run_eval.sh --stored <run dir> [--k <n>] [--run <name>] [--judge-repeats first|all] [promptfoo eval args...]
@@ -40,8 +41,8 @@ if [[ -n "$STORED" ]]; then
   RUN="${RUN:-judge-$(basename "$STORED")-$(date +%Y%m%d-%H%M)}"
 fi
 K="${K:-3}"
-[[ -n "$MODEL" ]] || MODEL="$(grep -E '^CODE_REVIEW_MODEL=' "$AGENT/../../.env" | cut -d= -f2- | tr -d '"' || true)"
-[[ -n "$MODEL" ]] || { echo "ERROR: no model: pass --model or set CODE_REVIEW_MODEL in .env" >&2; exit 1; }
+# The default is the gate's model ([model] gate in review_config.toml), so a run compares with baseline.json.
+[[ -n "$MODEL" ]] || MODEL="$("$AGENT/.venv/bin/python" -c 'from review_pull_request.config import configured_model; print(configured_model("gate"))')"
 RUN="${RUN:-$(date +%Y%m%d-%H%M)-${MODEL//[^A-Za-z0-9.-]/_}}"
 RUN_DIR="$EVAL/runs/$RUN"
 mkdir -p "$RUN_DIR"

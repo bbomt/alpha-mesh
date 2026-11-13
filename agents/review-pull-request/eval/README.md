@@ -169,7 +169,7 @@ another case's file at the same repo and `raised_sha`: a file cannot be both cle
 
 The owner's decisions, 2026-11-10. The model IDs are set in `.env`, not here.
 
-1. **Agent: GLM 5.3 Flash** (`z-ai/glm-5.3-flash`, `CODE_REVIEW_MODEL`).
+1. **Agent: GLM 5.3 Flash** (`z-ai/glm-5.3-flash`, then `CODE_REVIEW_MODEL`; now `[model] gate` in `review_config.toml`).
    - **Role:** runs the multi-step review graph, which fetches diffs, PR descriptions and dependency files through tools.
    - **Why:** development speed and cost.
      - The free OpenRouter tiers were unusable for evals: runs hit 8-hour timeouts and corrupted checkpoints, which
@@ -190,9 +190,9 @@ The owner's decisions, 2026-11-10. The model IDs are set in `.env`, not here.
 
 ### Baseline
 
-> **Models come from `.env`, the one source of truth:** `CODE_REVIEW_MODEL` is the agent under test (unless
-> `run_eval.sh --model` names another), `EVAL_JUDGE_MODEL` the `llm-rubric` judge. Evals run on the free model
-> `CODE_REVIEW_MODEL` sets: since PMAT-328 a full run of the 65 cases at k=3 takes about 2 hours. A paid model only
+> **Where the models are set:** the agent under test is `[model] gate` in `review_config.toml`, committed (PMAT-312;
+> unless `run_eval.sh --model` names another), and `EVAL_JUDGE_MODEL` in `.env` is the `llm-rubric` judge. Evals run on
+> the free model `[model] gate` sets: since PMAT-328 a full run of the 65 cases at k=3 takes about 2 hours. A paid model only
 > when asked.
 > Compare a run only with a baseline on the same model: `baseline.json`'s `model` says which one.
 
@@ -458,11 +458,11 @@ A security miss in `judge_report.py` is a security case with coverage 2 or below
 
 | Role | Model | `.env` variable |
 |---|---|---|
-| Agent | GLM (`z-ai/glm-5.3-flash`) | `CODE_REVIEW_MODEL` |
+| Agent | GLM (`z-ai/glm-5.3-flash`) | `[model] gate` in `review_config.toml` |
 | Judge | MiniMax (`minimax/minimax-m3.1-flash`) | `EVAL_JUDGE_MODEL` |
 | Silver labeller | OpenAI (`openai/gpt-6.1-sol`) | `SILVER_CALIBRATION_MODEL` |
 
-The warning at the start of a run checks the run's model and `CODE_REVIEW_MODEL` against the judge's family. A run
+The warning at the start of a run checks the run's model and `[model] review` against the judge's family. A run
 reviewed by a MiniMax model would be graded by its own family. The judge would then have to move family and be aligned
 again. The warning doesn't check the silver labeller, so keep it out of the agent's family too.
 
