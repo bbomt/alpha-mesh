@@ -114,7 +114,7 @@ a real bug here that no one raised. Use these for instructive comparison.
 | `promptfooconfig.yaml`, `promptfoo/` | the harness: provider, eval adapter, loader, asserts, `case_rules.py` |
 | `scripts/run_eval.sh`, `scripts/baseline.py`, `scripts/compare_baseline.py` | run, baseline, compare |
 | `scripts/split_holdout.py`, `scripts/holdout_report.py` | draw the hold-out, report its totals |
-| `scripts/check_gate.py`, `scripts/gate_triggers.py` | the regression gate, and the files that need it ([The regression gate](#the-regression-gate)) |
+| `scripts/check_gate.py`, `scripts/gate_triggers.py`, `scripts/gate_check.py`, `scripts/eval_audit.py` | the regression gate's rule, the files that need it, a PR's checklist, the audit of a master commit ([The regression gate](#the-regression-gate)) |
 | `schema/review.schema.json`, `schema/baseline.schema.json` | the provider's output, the baseline's guard |
 | `promptfoo/llm_rubric.py`, `judge/rubric.v1.md` | the judge and its versioned rubric ([The judge](#the-judge)) |
 | `judge/sample.json`, `judge/gold-human-calibration.json`, `judge/silver-ai-calibration.json`, `judge/judge_scores.json` | the 25 calibration cases, the human (gold) scores, the silver labeller's scores, the judge's scores for them |
@@ -551,21 +551,43 @@ the agent changed since, or with another model or k (`scripts/run_meta.py`).
 An agent PR merges only if its eval keeps the baseline's score, within the noise (PMAT-312). It runs on a dev box,
 not in GitHub Actions: no Actions minutes, no secrets in GitHub.
 
+**The developer's steps for an agent PR**, each printed by the one before when it is next:
+
 ```bash
-mesh eval-gate https://github.com/bbomt/alpha-mesh/pull/<n>    # about 75 min; again on the same head: resumes
-mesh merge-pr  https://github.com/bbomt/alpha-mesh/pull/<n>    # refuses an agent PR without evals = success on its head
-uv run python eval/scripts/check_gate.py eval/runs/<run>        # the gate on any finished run, by hand
+mesh eval-gate --check https://github.com/bbomt/alpha-mesh/pull/<n>   # 1. the checklist and the next command
+mesh eval-gate https://github.com/bbomt/alpha-mesh/pull/<n>           # 2. the gate: about 75 min; again: resumes
+mesh merge-pr  https://github.com/bbomt/alpha-mesh/pull/<n>           # 3. the owner's merge; refuses until 1 is all ticked
+```
+
+```
+[x] PR open (open)
+[x] up to date with master
+[x] master audit: success
+[x] changes gated files: agents/review-pull-request/src/review_pull_request/prompts/per_file.md
+[ ] evals on head 1a2b3c4: missing
+next: mesh eval-gate https://github.com/bbomt/alpha-mesh/pull/<n>
+```
+
+Also:
+
+```bash
+mesh eval-gate --override <PR url> --reason "<why>"   # evals = success by hand ("override: <why>"), recorded on the PR
+mesh eval-gate --master                               # the gate on master's head: clears a red master, or opens the revert PR
+uv run python eval/scripts/check_gate.py eval/runs/<run>        # the gate rule on any finished run, by hand
 ```
 
 - **What needs it:** a PR that changes a file in `scripts/gate_triggers.py`: `src/**` (code and the prompts in
   `src/review_pull_request/prompts/`), `review_config.toml`, `pyproject.toml`, `uv.lock`, `promptfoo/**`,
   `promptfooconfig.yaml`, `cases/**`, `holdout.json`. Docs, tests, `scripts/`, `judge/` (report only) and
   `baseline.json` (a rebaseline PR, approved by the owner) do not.
+- **The model it runs on** is `[model] gate` in `review_config.toml` (committed: a model change is a PR, so the gate
+  sees it). `baseline.json` must be on that model (a test checks it), or every gate run fails as a model change.
 - **What `mesh eval-gate` does:** in a clean worktree at the PR's head (refused if the branch is behind master), it
   runs the development cases at k=3 with every repeat judged (`--judge-repeats all`), then `check_gate.py` against
   **master's** `baseline.json` and master's `TOLERANCE`, so a PR cannot loosen its own gate. It posts the verdict as
   the commit status `evals` on that head (`pending` while it runs) and the score table as a PR comment. A new push is
-  a new head, so it needs a new gate run.
+  a new head: `mesh merge-pr` still accepts the older head's success when no gated file changed since (a README or
+  test fix after review), and otherwise needs a new gate run.
 - **The rule (`check_gate.py`):** it counts the runs (case × repeat) that pass their case's line check, on the cases
   the baseline also holds, and fails when the count drops more than `TOLERANCE` (10) below the baseline's. It counts
   runs, not cases: in the A/A test (the same code as base6, run again as `PMAT-312-aa1`), 14 of the 65 cases changed
@@ -581,9 +603,16 @@ uv run python eval/scripts/check_gate.py eval/runs/<run>        # the gate on an
   75 min (`PMAT-312-aa1`: 1 h 16 min at concurrency 8). **Quota:** a full run uses about a day's free-model quota
   on OpenRouter (`free-models-per-day-high-balance`; the second A/A run on 2026-11-13 hit it after 32 minutes), shared
   with every `mesh review-pull-request`. Run `mesh eval-gate` again after the reset: it resumes.
-- **Known limit:** the repo is private on GitHub's free plan, so `evals` cannot be a required check, and GitHub's
-  merge button ignores it. `mesh merge-pr` is the gate. Anyone with write access can also post a status by hand:
-  this guards against mistakes, not against someone bypassing it on purpose.
+- **A merge that skips the gate is caught, not prevented.** The repo is private on GitHub's free plan, so `evals`
+  cannot be a required check and GitHub's merge button ignores it. So on every push to master the `eval-audit`
+  workflow (`scripts/eval_audit.py`, no model call) posts `eval-audit` on the commit: green when it came from a PR
+  whose gate passed on a head holding master's previous commit; red when it changes a gated file without that (a
+  manual merge, a failing or stale gate, a push without a PR), with a comment on the PR and a failed run that GitHub
+  emails about; otherwise its parent's colour. **While master is red, `mesh merge-pr` merges nothing** but the
+  revert PR (branch `eval-revert/...`) or a gated PR whose gate passed. `mesh eval-gate --master` runs the gate on
+  master: a pass turns it green; a failure opens the revert PR of the ungated commit.
+- **Known limit:** anyone with write access can post a status by hand (that is what `--override` does, visibly).
+  The gate guards against mistakes, not against someone bypassing it on purpose.
 
 ### Error analysis
 
