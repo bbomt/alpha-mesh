@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Run the evals (PMAT-304): every development case in eval/cases, reviewed at its raised_sha, k times, on the
-# model --model names, else [model] gate in review_config.toml.
+# model --model names, else [model] review in review_config.toml (the model the reviews use).
 #
 #   eval/scripts/run_eval.sh [--model <model>] [--k <n>] [--run <name>] [--judge-repeats first|all] [--holdout] [promptfoo eval args...]
 #   eval/scripts/run_eval.sh --stored <run dir> [--k <n>] [--run <name>] [--judge-repeats first|all] [promptfoo eval args...]
@@ -41,8 +41,8 @@ if [[ -n "$STORED" ]]; then
   RUN="${RUN:-judge-$(basename "$STORED")-$(date +%Y%m%d-%H%M)}"
 fi
 K="${K:-3}"
-# The default is the gate's model ([model] gate in review_config.toml), so a run compares with baseline.json.
-[[ -n "$MODEL" ]] || MODEL="$("$AGENT/.venv/bin/python" -c 'from review_pull_request.config import configured_model; print(configured_model("gate"))')"
+# The default is the agent's own model ([model] review in review_config.toml): the eval measures what the reviews run.
+[[ -n "$MODEL" ]] || MODEL="$("$AGENT/.venv/bin/python" -c 'from review_pull_request.config import configured_model; print(configured_model("review"))')"
 RUN="${RUN:-$(date +%Y%m%d-%H%M)-${MODEL//[^A-Za-z0-9.-]/_}}"
 RUN_DIR="$EVAL/runs/$RUN"
 mkdir -p "$RUN_DIR"

@@ -1,8 +1,8 @@
-# The agent's models (PMAT-312). Here, not in .env, so a model change is a commit and the eval gate sees it.
-# The URL and token stay in .env (CODE_REVIEW_URL, CODE_REVIEW_TOKEN).
+# The agent's model (PMAT-312). Here, not in .env, so a model change is a commit and the eval gate sees it. One
+# model for both: mesh review-pull-request uses it, and the evals and the gate measure it (eval/baseline.json must be
+# on it). The URL and token stay in .env (CODE_REVIEW_URL, CODE_REVIEW_TOKEN).
 [model]
-review = "nvidia/nemotron-3.5-super-vl:free"  # mesh review-pull-request (--model overrides it)
-gate = "nvidia/nemotron-3.5-super-vl:free"    # the eval gate and run_eval.sh; eval/baseline.json must be on it
+review = "nvidia/nemotron-3.5-super-vl:free"  # --model overrides it for one review or eval run
 
 [limits]
 max_tool_calls = 20

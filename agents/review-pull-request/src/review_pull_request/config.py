@@ -102,8 +102,8 @@ def _load_toml(config_path: str | None) -> dict:
 
 
 def configured_model(role: str, config_path: str | None = None) -> str:
-    """[model] <role> in review_config.toml: `review` for mesh review-pull-request, `gate` for the eval gate. Exits
-    naming the setting when it is missing."""
+    """[model] <role> in review_config.toml. The one role is `review`: mesh review-pull-request uses it, and the evals
+    and the gate measure it. Exits naming the setting when it is missing."""
     model = _load_toml(config_path).get("model", {}).get(role, "")
     if not isinstance(model, str) or not model:
         print(f"ERROR: [model] {role} is not set in review_config.toml. Set it there: the agent's model is "

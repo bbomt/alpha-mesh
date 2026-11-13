@@ -169,7 +169,7 @@ another case's file at the same repo and `raised_sha`: a file cannot be both cle
 
 The owner's decisions, 2026-11-10. The model IDs are set in `.env`, not here.
 
-1. **Agent: GLM 5.3 Flash** (`z-ai/glm-5.3-flash`, then `CODE_REVIEW_MODEL`; now `[model] gate` in `review_config.toml`).
+1. **Agent: GLM 5.3 Flash** (`z-ai/glm-5.3-flash`, then `CODE_REVIEW_MODEL`; now `[model] review` in `review_config.toml`).
    - **Role:** runs the multi-step review graph, which fetches diffs, PR descriptions and dependency files through tools.
    - **Why:** development speed and cost.
      - The free OpenRouter tiers were unusable for evals: runs hit 8-hour timeouts and corrupted checkpoints, which
@@ -190,9 +190,9 @@ The owner's decisions, 2026-11-10. The model IDs are set in `.env`, not here.
 
 ### Baseline
 
-> **Where the models are set:** the agent under test is `[model] gate` in `review_config.toml`, committed (PMAT-312;
+> **Where the models are set:** the agent under test is `[model] review` in `review_config.toml`, committed (PMAT-312;
 > unless `run_eval.sh --model` names another), and `EVAL_JUDGE_MODEL` in `.env` is the `llm-rubric` judge. Evals run on
-> the free model `[model] gate` sets: since PMAT-328 a full run of the 65 cases at k=3 takes about 2 hours. A paid model only
+> the free model `[model] review` sets: since PMAT-328 a full run of the 65 cases at k=3 takes about 2 hours. A paid model only
 > when asked.
 > Compare a run only with a baseline on the same model: `baseline.json`'s `model` says which one.
 
@@ -458,7 +458,7 @@ A security miss in `judge_report.py` is a security case with coverage 2 or below
 
 | Role | Model | `.env` variable |
 |---|---|---|
-| Agent | GLM (`z-ai/glm-5.3-flash`) | `[model] gate` in `review_config.toml` |
+| Agent | GLM (`z-ai/glm-5.3-flash`) | `[model] review` in `review_config.toml` |
 | Judge | MiniMax (`minimax/minimax-m3.1-flash`) | `EVAL_JUDGE_MODEL` |
 | Silver labeller | OpenAI (`openai/gpt-6.1-sol`) | `SILVER_CALIBRATION_MODEL` |
 
@@ -580,8 +580,8 @@ uv run python eval/scripts/check_gate.py eval/runs/<run>        # the gate rule 
   `src/review_pull_request/prompts/`), `review_config.toml`, `pyproject.toml`, `uv.lock`, `promptfoo/**`,
   `promptfooconfig.yaml`, `cases/**`, `holdout.json`. Docs, tests, `scripts/`, `judge/` (report only) and
   `baseline.json` (a rebaseline PR, approved by the owner) do not.
-- **The model it runs on** is `[model] gate` in `review_config.toml` (committed: a model change is a PR, so the gate
-  sees it). `baseline.json` must be on that model (a test checks it), or every gate run fails as a model change.
+- **The model it runs on** is `[model] review` in `review_config.toml`, the model the reviews themselves use: the gate
+  measures the agent as it runs (committed: a model change is a PR, so the gate sees it). `baseline.json` must be on that model (a test checks it), or every gate run fails as a model change.
 - **What `mesh eval-gate` does:** in a clean worktree at the PR's head (refused if the branch is behind master), it
   runs the development cases at k=3 with every repeat judged (`--judge-repeats all`), then `check_gate.py` against
   **master's** `baseline.json` and master's `TOLERANCE`, so a PR cannot loosen its own gate. It posts the verdict as

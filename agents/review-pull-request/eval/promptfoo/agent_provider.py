@@ -11,7 +11,7 @@ Run state lives in EVAL_RUN_DIR (eval/scripts/run_eval.sh sets it; gitignored):
                                  repeats of a commit review at once (PMAT-328)
   traces/repeat-<n>/<commit>.jsonl  the review's trace (PMAT-325): every tool call and its result as
                                  the model got them; shared like the review, appended to on a resume
-The model is EVAL_MODEL, which run_eval.sh sets ([model] gate in review_config.toml, or --model). One run dir holds one model's reviews.
+The model is EVAL_MODEL, which run_eval.sh sets ([model] review in review_config.toml, or --model). One run dir holds one model's reviews.
 
 With EVAL_STORED_RESULTS (run_eval.sh --stored, PMAT-311) the agent does not run: each case gets its
 stored review from that results.json, so the judge can score it. A hold-out case is refused.

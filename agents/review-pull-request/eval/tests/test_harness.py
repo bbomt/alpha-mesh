@@ -305,7 +305,7 @@ def test_the_run_script_turns_promptfoos_templating_off():
 
 def test_the_run_script_takes_its_default_model_from_the_agents_config_parser():
     """PMAT-327: a hand-rolled grep kept an inline ' # comment' in the model name. Since PMAT-312 the model is
-    [model] gate in review_config.toml, read by the agent's own parser."""
+    [model] review in review_config.toml, read by the agent's own parser."""
     script = (case_rules.EVAL / "scripts" / "run_eval.sh").read_text()
     assert "from review_pull_request.config import configured_model" in script
     assert "grep -E '^CODE_REVIEW_MODEL=" not in script

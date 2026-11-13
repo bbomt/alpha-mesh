@@ -128,17 +128,39 @@ case "${1:-}" in
       exit 1
     fi
     git -C "$wt" push -q origin "$branch"
-    { echo "Reverts \`${offender:0:7}\`, the ungated agent change behind master's red \`eval-audit\`."
-      echo "\`mesh eval-gate --master\` failed on \`${head:0:7}\`:"; echo; cat "$run_dir/gate.md"
-      echo; echo "Run \`mesh eval-gate <this PR's url>\`, then \`mesh merge-pr <this PR's url>\`: while master is red,"
-      echo "mesh merge-pr merges only this PR or a gated PR whose gate passed (gate_check.py)."
+    offender_pr="$(gh api "repos/$repo/commits/$offender/pulls" | jq -r '.[0].number // empty')"
+    from="${offender:0:7}${offender_pr:+ (PR #$offender_pr)}"
+    { echo "## Automatic revert: master is red"
+      echo
+      echo "**What happened:** \`$from\` changed the review-pull-request agent without a passing eval gate, and"
+      echo "\`mesh eval-gate --master\` then failed on master's head \`${head:0:7}\`: $summary."
+      echo
+      echo "**What this PR does:** reverts \`${offender:0:7}\`, and nothing else. Nothing has been merged."
+      echo
+      echo "**Team lead, next:**"
+      echo "1. \`mesh eval-gate <this PR's url>\`: the revert must pass the gate too."
+      echo "2. \`mesh merge-pr <this PR's url>\`: while master is red, mesh merge-pr merges only this PR, or a gated PR"
+      echo "   whose gate passed. Every other merge is refused until then."
+      echo
+      echo "**Developer of \`$from\`:** redo the change on a new branch, and run the gate before it merges."
+      echo
+      echo "The gate's report on master:"; echo; cat "$run_dir/gate.md"
     } > "$run_dir/revert-pr.md"
     pr_url="$(gh pr create --repo "$repo" --base master --head "$branch" \
       --title "revert[eval-gate]: reverted ${offender:0:7}, an ungated agent change that fails the eval gate" \
       --body-file "$run_dir/revert-pr.md")"
     remove_worktree
     git -C "$mesh_dir" branch -q -D "$branch" || true
-    echo "Master is red. Opened the revert PR: $pr_url" >&2
+    cat >&2 <<MSG
+
+==== MASTER IS RED: the eval gate failed on master (${head:0:7}) ====
+What happened: $from changed the agent without a passing gate; the gate on master now fails: $summary.
+What was done: opened the revert PR $pr_url (branch $branch), reverting ${offender:0:7}. Nothing was merged.
+Team lead, next:
+  1. mesh eval-gate $pr_url
+  2. mesh merge-pr $pr_url      (until then, every other merge is refused)
+Developer of $from: redo the change on a new branch and gate it before merging.
+MSG
     exit 1 ;;
 
   -*) usage ;;
