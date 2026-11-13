@@ -11,7 +11,8 @@ alpha-mesh/
 │   ├── model                # Switch/check model config
 │   ├── dream                # End-of-session memory consolidation (delegates to agents/dream/)
 │   ├── review-pull-request # PR review agent (delegates to agents/review-pull-request/)
-│   ├── merge-pr             # The owner's merge: refuses a PR branch that lacks the latest base branch
+│   ├── eval-gate            # The review-pull-request eval gate on a PR's head: posts the `evals` status
+│   ├── merge-pr             # The owner's merge: refuses a stale PR branch, or an agent PR without passing evals
 │   ├── sync-main            # Fast-forwards a main checkout and verifies it, or fails loudly
 │   ├── orchestrate          # One Claude worker per Jira ticket in tmux tabs (delegates to agents/orchestrator/)
 │   ├── bootstrap-memory     # One-time: extract from existing Claude Code logs
@@ -206,6 +207,11 @@ mesh merge-pr https://github.com/org/repo/pull/123
   rerun its tests and push, then run it again.
 - **The branch moves between the check and the merge:** the merge fails (`--match-head-commit`), so untested
   commits are never merged.
+- **A PR that changes the review-pull-request agent** (a file in
+  [`gate_triggers.py`](agents/review-pull-request/eval/scripts/gate_triggers.py): its code, prompts, config,
+  dependencies, harness or cases): it also needs the commit status `evals` = success on the PR's head commit,
+  which `mesh eval-gate <PR url>` posts. Missing, pending or failed: it refuses and names the command
+  ([the regression gate](agents/review-pull-request/eval/README.md#the-regression-gate)).
 - Workers end their "ready to merge" Jira comment with this command, ready to copy.
 
 ## Sync Main Checkout

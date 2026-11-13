@@ -46,7 +46,8 @@ hold 11 of the 14 real bugs in 75 files, and the other 7 commits add 268 files f
 
 ## When to run it
 
-By hand only, after PRs are merged. Nothing runs it automatically yet (PMAT-308).
+By hand only, after PRs are merged. Nothing runs it automatically yet (PMAT-308). (This is the miner; the eval
+itself runs before an agent PR merges: [The regression gate](#the-regression-gate).)
 
 ## After a run
 
@@ -113,6 +114,7 @@ a real bug here that no one raised. Use these for instructive comparison.
 | `promptfooconfig.yaml`, `promptfoo/` | the harness: provider, eval adapter, loader, asserts, `case_rules.py` |
 | `scripts/run_eval.sh`, `scripts/baseline.py`, `scripts/compare_baseline.py` | run, baseline, compare |
 | `scripts/split_holdout.py`, `scripts/holdout_report.py` | draw the hold-out, report its totals |
+| `scripts/check_gate.py`, `scripts/gate_triggers.py` | the regression gate, and the files that need it ([The regression gate](#the-regression-gate)) |
 | `schema/review.schema.json`, `schema/baseline.schema.json` | the provider's output, the baseline's guard |
 | `promptfoo/llm_rubric.py`, `judge/rubric.v1.md` | the judge and its versioned rubric ([The judge](#the-judge)) |
 | `judge/sample.json`, `judge/gold-human-calibration.json`, `judge/silver-ai-calibration.json`, `judge/judge_scores.json` | the 25 calibration cases, the human (gold) scores, the silver labeller's scores, the judge's scores for them |
@@ -543,6 +545,45 @@ PROMPTFOO_CONFIG_DIR=eval/runs/base1/.promptfoo promptfoo view                  
 holds one model's reviews (the checkpoint key has no model), so a new model needs a new `--run`. A resumed run
 keeps the commit and date it started at (so label fixes made between passes are counted), and is refused if
 the agent changed since, or with another model or k (`scripts/run_meta.py`).
+
+### The regression gate
+
+An agent PR merges only if its eval keeps the baseline's score, within the noise (PMAT-312). It runs on a dev box,
+not in GitHub Actions: no Actions minutes, no secrets in GitHub.
+
+```bash
+mesh eval-gate https://github.com/bbomt/alpha-mesh/pull/<n>    # about 75 min; again on the same head: resumes
+mesh merge-pr  https://github.com/bbomt/alpha-mesh/pull/<n>    # refuses an agent PR without evals = success on its head
+uv run python eval/scripts/check_gate.py eval/runs/<run>        # the gate on any finished run, by hand
+```
+
+- **What needs it:** a PR that changes a file in `scripts/gate_triggers.py`: `src/**` (code and the prompts in
+  `src/review_pull_request/prompts/`), `review_config.toml`, `pyproject.toml`, `uv.lock`, `promptfoo/**`,
+  `promptfooconfig.yaml`, `cases/**`, `holdout.json`. Docs, tests, `scripts/`, `judge/` (report only) and
+  `baseline.json` (a rebaseline PR, approved by the owner) do not.
+- **What `mesh eval-gate` does:** in a clean worktree at the PR's head (refused if the branch is behind master), it
+  runs the development cases at k=3 with every repeat judged (`--judge-repeats all`), then `check_gate.py` against
+  **master's** `baseline.json` and master's `TOLERANCE`, so a PR cannot loosen its own gate. It posts the verdict as
+  the commit status `evals` on that head (`pending` while it runs) and the score table as a PR comment. A new push is
+  a new head, so it needs a new gate run.
+- **The rule (`check_gate.py`):** it counts the runs (case × repeat) that pass their case's line check, on the cases
+  the baseline also holds, and fails when the count drops more than `TOLERANCE` (10) below the baseline's. It counts
+  runs, not cases: in the A/A test (the same code as base6, run again as `PMAT-312-aa1`), 14 of the 65 cases changed
+  result (10 new failures, 4 new passes) while the runs passed moved from 140/195 to 142/195. The rows per category
+  move too (`public` went from 19/24 to 14/24), so only the total gates. 10 is provisional, from that one sample:
+  tighten it as same-code runs come in, or as the agent gets less flaky.
+- **It also fails, whatever the count,** on a harness error (a run stopped by the model's quota never passes), a
+  missing case or repeat, or a run on another model or k than the baseline's: a model change needs a new baseline
+  first.
+- **Reported, not gating yet** (the owner switches them on): security misses, failing `style_only` runs, and the
+  judge's means against PMAT-311's provisional proposal.
+- **Cost:** the agent is free; the judge is about $0.005 per judged run, so about $1 per gate run. **Time:** about
+  75 min (`PMAT-312-aa1`: 1 h 16 min at concurrency 8). **Quota:** a full run uses about a day's free-model quota
+  on OpenRouter (`free-models-per-day-high-balance`; the second A/A run on 2026-11-13 hit it after 32 minutes), shared
+  with every `mesh review-pull-request`. Run `mesh eval-gate` again after the reset: it resumes.
+- **Known limit:** the repo is private on GitHub's free plan, so `evals` cannot be a required check, and GitHub's
+  merge button ignores it. `mesh merge-pr` is the gate. Anyone with write access can also post a status by hand:
+  this guards against mistakes, not against someone bypassing it on purpose.
 
 ### Error analysis
 

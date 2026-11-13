@@ -8,8 +8,8 @@
 
 File content can reach the model three ways:
 
-1. the **overview prompt** (the whole diff)
-2. the **per-file prompts** (one file's diff)
+1. the **overview prompt** (the whole diff; template `src/review_pull_request/prompts/overview.md`)
+2. the **per-file prompts** (one file's diff; template `prompts/per_file.md`)
 3. the **`read_file` tool** (the model asks to open a file)
 
 File *names* also reach the model, in folder listings and "did you mean" hints. They come only from `PolicyFileReader.list_files()`, which removes excluded paths, via `ReviewSession`.
