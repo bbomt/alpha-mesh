@@ -11,7 +11,7 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from dotenv import load_dotenv
+from dotenv import dotenv_values, load_dotenv
 
 REQUIRED_ENV_VARS = ["CODE_REVIEW_URL", "CODE_REVIEW_TOKEN", "CODE_REVIEW_MODEL"]
 
@@ -22,6 +22,11 @@ SENSITIVE_PATTERNS = ["**/.env", "**/.env.*", "**/.envrc", "**/.claude/*", "**/.
 IGNORE_FILE = Path(__file__).resolve().parents[4] / ".pr-review-ignore"
 # Simple KEY=value lines only (no shell syntax); variables already in the environment win.
 ENV_FILE = Path(__file__).resolve().parents[4] / ".env"
+
+
+def env_model(env_file: Path = ENV_FILE) -> str:
+    """CODE_REVIEW_MODEL as .env sets it, parsed as load_config parses it (run_eval.sh's default model, PMAT-327)."""
+    return dotenv_values(env_file).get("CODE_REVIEW_MODEL") or ""
 
 
 def _has_glob(pattern: str) -> bool:
