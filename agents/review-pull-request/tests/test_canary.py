@@ -600,3 +600,89 @@ def test_the_trace_harness_detects_a_leak_when_protection_is_off(tmp_path):
 
     for secret in (CANARY, GITHUB_TOKEN, STORE_MODEL_TOKEN):
         assert secret in text
+
+
+# --- PMAT-333: reading a directory through the real GitHub reader ------------------------------
+# Invariant: no GitHub-signed URL, and no excluded path's name, reaches the model or the trace by
+# any path. For a directory, GitHub ignores the raw media type and answers with its JSON listing:
+# every entry carries a signed download_url, and excluded entries are named in it.
+
+SIGNED_TOKEN = "SIGNEDTOKEN-9c41e7"
+EXCLUDED_ENTRY = "src/.env.leakname-4b1e"  # matched by **/.env.*
+
+
+def _fake_github(request):
+    import httpx
+
+    path = request.url.path
+    if "/git/trees/" in path:
+        return httpx.Response(200, json={"tree": [{"path": p, "type": "blob", "mode": "100644"}
+                                                  for p in ("src/app.py", EXCLUDED_ENTRY)]})
+    if path.endswith("/contents/src"):
+        entries = [{"name": p.rsplit("/", 1)[1], "path": p, "sha": "0" * 40, "type": "file",
+                    "download_url": f"https://raw.githubusercontent.com/o/r/abc/{p}?token={SIGNED_TOKEN}"}
+                   for p in ("src/app.py", EXCLUDED_ENTRY)]
+        return httpx.Response(200, json=entries)
+    if path.endswith("/contents/src/app.py"):
+        return httpx.Response(200, text="x = 1\n")
+    return httpx.Response(404, json={"message": "Not Found"})
+
+
+class _DirectoryModel(RecordingModel):
+    """Asks every per-file conversation to read the directory 'src', then answers."""
+
+    def __call__(self, messages, tools):
+        if tools is None:
+            return super().__call__(messages, tools)
+        self.seen.append(json.dumps(messages))
+        key = messages[0]["content"]
+        if self._asked.setdefault(key, ["src"]):
+            p = self._asked[key].pop(0)
+            self.requested.append(p)
+            call = SimpleNamespace(id="c-dir", name="read_file", arguments={"path": p, "reason": "canary"})
+            return SimpleNamespace(content=None, tool_calls=[call])
+        return SimpleNamespace(content='{"summary": "ok", "issues": []}', tool_calls=[])
+
+
+def _run_directory_read(tmp_path, fix=True):
+    import httpx
+
+    from review_pull_request import tools
+
+    real_client = httpx.Client
+    cfg = Config(model="m", api_url="http://x", api_token="t", exclusions=list(SENSITIVE_PATTERNS))
+    model, trace_path = _DirectoryModel(), tmp_path / "trace.jsonl"
+    patches = [
+        patch("review_pull_request.review.GitHubFileReader", tools.GitHubFileReader),
+        patch("review_pull_request.tools.httpx.Client",
+              lambda **kw: real_client(transport=httpx.MockTransport(_fake_github), **kw)),
+        patch("review_pull_request.review.get_diff", return_value=_file_diff("src/app.py", "x = 1")),
+        patch("review_pull_request.session.make_chat_model", chat_model_factory(model)),
+    ]
+    if not fix:
+        patches.append(patch("review_pull_request.tools._is_directory_listing", return_value=False))
+    for p in patches:
+        p.start()
+    try:
+        run_review_agent("o", "r", "b" * 40, "abc123", "Adds an app.", config=cfg, token=GITHUB_TOKEN,
+                         publish=lambda report: None, all_excluded=lambda paths: 0, trace_path=trace_path)
+    finally:
+        patch.stopall()
+    return model, "\n".join(model.seen), trace_path.read_text()
+
+
+def test_a_directory_read_sends_no_signed_url_or_excluded_name_to_the_model_or_trace(tmp_path):
+    model, seen, trace = _run_directory_read(tmp_path)
+
+    assert "src" in model.requested and any("not found: src" in t for t in _tool_results(model)), \
+        "the directory was never read, so the test proves nothing"
+    for text in (seen, trace):
+        assert SIGNED_TOKEN not in text and "download_url" not in text
+        assert "leakname" not in text
+
+
+def test_the_directory_harness_detects_a_leak_when_the_fix_is_off(tmp_path):
+    _, seen, trace = _run_directory_read(tmp_path, fix=False)
+
+    for text in (seen, trace):
+        assert SIGNED_TOKEN in text and "leakname" in text
