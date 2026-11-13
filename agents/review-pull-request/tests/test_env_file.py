@@ -82,3 +82,14 @@ def test_bash_wrapper_does_not_touch_env_file():
     wrapper = (AGENT_DIR / "bin" / "review-pull-request").read_text(encoding="utf-8")
 
     assert ".env" not in wrapper
+
+
+# PMAT-327: run_eval.sh's default model comes from env_model(), the same parser the agent uses.
+@pytest.mark.parametrize("line", ["CODE_REVIEW_MODEL=a/b # note", 'CODE_REVIEW_MODEL="a/b"', "CODE_REVIEW_MODEL=  a/b  "])
+def test_env_model_reads_the_name_without_comment_quotes_or_spaces(tmp_path, line):
+    from review_pull_request.config import env_model
+
+    path = tmp_path / ".env"
+    path.write_text(f"# CODE_REVIEW_MODEL=old/model # commented out\n{line}\n")
+
+    assert env_model(path) == "a/b"
