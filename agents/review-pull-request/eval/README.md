@@ -551,13 +551,17 @@ the agent changed since, or with another model or k (`scripts/run_meta.py`).
 An agent PR merges only if its eval keeps the baseline's score, within the noise (PMAT-312). It runs on a dev box,
 not in GitHub Actions: no Actions minutes, no secrets in GitHub.
 
-**The developer's steps for an agent PR**, each printed by the one before when it is next:
+**The steps for an agent PR.** The full gate is expensive (about a day's free quota), so it runs once, at merge time,
+after the team lead has accepted the rest of the ticket's code:
 
 ```bash
-mesh eval-gate --check https://github.com/bbomt/alpha-mesh/pull/<n>   # 1. the checklist and the next command
-mesh eval-gate https://github.com/bbomt/alpha-mesh/pull/<n>           # 2. the gate: about 75 min; again: resumes
-mesh merge-pr  https://github.com/bbomt/alpha-mesh/pull/<n>           # 3. the owner's merge; refuses until 1 is all ticked
+mesh eval-gate --check https://github.com/bbomt/alpha-mesh/pull/<n>   # anyone: the checklist and the next command
+mesh merge-pr  https://github.com/bbomt/alpha-mesh/pull/<n>           # the team lead: if the gate is all that is missing,
+                                                                     #   it offers to run it now, then merges [y/N]
+mesh eval-gate https://github.com/bbomt/alpha-mesh/pull/<n>           # the gate on its own: about 75 min; again: resumes
 ```
+
+Without a terminal (a worker), `mesh merge-pr` refuses instead and prints the same checklist:
 
 ```
 [x] PR open (open)
@@ -613,6 +617,62 @@ uv run python eval/scripts/check_gate.py eval/runs/<run>        # the gate rule 
   master: a pass turns it green; a failure opens the revert PR of the ungated commit.
 - **Known limit:** anyone with write access can post a status by hand (that is what `--override` does, visibly).
   The gate guards against mistakes, not against someone bypassing it on purpose.
+
+#### Reading a gate report
+
+`mesh eval-gate` posts it as a PR comment and prints it; `check_gate.py eval/runs/<run>` prints it for any finished
+run, and `promptfoo view` (see [How to run](#how-to-run)) shows each review.
+
+```
+runs passed 142/195 (baseline 140), drop -2, tolerance 10
+| Category | Expected action | Cases | Baseline runs passed | Run runs passed |
+| security | `raise_true_bug` | 6 | 18/18 | 18/18 |
+| public   | `raise_true_bug` | 8 | 19/24 | 14/24 |
+```
+
+- **The first line is the verdict.** 195 runs = 65 development cases × 3 repeats; each run passes when the review
+  does what its case expects (raise the true bug, skip the false one, say nothing on clean code). The baseline passed
+  140 (72%): that is the agent **today**, not a target. The gate asks only "no worse than today, beyond the noise".
+- **The rows say where a drop comes from.** They are noisy on their own (a row of 24 runs moved by 5 between two runs
+  of the same code), so read a row's change as a lead for error analysis, not a verdict.
+- **"Reported, not gating yet"** is how good the agent is in absolute terms (PMAT-311's provisional proposal, for
+  example judge correctness >= 4.0 where the agent scores about 2.8). They become gates when the owner switches them on.
+
+#### The tolerance T
+
+`TOLERANCE` in `scripts/check_gate.py`, committed: the drop in runs passed the gate allows. Smaller is stricter; 0
+fails any drop at all, which the noise alone would trip often. `mesh eval-gate` always uses master's value, so a PR
+cannot loosen its own gate, and there is no flag for it: retrying a failed gate with a larger T until it passes would
+make the gate meaningless. Change T in its own reviewed PR, from same-code runs (A/A). To see a finished run under
+another T, without running anything again: `check_gate.py eval/runs/<run> --tolerance 5`.
+
+#### Rebaselining, and new cases
+
+Rebaselines are made by hand, never automatically, in the PR whose change is meant to move the score (a prompt
+rework, the temperature, a new model):
+
+1. The gate runs on the PR as usual. A **model** change always fails it (the run's model is not the baseline's): the
+   owner reads the new run's report and uses `mesh eval-gate --override <PR url> --reason "new model: rebaselined"`.
+2. `uv run python eval/scripts/baseline.py eval/runs/gate-pr<n>-<sha7>` writes `baseline.json` from that gate run. It
+   first asks for an entry in `error_analysis.json` for every failing case ([Error analysis](#error-analysis)).
+3. Commit `baseline.json` and `error_analysis.json` in the same PR. Neither is a gated file, so the passing status
+   carries over; the owner approves the new baseline in review.
+
+**New cases** (mined from merged PRs with `scripts/eval_cases.py mine`, PMAT-308) change `cases/**`, a gated file,
+so their PR runs the gate. A case the baseline does not hold yet is run and reported as "new since the baseline, not
+gated"; it joins the gate at the next rebaseline. A new mined case also needs the owner's decision on how it joins
+the hold-out split ([Hold-out set](#hold-out-set)).
+
+#### When master is red
+
+`eval-audit` failed on master: an agent change landed without a passing gate. GitHub emails the owner (a failed
+workflow run), and the PR gets a comment. Until it is fixed, `mesh merge-pr` merges nothing else.
+
+1. The team lead runs `mesh eval-gate --master`. If the gate passes on master, master turns green and that is all.
+2. If it fails, it opens the revert PR (branch `eval-revert/<sha7>`) of the ungated commit and prints, and writes in
+   the PR, what happened and what to run next: `mesh eval-gate <revert PR>`, then `mesh merge-pr <revert PR>`. Nothing
+   is merged automatically.
+3. The developer of the reverted change redoes it on a new branch, and its PR goes through the gate.
 
 ### Error analysis
 

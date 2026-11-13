@@ -212,6 +212,8 @@ mesh merge-pr https://github.com/org/repo/pull/123
   dependencies, harness or cases): it also needs the commit status `evals` = success on the PR's head commit,
   which `mesh eval-gate <PR url>` posts (or on an older commit, if no gated file changed since). Missing, pending or
   failed: it refuses and prints the checklist with the next command (`mesh eval-gate --check <PR url>` prints it too).
+  At a terminal, when the gate run is all that is missing, it offers to run `mesh eval-gate` now and then merge
+  (`[y/N]`): the full gate is expensive, so it runs once, when the rest of the ticket's code is accepted.
 - **Master is red** (`eval-audit` failed: an agent change landed without a passing gate): it merges only the revert
   PR or a gated PR whose gate passed, until `mesh eval-gate --master` passes
   ([the regression gate](agents/review-pull-request/eval/README.md#the-regression-gate)).
