@@ -40,7 +40,7 @@ if [[ -n "$STORED" ]]; then
   RUN="${RUN:-judge-$(basename "$STORED")-$(date +%Y%m%d-%H%M)}"
 fi
 K="${K:-3}"
-[[ -n "$MODEL" ]] || MODEL="$(grep -E '^CODE_REVIEW_MODEL=' "$AGENT/../../.env" | cut -d= -f2- | tr -d '"' || true)"
+[[ -n "$MODEL" ]] || MODEL="$("$AGENT/.venv/bin/python" -c 'from review_pull_request.config import env_model; print(env_model())')"
 [[ -n "$MODEL" ]] || { echo "ERROR: no model: pass --model or set CODE_REVIEW_MODEL in .env" >&2; exit 1; }
 RUN="${RUN:-$(date +%Y%m%d-%H%M)-${MODEL//[^A-Za-z0-9.-]/_}}"
 RUN_DIR="$EVAL/runs/$RUN"
