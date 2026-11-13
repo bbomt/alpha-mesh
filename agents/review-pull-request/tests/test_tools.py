@@ -412,3 +412,22 @@ class TestExclusionEdgeCases:
             result = execute_read_file("locked.txt", str(tmp_path), 100)
 
         assert isinstance(result, ReadError)
+
+
+def test_a_directory_reads_the_same_through_github_as_locally(tmp_path):
+    """PMAT-333: GitHub answers a directory with its JSON listing (signed download_urls); never pass it on."""
+    import httpx
+
+    listing = [{"name": "a.py", "path": "src/a.py", "sha": "0" * 40, "type": "file",
+                "download_url": "https://raw.githubusercontent.com/o/r/abc/src/a.py?token=SIGNED"}]
+    real_client = httpx.Client
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, json=listing))
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "a.py").write_text("x = 1\n")
+
+    with patch("review_pull_request.tools.httpx.Client", lambda **kw: real_client(transport=transport, **kw)):
+        github = GitHubFileReader("o", "r", "abc", "t").read_file("src", max_lines=100)
+    local = LocalFileReader(str(tmp_path)).read_file("src", max_lines=100)
+
+    assert github == local == "Error: file not found: src"
+    assert type(github) is type(local)
