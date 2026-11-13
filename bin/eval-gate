@@ -1,24 +1,153 @@
 #!/usr/bin/env bash
 # alpha-mesh/bin/eval-gate
-# mesh eval-gate <PR url>: the review-pull-request eval gate (PMAT-312). Runs the full eval (the development cases,
-# k=3, every repeat judged) on the PR's head commit, in a clean worktree, and compares it with master's baseline
-# (check_gate.py, with master's tolerance, so a PR cannot loosen its own gate). Then it posts the result as the
-# commit status `evals` on that head commit, which `mesh merge-pr` requires, and the score table as a PR comment.
+# The review-pull-request eval gate (PMAT-312).
 #
-# About 75 min and about a day's free-model quota. Run again on the same head to resume: finished reviews are kept,
-# so a run stopped by the quota continues where it stopped.
+#   mesh eval-gate <PR url>                        run the gate on the PR's head; post `evals` and the score table
+#   mesh eval-gate --check <PR url>                the checklist mesh merge-pr enforces, with the next command
+#   mesh eval-gate --override <PR url> --reason R  post `evals` = success by hand ("override: R"), recorded on the PR
+#   mesh eval-gate --master                        run the gate on master's head; post `eval-audit` there; on a
+#                                                  failure, open the PR that reverts the ungated change
+#
+# A gate run is the full eval (the development cases, k=3, every repeat judged) in a clean worktree, compared with
+# master's baseline and master's tolerance (check_gate.py), so a PR cannot loosen its own gate. About 75 min and about
+# a day's free-model quota. Run it again on the same head to resume: a run stopped by the quota continues.
 
 set -euo pipefail
 
-if [ $# -ne 1 ] || [[ ! "$1" =~ ^https://github\.com/([^/]+/[^/]+)/pull/([0-9]+)$ ]]; then
-  echo "usage: mesh eval-gate https://github.com/<owner>/<repo>/pull/<number>" >&2
+mesh_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+agent_rel="agents/review-pull-request"
+scripts="$mesh_dir/$agent_rel/eval/scripts"
+pr_re='^https://github\.com/([^/]+/[^/]+)/pull/([0-9]+)$'
+
+usage() {
+  sed -n '5,8p' "${BASH_SOURCE[0]}" | sed 's/^# */usage: /' >&2
   exit 2
-fi
+}
+
+post_status() {  # post_status <repo> <sha> <context> <state> <description>
+  gh api "repos/$1/statuses/$2" -f state="$4" -f context="$3" -f description="${5:0:140}" >/dev/null
+}
+
+# run_gate <head> <run name> <base ref>: run the eval at <head> and score it against <base ref>'s baseline and
+# tolerance. Leaves the report in $run_dir/gate.md and the verdict in $gate (0 pass, else fail); exits on a run the
+# gate could not score, after posting $context = error on <head>.
+run_gate() {
+  local head="$1" run="$2" ref="$3" baseline_json tolerance
+  baseline_json="$(git -C "$mesh_dir" show "$ref:$agent_rel/eval/baseline.json")"
+  tolerance="$(git -C "$mesh_dir" show "$ref:$agent_rel/eval/scripts/check_gate.py" \
+    | sed -n 's/^TOLERANCE = \([0-9][0-9]*\).*/\1/p')"
+  if [ -z "$tolerance" ]; then
+    echo "ERROR: no TOLERANCE in $ref's check_gate.py" >&2
+    exit 1
+  fi
+  wt="${MESH_EVAL_GATE_DIR:-$HOME/environment/pmat/alpha-mesh-eval-gate}/${head:0:12}"
+  [ -d "$wt" ] || git -C "$mesh_dir" worktree add -q --detach "$wt" "$head"
+  if [ "$(git -C "$wt" rev-parse HEAD)" != "$head" ]; then
+    echo "ERROR: $wt is not at $head" >&2
+    exit 1
+  fi
+  agent="$wt/$agent_rel"
+  [ -e "$wt/.env" ] || ln -s "$mesh_dir/.env" "$wt/.env"
+  mkdir -p "$HOME/.mesh/eval-runs"
+  [ -e "$agent/eval/runs" ] || ln -s "$HOME/.mesh/eval-runs" "$agent/eval/runs"
+  (cd "$agent" && uv sync -q)
+  run_dir="$agent/eval/runs/$run"
+  mkdir -p "$run_dir"
+  printf '%s\n' "$baseline_json" > "$run_dir/baseline-${ref##*/}.json"
+  echo "Eval gate: ${head:0:7}, run $run, tolerance $tolerance (worktree $wt)" >&2
+
+  # The eval's own exit code says only whether every case passed; the gate decides.
+  "$agent/eval/scripts/run_eval.sh" --run "$run" --judge-repeats all || true
+  gate=0
+  rm -f "$run_dir/gate.md"  # a report left by an earlier gate run on this head must never be posted as this one's
+  (cd "$agent" && uv run python eval/scripts/check_gate.py "eval/runs/$run" --baseline "$run_dir/baseline-${ref##*/}.json" \
+     --tolerance "$tolerance" --markdown "$run_dir/gate.md") || gate=$?
+  if [ ! -s "$run_dir/gate.md" ]; then
+    post_status "$repo" "$head" "$context" error "the gate could not score run $run: see its log"
+    echo "ERROR: check_gate.py wrote no report (exit $gate)" >&2
+    exit 1
+  fi
+  summary="$(grep -m1 '^runs passed' "$run_dir/gate.md" | cut -d'(' -f1-2)"
+}
+
+remove_worktree() {
+  # The run, with its checkpoints, stays in ~/.mesh/eval-runs. Unlink the links first, so nothing follows them.
+  rm -f "$agent/eval/runs" "$wt/.env"
+  git -C "$mesh_dir" worktree remove --force "$wt"
+}
+
+case "${1:-}" in
+  --check)
+    [ $# -eq 2 ] && [[ "$2" =~ $pr_re ]] || usage
+    exec python3 "$scripts/gate_check.py" "$2" ;;
+
+  --override)
+    [ $# -eq 4 ] && [[ "$2" =~ $pr_re ]] && [ "$3" = --reason ] && [ -n "$4" ] || usage
+    url="$2" repo="${BASH_REMATCH[1]}" reason="$4"
+    head="$(gh pr view "$url" --json headRefOid | jq -r .headRefOid)"
+    post_status "$repo" "$head" evals success "override: $reason"
+    gh pr comment "$url" --body "**evals overridden** on \`${head:0:7}\` by hand (\`mesh eval-gate --override\`): $reason" >/dev/null
+    echo "evals = success (override) on $head." >&2
+    exit 0 ;;
+
+  --master)
+    [ $# -eq 1 ] || usage
+    remote="$(git -C "$mesh_dir" remote get-url origin)"
+    [[ "$remote" =~ github\.com[:/]([^/]+/[^/.]+)(\.git)?$ ]] || { echo "ERROR: origin is not on GitHub: $remote" >&2; exit 1; }
+    repo="${BASH_REMATCH[1]}"
+    git -C "$mesh_dir" fetch -q origin master
+    head="$(git -C "$mesh_dir" rev-parse origin/master)"
+    context=eval-audit
+    post_status "$repo" "$head" eval-audit pending "mesh eval-gate --master is running on ${head:0:7}"
+    run_gate "$head" "gate-master-${head:0:7}" origin/master
+    cat "$run_dir/gate.md"
+    if [ "$gate" -eq 0 ]; then
+      post_status "$repo" "$head" eval-audit success "mesh eval-gate --master passed: $summary"
+      remove_worktree
+      echo "Master is green: eval-audit = success on $head." >&2
+      exit 0
+    fi
+    post_status "$repo" "$head" eval-audit failure "mesh eval-gate --master failed: $summary"
+    # The change to revert: the newest master commit the audit marked as an ungated agent change.
+    offender="$(gh api "repos/$repo/commits?sha=master&per_page=30" | jq -r '.[].sha' | while read -r sha; do
+      gh api "repos/$repo/commits/$sha/status" \
+        | jq -e '[.statuses[] | select(.context == "eval-audit" and (.description | startswith("ungated")))] | length > 0' \
+        >/dev/null && { echo "$sha"; break; }
+    done)"
+    if [ -z "$offender" ]; then
+      remove_worktree
+      echo "Master is red and no ungated commit was found in its last 30 commits: revert by hand." >&2
+      exit 1
+    fi
+    branch="eval-revert/${offender:0:7}"
+    git -C "$wt" checkout -q -b "$branch"
+    if ! git -C "$wt" revert --no-edit "$offender" >/dev/null; then
+      git -C "$wt" revert --abort || true
+      echo "Master is red; reverting ${offender:0:7} conflicts: revert it by hand on a branch named $branch." >&2
+      remove_worktree
+      exit 1
+    fi
+    git -C "$wt" push -q origin "$branch"
+    { echo "Reverts \`${offender:0:7}\`, the ungated agent change behind master's red \`eval-audit\`."
+      echo "\`mesh eval-gate --master\` failed on \`${head:0:7}\`:"; echo; cat "$run_dir/gate.md"
+      echo; echo "Run \`mesh eval-gate <this PR's url>\`, then \`mesh merge-pr <this PR's url>\`: while master is red,"
+      echo "mesh merge-pr merges only this PR or a gated PR whose gate passed (gate_check.py)."
+    } > "$run_dir/revert-pr.md"
+    pr_url="$(gh pr create --repo "$repo" --base master --head "$branch" \
+      --title "revert[eval-gate]: reverted ${offender:0:7}, an ungated agent change that fails the eval gate" \
+      --body-file "$run_dir/revert-pr.md")"
+    remove_worktree
+    git -C "$mesh_dir" branch -q -D "$branch" || true
+    echo "Master is red. Opened the revert PR: $pr_url" >&2
+    exit 1 ;;
+
+  -*) usage ;;
+esac
+
+[ $# -eq 1 ] && [[ "$1" =~ $pr_re ]] || usage
 url="$1"
 repo="${BASH_REMATCH[1]}"
 number="${BASH_REMATCH[2]}"
-mesh_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-agent_rel="agents/review-pull-request"
 
 read -r state head base < <(gh pr view "$url" --json state,headRefOid,baseRefName \
   | jq -r '"\(.state) \(.headRefOid) \(.baseRefName)"')
@@ -33,66 +162,21 @@ if [ "$behind" != "0" ]; then
   exit 1
 fi
 
-# Master's baseline and tolerance, never the PR's.
 git -C "$mesh_dir" fetch -q origin "$base" "pull/$number/head"
-baseline_json="$(git -C "$mesh_dir" show "origin/$base:$agent_rel/eval/baseline.json")"
-tolerance="$(git -C "$mesh_dir" show "origin/$base:$agent_rel/eval/scripts/check_gate.py" \
-  | sed -n 's/^TOLERANCE = \([0-9][0-9]*\).*/\1/p')"
-if [ -z "$tolerance" ]; then
-  echo "ERROR: no TOLERANCE in $base's check_gate.py" >&2
-  exit 1
-fi
+context=evals
+post_status "$repo" "$head" evals pending "mesh eval-gate is running on ${head:0:7}"
+run_gate "$head" "gate-pr$number-${head:0:7}" "origin/$base"  # master's baseline and tolerance, never the PR's
 
-wt="${MESH_EVAL_GATE_DIR:-$HOME/environment/pmat/alpha-mesh-eval-gate}/${head:0:12}"
-if [ ! -d "$wt" ]; then
-  git -C "$mesh_dir" worktree add -q --detach "$wt" "$head"
-fi
-if [ "$(git -C "$wt" rev-parse HEAD)" != "$head" ]; then
-  echo "ERROR: $wt is not at $head" >&2
-  exit 1
-fi
-agent="$wt/$agent_rel"
-[ -e "$wt/.env" ] || ln -s "$mesh_dir/.env" "$wt/.env"
-mkdir -p "$HOME/.mesh/eval-runs"
-[ -e "$agent/eval/runs" ] || ln -s "$HOME/.mesh/eval-runs" "$agent/eval/runs"
-(cd "$agent" && uv sync -q)
-
-run="gate-pr$number-${head:0:7}"
-run_dir="$agent/eval/runs/$run"
-mkdir -p "$run_dir"
-printf '%s\n' "$baseline_json" > "$run_dir/baseline-$base.json"
-
-post_status() {  # post_status <state> <description>
-  gh api "repos/$repo/statuses/$head" -f state="$1" -f context=evals -f description="${2:0:140}" >/dev/null
-}
-post_status pending "mesh eval-gate is running on ${head:0:7}"
-echo "Eval gate: PR #$number at ${head:0:7}, run $run, tolerance $tolerance (worktree $wt)" >&2
-
-# The eval's own exit code says only whether every case passed; the gate decides.
-"$agent/eval/scripts/run_eval.sh" --run "$run" --judge-repeats all || true
-
-gate=0
-rm -f "$run_dir/gate.md"  # a report left by an earlier gate run on this head must never be posted as this one's
-(cd "$agent" && uv run python eval/scripts/check_gate.py "eval/runs/$run" --baseline "$run_dir/baseline-$base.json" \
-   --tolerance "$tolerance" --markdown "$run_dir/gate.md") || gate=$?
-if [ ! -s "$run_dir/gate.md" ]; then
-  post_status error "the gate could not score run $run: see its log"
-  echo "ERROR: check_gate.py wrote no report (exit $gate)" >&2
-  exit 1
-fi
-
-summary="$(grep -m1 '^runs passed' "$run_dir/gate.md" | cut -d'(' -f1-2)"
 if [ "$gate" -eq 0 ]; then
-  post_status success "$summary"
+  post_status "$repo" "$head" evals success "$summary"
 else
-  post_status failure "$summary"
+  post_status "$repo" "$head" evals failure "$summary"
 fi
-{ echo "**mesh eval-gate** on \`${head:0:7}\` (run \`$run\`)"; echo; cat "$run_dir/gate.md"; } > "$run_dir/gate-comment.md"
+{ echo "**mesh eval-gate** on \`${head:0:7}\` (run \`gate-pr$number-${head:0:7}\`)"; echo; cat "$run_dir/gate.md"; } \
+  > "$run_dir/gate-comment.md"
 gh pr comment "$url" --body-file "$run_dir/gate-comment.md" >/dev/null
 cat "$run_dir/gate.md"
-# The run, with its checkpoints, stays in ~/.mesh/eval-runs. Unlink the links first, so nothing follows them.
-rm -f "$agent/eval/runs" "$wt/.env"
-git -C "$mesh_dir" worktree remove --force "$wt"
+remove_worktree
 if [ "$gate" -eq 0 ]; then
   echo "Gate passed: evals = success on $head." >&2
 else

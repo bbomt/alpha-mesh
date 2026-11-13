@@ -2,7 +2,9 @@
 # alpha-mesh/test/test-eval-gate
 # Runs `mesh eval-gate` against stand-in `gh`, `git` and `uv` and a stand-in eval run, and checks that it posts the
 # gate's verdict as the `evals` status on the PR's head commit (pending first), comments the report, scores with
-# master's baseline and tolerance, refuses a stale branch, and leaves the eval runs folder alone (PMAT-312).
+# master's baseline and tolerance, refuses a stale branch, and leaves the eval runs folder alone (PMAT-312). Also
+# --check (the merge checklist), --override (evals = success by hand) and --master (eval-audit on master's head, and
+# on a failure the PR that reverts the ungated commit).
 
 set -euo pipefail
 
@@ -20,7 +22,16 @@ case "$1 $2" in
   "pr view") printf '{"state":"OPEN","headRefOid":"%s","baseRefName":"master"}\n' "$STUB_HEAD" ;;
   "api repos/o/r/compare/master...$STUB_HEAD") printf '{"behind_by":%s}\n' "$STUB_BEHIND" ;;
   "api repos/o/r/statuses/$STUB_HEAD") ;;
-  "pr comment") cp "$5" "$STUB_COMMENT" ;;  # pr comment <url> --body-file <file>
+  "pr comment")  # pr comment <url> --body-file <file> | --body <text>
+    if [ "$4" = --body-file ]; then cp "$5" "$STUB_COMMENT"; else printf '%s\n' "$5" > "$STUB_COMMENT"; fi ;;
+  "pr diff") printf '%s\n' "agents/review-pull-request/src/review_pull_request/stage2.py" ;;
+  "api repos/o/r/commits/master/status") printf '{"statuses":[]}\n' ;;
+  "api repos/o/r/commits/$STUB_HEAD/status") printf '{"statuses":[]}\n' ;;
+  "api repos/o/r/pulls/15/commits?per_page=100") printf '[{"sha":"%s"}]\n' "$STUB_HEAD" ;;
+  "api repos/o/r/commits?sha=master&per_page=30") printf '[{"sha":"%s"},{"sha":"0ff1ce0ff1ce"}]\n' "$STUB_HEAD" ;;
+  "api repos/o/r/commits/0ff1ce0ff1ce/status")
+    printf '{"statuses":[{"context":"eval-audit","state":"failure","description":"ungated agent change: PR #3"}]}\n' ;;
+  "pr create") echo "https://github.com/o/r/pull/99" ;;
   *) echo "unexpected gh call: $*" >&2; exit 9 ;;
 esac
 EOF
@@ -36,6 +47,9 @@ case "$1" in
       *check_gate.py) printf '"""doc"""\nTOLERANCE = 7  # runs\n' ;;
     esac ;;
   rev-parse) echo "$STUB_HEAD" ;;
+  remote) echo "https://github.com/o/r.git" ;;
+  checkout|push|branch) ;;
+  revert) [ "${STUB_REVERT:-ok}" = ok ] || exit 1 ;;
   worktree)
     if [ "$2" = add ]; then  # worktree add -q --detach <dir> <sha>
       mkdir -p "$5/agents/review-pull-request/eval/scripts"
@@ -103,5 +117,58 @@ if run "a passing run posts pending, then success, and comments the report" 0 pa
 fi
 run "a failing run posts failure and comments the report" 0 fail 1 "pending,failure" yes || true
 run "a run the gate cannot score posts error, no comment" 0 crash 1 "pending,error" no || true
+
+
+# --master: the gate on master's head posts eval-audit; a failure opens the revert PR of the ungated commit.
+master() {  # master <name> <gate> <want exit> <want statuses> <want revert PR yes|no>
+  local out code statuses pr=no
+  : > "$WORK/log"
+  set +e
+  out="$(PATH="$WORK/bin:$PATH" HOME="$WORK/home" MESH_EVAL_GATE_DIR="$WORK/gates" STUB_LOG="$WORK/log" \
+         STUB_HEAD="$HEAD_SHA" STUB_GATE="$2" STUB_COMMENT="$WORK/comment" STUB_BASELINE_SEEN="$WORK/baseline-seen" \
+         "$MESH_DIR/bin/mesh" eval-gate --master 2>&1)"
+  code=$?
+  set -e
+  statuses="$(grep 'context=eval-audit' "$WORK/log" | grep -o 'state=[a-z]*' | cut -d= -f2 | paste -sd, - || true)"
+  grep -q "^gh pr create" "$WORK/log" && pr=yes
+  if [ "$code" -ne "$3" ] || [ "$statuses" != "$4" ] || [ "$pr" != "$5" ]; then
+    echo "  FAIL: $1: exit $code, eval-audit '$statuses', revert PR $pr"; echo "$out" | sed 's/^/    /'
+    fails=$((fails + 1)); return 1
+  fi
+  echo "  PASS: $1"
+}
+master "a passing gate on master turns it green and opens no PR" pass 0 "pending,success" no || true
+if master "a failing gate on master stays red and opens the revert PR" fail 1 "pending,failure" yes; then
+  grep -q "git revert --no-edit 0ff1ce0ff1ce" "$WORK/log" || { echo "  FAIL: did not revert the ungated commit"; fails=$((fails + 1)); }
+  grep -q "git checkout -q -b eval-revert/0ff1ce0" "$WORK/log" \
+    || { echo "  FAIL: the revert branch is not eval-revert/<sha>"; fails=$((fails + 1)); }
+fi
+
+# --override: evals = success by hand, recorded on the PR.
+: > "$WORK/log"; rm -f "$WORK/comment"
+PATH="$WORK/bin:$PATH" STUB_LOG="$WORK/log" STUB_HEAD="$HEAD_SHA" STUB_COMMENT="$WORK/comment" \
+  "$MESH_DIR/bin/mesh" eval-gate --override "$URL" --reason "judge outage, scores read by hand" >/dev/null 2>&1
+if grep -q "state=success -f context=evals -f description=override: judge outage" "$WORK/log" \
+   && grep -q "judge outage" "$WORK/comment"; then
+  echo "  PASS: --override posts evals = success with the reason and records it on the PR"
+else
+  echo "  FAIL: --override"; sed 's/^/    log: /' "$WORK/log"; fails=$((fails + 1))
+fi
+if PATH="$WORK/bin:$PATH" STUB_LOG="$WORK/log" "$MESH_DIR/bin/mesh" eval-gate --override "$URL" >/dev/null 2>&1; then
+  echo "  FAIL: --override without a reason must be refused"; fails=$((fails + 1))
+else
+  echo "  PASS: --override without a reason is refused"
+fi
+
+# --check: the checklist, with the next command.
+set +e
+out="$(PATH="$WORK/bin:$PATH" STUB_LOG="$WORK/log" STUB_HEAD="$HEAD_SHA" STUB_BEHIND=0 "$MESH_DIR/bin/mesh" eval-gate --check "$URL" 2>&1)"
+code=$?
+set -e
+if [ "$code" -ne 0 ] && grep -q "\[ \] evals on head abc1234: missing" <<<"$out" && grep -q "next: mesh eval-gate $URL" <<<"$out"; then
+  echo "  PASS: --check prints the checklist and the next command"
+else
+  echo "  FAIL: --check: exit $code"; echo "$out" | sed 's/^/    /'; fails=$((fails + 1))
+fi
 
 [ "$fails" -eq 0 ] || exit 1
