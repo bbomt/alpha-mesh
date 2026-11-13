@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+# alpha-mesh/bin/eval-gate
+# mesh eval-gate <PR url>: the review-pull-request eval gate (PMAT-312). Runs the full eval (the development cases,
+# k=3, every repeat judged) on the PR's head commit, in a clean worktree, and compares it with master's baseline
+# (check_gate.py, with master's tolerance, so a PR cannot loosen its own gate). Then it posts the result as the
+# commit status `evals` on that head commit, which `mesh merge-pr` requires, and the score table as a PR comment.
+#
+# About 75 min and about a day's free-model quota. Run again on the same head to resume: finished reviews are kept,
+# so a run stopped by the quota continues where it stopped.
+
+set -euo pipefail
+
+if [ $# -ne 1 ] || [[ ! "$1" =~ ^https://github\.com/([^/]+/[^/]+)/pull/([0-9]+)$ ]]; then
+  echo "usage: mesh eval-gate https://github.com/<owner>/<repo>/pull/<number>" >&2
+  exit 2
+fi
+url="$1"
+repo="${BASH_REMATCH[1]}"
+number="${BASH_REMATCH[2]}"
+mesh_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+agent_rel="agents/review-pull-request"
+
+read -r state head base < <(gh pr view "$url" --json state,headRefOid,baseRefName \
+  | jq -r '"\(.state) \(.headRefOid) \(.baseRefName)"')
+if [ "$state" != "OPEN" ]; then
+  echo "Not run: the PR is not open (it is $state)." >&2
+  exit 1
+fi
+behind="$(gh api "repos/$repo/compare/$base...$head" | jq -r .behind_by)"
+if [ "$behind" != "0" ]; then
+  echo "Not run: the branch is $behind commit(s) behind $base, so mesh merge-pr would refuse it anyway." >&2
+  echo "Merge $base in, push, then run this again." >&2
+  exit 1
+fi
+
+# Master's baseline and tolerance, never the PR's.
+git -C "$mesh_dir" fetch -q origin "$base" "pull/$number/head"
+baseline_json="$(git -C "$mesh_dir" show "origin/$base:$agent_rel/eval/baseline.json")"
+tolerance="$(git -C "$mesh_dir" show "origin/$base:$agent_rel/eval/scripts/check_gate.py" \
+  | sed -n 's/^TOLERANCE = \([0-9][0-9]*\).*/\1/p')"
+if [ -z "$tolerance" ]; then
+  echo "ERROR: no TOLERANCE in $base's check_gate.py" >&2
+  exit 1
+fi
+
+wt="${MESH_EVAL_GATE_DIR:-$HOME/environment/pmat/alpha-mesh-eval-gate}/${head:0:12}"
+if [ ! -d "$wt" ]; then
+  git -C "$mesh_dir" worktree add -q --detach "$wt" "$head"
+fi
+if [ "$(git -C "$wt" rev-parse HEAD)" != "$head" ]; then
+  echo "ERROR: $wt is not at $head" >&2
+  exit 1
+fi
+agent="$wt/$agent_rel"
+[ -e "$wt/.env" ] || ln -s "$mesh_dir/.env" "$wt/.env"
+mkdir -p "$HOME/.mesh/eval-runs"
+[ -e "$agent/eval/runs" ] || ln -s "$HOME/.mesh/eval-runs" "$agent/eval/runs"
+(cd "$agent" && uv sync -q)
+
+run="gate-pr$number-${head:0:7}"
+run_dir="$agent/eval/runs/$run"
+mkdir -p "$run_dir"
+printf '%s\n' "$baseline_json" > "$run_dir/baseline-$base.json"
+
+post_status() {  # post_status <state> <description>
+  gh api "repos/$repo/statuses/$head" -f state="$1" -f context=evals -f description="${2:0:140}" >/dev/null
+}
+post_status pending "mesh eval-gate is running on ${head:0:7}"
+echo "Eval gate: PR #$number at ${head:0:7}, run $run, tolerance $tolerance (worktree $wt)" >&2
+
+# The eval's own exit code says only whether every case passed; the gate decides.
+"$agent/eval/scripts/run_eval.sh" --run "$run" --judge-repeats all || true
+
+gate=0
+rm -f "$run_dir/gate.md"  # a report left by an earlier gate run on this head must never be posted as this one's
+(cd "$agent" && uv run python eval/scripts/check_gate.py "eval/runs/$run" --baseline "$run_dir/baseline-$base.json" \
+   --tolerance "$tolerance" --markdown "$run_dir/gate.md") || gate=$?
+if [ ! -s "$run_dir/gate.md" ]; then
+  post_status error "the gate could not score run $run: see its log"
+  echo "ERROR: check_gate.py wrote no report (exit $gate)" >&2
+  exit 1
+fi
+
+summary="$(grep -m1 '^runs passed' "$run_dir/gate.md" | cut -d'(' -f1-2)"
+if [ "$gate" -eq 0 ]; then
+  post_status success "$summary"
+else
+  post_status failure "$summary"
+fi
+{ echo "**mesh eval-gate** on \`${head:0:7}\` (run \`$run\`)"; echo; cat "$run_dir/gate.md"; } > "$run_dir/gate-comment.md"
+gh pr comment "$url" --body-file "$run_dir/gate-comment.md" >/dev/null
+cat "$run_dir/gate.md"
+# The run, with its checkpoints, stays in ~/.mesh/eval-runs. Unlink the links first, so nothing follows them.
+rm -f "$agent/eval/runs" "$wt/.env"
+git -C "$mesh_dir" worktree remove --force "$wt"
+if [ "$gate" -eq 0 ]; then
+  echo "Gate passed: evals = success on $head." >&2
+else
+  echo "Gate failed: evals = failure on $head." >&2
+fi
+exit "$gate"

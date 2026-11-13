@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+# alpha-mesh/test/test-eval-gate
+# Runs `mesh eval-gate` against stand-in `gh`, `git` and `uv` and a stand-in eval run, and checks that it posts the
+# gate's verdict as the `evals` status on the PR's head commit (pending first), comments the report, scores with
+# master's baseline and tolerance, refuses a stale branch, and leaves the eval runs folder alone (PMAT-312).
+
+set -euo pipefail
+
+MESH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+WORK="$(mktemp -d)"
+trap 'rm -rf "$WORK"' EXIT
+URL="https://github.com/o/r/pull/15"
+HEAD_SHA="abc1234def5678abc1234def5678abc1234def56"
+
+mkdir -p "$WORK/bin" "$WORK/home/.mesh/eval-runs/keep-me"
+cat > "$WORK/bin/gh" <<'EOF'
+#!/usr/bin/env bash
+echo "gh $*" >> "$STUB_LOG"
+case "$1 $2" in
+  "pr view") printf '{"state":"OPEN","headRefOid":"%s","baseRefName":"master"}\n' "$STUB_HEAD" ;;
+  "api repos/o/r/compare/master...$STUB_HEAD") printf '{"behind_by":%s}\n' "$STUB_BEHIND" ;;
+  "api repos/o/r/statuses/$STUB_HEAD") ;;
+  "pr comment") cp "$5" "$STUB_COMMENT" ;;  # pr comment <url> --body-file <file>
+  *) echo "unexpected gh call: $*" >&2; exit 9 ;;
+esac
+EOF
+cat > "$WORK/bin/git" <<'EOF'
+#!/usr/bin/env bash
+shift 2  # -C <dir>
+echo "git $*" >> "$STUB_LOG"
+case "$1" in
+  fetch) ;;
+  show)
+    case "$2" in
+      *baseline.json) echo '{"model": "master-baseline"}' ;;
+      *check_gate.py) printf '"""doc"""\nTOLERANCE = 7  # runs\n' ;;
+    esac ;;
+  rev-parse) echo "$STUB_HEAD" ;;
+  worktree)
+    if [ "$2" = add ]; then  # worktree add -q --detach <dir> <sha>
+      mkdir -p "$5/agents/review-pull-request/eval/scripts"
+      printf '#!/usr/bin/env bash\necho "run_eval $*" >> "$STUB_LOG"\nexit 100\n' \
+        > "$5/agents/review-pull-request/eval/scripts/run_eval.sh"
+      chmod +x "$5/agents/review-pull-request/eval/scripts/run_eval.sh"
+    else  # worktree remove --force <dir>
+      rm -rf "$4"
+    fi ;;
+  *) echo "unexpected git call: $*" >&2; exit 9 ;;
+esac
+EOF
+cat > "$WORK/bin/uv" <<'EOF'
+#!/usr/bin/env bash
+echo "uv $*" >> "$STUB_LOG"
+[ "$1" = sync ] && exit 0
+# uv run python eval/scripts/check_gate.py <run> --baseline <f> --tolerance <t> --markdown <md>
+cp "$6" "$STUB_BASELINE_SEEN"
+case "$STUB_GATE" in
+  pass) echo "runs passed 142/195 (baseline 140), drop -2, tolerance 7 (model \`m\`, k=3)" > "${10}"; exit 0 ;;
+  fail) echo "runs passed 90/195 (baseline 140), drop 50, tolerance 7 (model \`m\`, k=3)" > "${10}"; exit 1 ;;
+  crash) exit 2 ;;
+esac
+EOF
+chmod +x "$WORK/bin/"*
+
+fails=0
+run() {  # run <name> <behind> <gate> <want exit> <want status sequence> <want comment yes|no>
+  local name="$1" out code statuses commented=no
+  : > "$WORK/log"; rm -f "$WORK/comment" "$WORK/baseline-seen"
+  set +e
+  out="$(PATH="$WORK/bin:$PATH" HOME="$WORK/home" MESH_EVAL_GATE_DIR="$WORK/gates" STUB_LOG="$WORK/log" \
+         STUB_HEAD="$HEAD_SHA" STUB_BEHIND="$2" STUB_GATE="$3" STUB_COMMENT="$WORK/comment" \
+         STUB_BASELINE_SEEN="$WORK/baseline-seen" "$MESH_DIR/bin/mesh" eval-gate "$URL" 2>&1)"
+  code=$?
+  set -e
+  statuses="$(grep -o 'state=[a-z]*' "$WORK/log" | cut -d= -f2 | paste -sd, - || true)"
+  [ -f "$WORK/comment" ] && commented=yes
+  local bad=""
+  [ "$code" -eq "$4" ] || bad="exit $code, want $4"
+  [ "$statuses" = "$5" ] || bad="$bad; statuses '$statuses', want '$5'"
+  [ "$commented" = "$6" ] || bad="$bad; comment $commented, want $6"
+  [ -d "$WORK/home/.mesh/eval-runs/keep-me" ] || bad="$bad; the eval runs folder was touched"
+  if [ -n "$bad" ]; then
+    echo "  FAIL: $name: $bad"; echo "$out" | sed 's/^/    /'; sed 's/^/    log: /' "$WORK/log"
+    fails=$((fails + 1)); return 1
+  fi
+  echo "  PASS: $name"
+}
+
+echo "=== eval-gate tests ==="
+run "a stale branch is refused before any run or status" 3 pass 1 "" no || true
+if grep -q "run_eval" "$WORK/log"; then echo "  FAIL: a stale branch must not start the eval"; fails=$((fails + 1)); fi
+
+if run "a passing run posts pending, then success, and comments the report" 0 pass 0 "pending,success" yes; then
+  grep -q 'description=runs passed 142/195 (baseline 140), drop -2, tolerance 7' "$WORK/log" \
+    || { echo "  FAIL: the success status lacks the count"; fails=$((fails + 1)); }
+  grep -q -- "--tolerance 7 " "$WORK/log" || { echo "  FAIL: not scored with master's tolerance"; fails=$((fails + 1)); }
+  grep -q '"master-baseline"' "$WORK/baseline-seen" \
+    || { echo "  FAIL: not scored against master's baseline"; fails=$((fails + 1)); }
+  grep -q -- "--run gate-pr15-abc1234 --judge-repeats all" "$WORK/log" \
+    || { echo "  FAIL: the eval did not judge every repeat"; fails=$((fails + 1)); }
+  grep -q "abc1234" "$WORK/comment" || { echo "  FAIL: the comment does not name the commit"; fails=$((fails + 1)); }
+  [ ! -e "$WORK/gates/${HEAD_SHA:0:12}" ] || { echo "  FAIL: the worktree was left behind"; fails=$((fails + 1)); }
+fi
+run "a failing run posts failure and comments the report" 0 fail 1 "pending,failure" yes || true
+run "a run the gate cannot score posts error, no comment" 0 crash 1 "pending,error" no || true
+
+[ "$fails" -eq 0 ] || exit 1
