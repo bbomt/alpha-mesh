@@ -6,7 +6,7 @@
     "build": "tsc --noEmit",
     "test": "jest --verbose",
     "cdk": "cdk",
-    "cdk:deploy": "cdk deploy --require-approval never --no-fail-on-empty-changeset"
+    "cdk:deploy": "cdk deploy --all --require-approval never --no-fail-on-empty-changeset"
   },
   "devDependencies": {
     "@types/jest": "^29.5.12",

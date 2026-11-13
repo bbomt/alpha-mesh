@@ -4,8 +4,9 @@
   "title": "review-pull-request eval baseline",
   "description": "eval/baseline.json (eval/README.md). The guard against labelling to the test: every failing case has a class and a reason, and every label error fixed names its case and its evidence.",
   "type": "object",
-  "required": ["commit", "cases_commit", "model", "date", "k", "window", "summary", "label_errors_fixed", "cases"],
+  "required": ["run", "commit", "cases_commit", "model", "date", "k", "window", "summary", "label_errors_fixed", "cases"],
   "properties": {
+    "run": {"type": "string", "minLength": 1, "description": "the run folder it was built from, kept in S3 while named here (archive_runs.py)"},
     "commit": {"type": "string", "minLength": 7, "description": "the agent version the runs were made with"},
     "cases_commit": {"type": "string", "minLength": 7, "description": "the case files the runs were scored against"},
     "model": {"type": "string", "minLength": 1},

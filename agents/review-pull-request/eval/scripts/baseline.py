@@ -188,7 +188,10 @@ def main(argv=None) -> int:
     held = case_rules.holdout_ids()
     changes = [c for c in label_changes(meta["commit"], case_rules.CASES_DIR, REPO_ROOT) if c["case_id"] not in held]
     try:
-        baseline = build(results, case_rules.development_cases(), meta | {"cases_commit": git("rev-parse", "HEAD")},
+        # run: the run folder's real name (eval/runs/<run> may link to ~/.mesh/eval-runs/<run>), which
+        # archive_runs.py keeps in S3 while this baseline names it (PMAT-336)
+        baseline = build(results, case_rules.development_cases(),
+                         {"run": args.run_dir.resolve().name, **meta, "cases_commit": git("rev-parse", "HEAD")},
                          analysis=analysis, label_changes=changes)
         jsonschema.validate(baseline, SCHEMA)
     except NotAnalysed as e:

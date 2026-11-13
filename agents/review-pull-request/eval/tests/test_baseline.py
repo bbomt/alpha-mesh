@@ -113,7 +113,7 @@ def test_moving_a_case_line_is_a_label_change(tmp_path):
 # (d)────────────────────────────────────────────────────────────────────────────────────────────
 
 def valid_baseline():
-    return {"commit": SHA, "cases_commit": SHA, "model": "m", "date": "2026-10-30", "k": 2, "window": 3,
+    return {"run": "base1", "commit": SHA, "cases_commit": SHA, "model": "m", "date": "2026-10-30", "k": 2, "window": 3,
             "summary": {"cases": 2, "scored_cases": 2, "pass_rate": 0.75, "pass_k": 0.5, "file_level_pass_rate": 0.5,
                         "by_class": {"model_failure": 1, "label_error": 1, "harness_error": 0}},
             "label_errors_fixed": [{"case_id": "B", "reason": "src/a.py:40 calls it when --force is set."}],
@@ -165,7 +165,7 @@ def build(analysis=None, label_changes=()):
     rows = [row("A", 0, review()), row("A", 1, review()),
             row("B", 0, review()), row("B", 1, review(12)),
             row("E", 0, error="ReviewFailed: the review left no result"), row("E", 1, review(10))]
-    meta = {"commit": SHA, "cases_commit": SHA, "model": "m", "date": "2026-10-30", "k": 2, "window": 3}
+    meta = {"run": "base1", "commit": SHA, "cases_commit": SHA, "model": "m", "date": "2026-10-30", "k": 2, "window": 3}
     return baseline.build(results(*rows), cases, meta, analysis=analysis or {}, label_changes=list(label_changes))
 
 

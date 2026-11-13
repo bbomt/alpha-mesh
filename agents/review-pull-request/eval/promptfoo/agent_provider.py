@@ -14,7 +14,8 @@ Run state lives in EVAL_RUN_DIR (eval/scripts/run_eval.sh sets it; gitignored):
 The model is EVAL_MODEL, else CODE_REVIEW_MODEL from .env. One run dir holds one model's reviews.
 
 With EVAL_STORED_RESULTS (run_eval.sh --stored, PMAT-311) the agent does not run: each case gets its
-stored review from that results.json, so the judge can score it. A hold-out case is refused.
+stored review from that results.json, so the judge can score it. A hold-out case is refused. A relative trace path
+(a run pulled by archive_runs.py, PMAT-336) is resolved against the folder of that results.json.
 """
 
 import fcntl
@@ -100,7 +101,10 @@ def _stored_review(path: str, case_id: str, repeat: int) -> dict:
     if row.get("failureReason") == 2 or response.get("output") is None:
         raise LookupError(row.get("error") or response.get("error") or "the stored run has no output")
     output = response["output"]
-    return json.loads(output) if isinstance(output, str) else output
+    output = json.loads(output) if isinstance(output, str) else output
+    if output.get("trace") and not os.path.isabs(output["trace"]):  # a run pulled from the archive (PMAT-336)
+        output = {**output, "trace": str(Path(path).resolve().parent / output["trace"])}
+    return output
 
 
 def call_api(prompt, options, context):
