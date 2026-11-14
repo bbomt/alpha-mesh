@@ -1,5 +1,5 @@
 ## Task
-Review this file's diff for real bugs, security issues, performance problems, and architectural concerns. Do NOT report style issues, formatting, or naming conventions. Do NOT guess — if you are uncertain whether something is a bug, do not report it.
+Review this file's diff for real bugs, security issues, performance problems, and architectural concerns. Report every possible issue you can find, including style, formatting, naming, and anything you are unsure about.
 
 ## PR Context
 {overview}
