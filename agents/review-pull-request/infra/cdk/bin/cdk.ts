@@ -1,5 +1,6 @@
 import { App } from "aws-cdk-lib";
 import { CheckpointStack } from "../lib/checkpoint-stack";
+import { EvalRunsStack } from "../lib/eval-runs-stack";
 
 const DEPLOY_ENVS = ["dev", "staging", "prod"];
 
@@ -18,12 +19,20 @@ if (!Number.isInteger(checkpointTtlDays) || checkpointTtlDays < 1) {
   throw new Error(`cdk.json context "${deployEnv}.checkpointTtlDays" must be a positive integer`);
 }
 
+const env = {
+  account: process.env.CDK_DEFAULT_ACCOUNT,
+  region: process.env.CDK_DEFAULT_REGION,
+};
+
 new CheckpointStack(app, "PmatAlphaMeshReviewCheckpointsStack", {
   stackName: `PmatAlphaMeshReviewCheckpointsStack-${deployEnv}`,
-  env: {
-    account: process.env.CDK_DEFAULT_ACCOUNT,
-    region: process.env.CDK_DEFAULT_REGION,
-  },
+  env,
   deployEnv,
   checkpointTtlDays,
+});
+
+new EvalRunsStack(app, "PmatAlphaMeshReviewEvalRunsStack", {
+  stackName: `PmatAlphaMeshReviewEvalRunsStack-${deployEnv}`,
+  env,
+  deployEnv,
 });

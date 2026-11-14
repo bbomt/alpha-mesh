@@ -1,5 +1,5 @@
 #!/bin/bash
-# Deploys the review-pull-request checkpoint stack (DynamoDB, S3, SSM) with CDK.
+# Deploys the review-pull-request stacks with CDK: checkpoints (DynamoDB, S3, SSM) and eval runs (S3, SSM).
 # Requires DEPLOY_ENV (dev|staging|prod) and AWS_REGION; see scripts/deploy-dev-from-ec2.sh.
 set -euo pipefail
 
@@ -25,7 +25,7 @@ if [[ -n "${AWS_ACCOUNT_ID:-}" && "${CALLER_ACCOUNT}" != "${AWS_ACCOUNT_ID}" ]];
   exit 1
 fi
 
-echo "[START] Deploying PmatAlphaMeshReviewCheckpointsStack-${DEPLOY_ENV} to ${AWS_REGION}"
+echo "[START] Deploying PmatAlphaMeshReviewCheckpointsStack-${DEPLOY_ENV} and PmatAlphaMeshReviewEvalRunsStack-${DEPLOY_ENV} to ${AWS_REGION}"
 
 cd "${CDK_DIR}"
 pnpm install --frozen-lockfile

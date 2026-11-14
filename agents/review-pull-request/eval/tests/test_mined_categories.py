@@ -54,11 +54,15 @@ def test_3_the_baseline_groups_mined_cases_by_their_category():
 
 # 4 ──────────────────────────────────────────────────────────────────────────────────────────────
 # eval/judge/sample.json byte for byte as PMAT-311 committed it (90c5419). Giving mined cases a real category must
-# never redraw the judge's sample: the owner's labels are on it.
+# never redraw the judge's sample: the owner's labels are on it. PMAT-336 added only the `run` the labels score, as the
+# first key; everything else stays byte for byte.
 SAMPLE_AT_PMAT_311_SHA256 = "ea0c4d1ad79807565baebe49cd62b90b4e2c74ea11f048ecde9a6a0b2ddd937f"
 
 
 def test_4_the_judge_sample_is_unchanged():
     import hashlib
 
-    assert hashlib.sha256((EVAL / "judge" / "sample.json").read_bytes()).hexdigest() == SAMPLE_AT_PMAT_311_SHA256
+    text = (EVAL / "judge" / "sample.json").read_text()
+    run_line = '  "run": "PMAT-322-base3",\n'
+    assert text.startswith("{\n" + run_line)
+    assert hashlib.sha256(text.replace(run_line, "", 1).encode()).hexdigest() == SAMPLE_AT_PMAT_311_SHA256
