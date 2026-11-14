@@ -12,15 +12,31 @@ class Fake:
     def __init__(self):
         self.tabs, self.opened, self.sent, self.killed, self.pruned = set(), [], [], [], []
         self.clock = self.start = datetime(2026, 10, 22, 12, 0, tzinfo=timezone.utc)
+        self.lost = False  # True: typing reaches no prompt (the tab's input in history mode, PMAT-337)
+
+    def send(self, name, text):
+        self.sent.append((name, text))
+        if not self.lost:  # the worker's UserPromptSubmit hook records the prompt
+            s = status.read(name)
+            status.update(name, state="working", history=s.get("history", []) + [
+                {"event": "UserPromptSubmit", "at": self.clock.isoformat(timespec="seconds")}])
+
+    def sleep(self, seconds):
+        self.clock += timedelta(seconds=seconds)
+
+    def at_prompt(self, key):
+        """The worker's turn ended (its Stop hook)."""
+        status.update(key, state="idle")
 
     def ops(self):
         return loop.Ops(
             windows=lambda: set(self.tabs),
             new_window=lambda name, cwd, cmd: (self.tabs.add(name), self.opened.append((name, cwd, cmd))),
-            send=lambda name, text: self.sent.append((name, text)),
+            send=self.send,
             kill=lambda name: (self.tabs.discard(name), self.killed.append(name)),
             now=lambda: self.clock,
             prune=lambda folder: self.pruned.append(folder),
+            sleep=self.sleep,
         )
 
     def prompt_at(self, key, minutes):
@@ -123,8 +139,8 @@ def test_done_ticket_gets_a_warning_first_not_a_close(running):
 
 
 def test_done_tab_closes_after_the_grace_period_if_nobody_typed(running):
-    loop.tick(["PMAT-1"], DONE, running.ops())
-    running.prompt_at("PMAT-1", 0)  # our own warning
+    loop.tick(["PMAT-1"], DONE, running.ops())  # the warning, received by the worker
+    running.at_prompt("PMAT-1")
     running.clock += timedelta(minutes=4)
     loop.tick(["PMAT-1"], DONE, running.ops())
     assert running.killed == [] and running.pruned == []
@@ -136,8 +152,8 @@ def test_done_tab_closes_after_the_grace_period_if_nobody_typed(running):
 
 
 def test_owner_typing_after_the_warning_keeps_the_tab(running):
-    loop.tick(["PMAT-1"], DONE, running.ops())
-    running.prompt_at("PMAT-1", 0)  # our own warning
+    loop.tick(["PMAT-1"], DONE, running.ops())  # the warning, received by the worker
+    running.at_prompt("PMAT-1")
     running.prompt_at("PMAT-1", 2)  # the owner
     running.clock += timedelta(minutes=10)
     out = loop.tick(["PMAT-1"], DONE, running.ops())
@@ -146,12 +162,12 @@ def test_owner_typing_after_the_warning_keeps_the_tab(running):
 
 
 def test_a_warned_tab_lost_in_a_reboot_is_warned_again_not_taken_as_kept(running):
-    loop.tick(["PMAT-1"], DONE, running.ops())
-    running.prompt_at("PMAT-1", 0)  # our warning
+    loop.tick(["PMAT-1"], DONE, running.ops())  # our warning, received
     running.tabs.clear()  # reboot
     running.clock += timedelta(minutes=6)
     loop.tick(["PMAT-1"], DONE, running.ops())  # resumed
     running.prompt_at("PMAT-1", 6)  # the resume message
+    running.at_prompt("PMAT-1")
     loop.tick(["PMAT-1"], DONE, running.ops())
     assert running.killed == [] and status.active() == ["PMAT-1"]
     assert running.sent[-1] == ("PMAT-1", loop.CLOSING.format(key="PMAT-1", minutes=5))
@@ -176,7 +192,7 @@ def test_one_tickets_failure_does_not_stop_the_others(running):
     def send(name, text):
         if name == "PMAT-1":
             raise RuntimeError("can't find window: PMAT-1")
-        running.sent.append((name, text))
+        running.send(name, text)
 
     ops.send = send
     t = {"PMAT-1": Ticket(labels=[], done=False, comment_id="6"),
@@ -190,3 +206,64 @@ def test_hook_fields_and_orchestrator_fields_survive_each_other():
     status.update("PMAT-1", launch_dir="/repo")
     status.update("PMAT-1", state="idle")
     assert status.read("PMAT-1") == {"launch_dir": "/repo", "state": "idle"}
+
+
+# PMAT-337: a comment counts as passed on only once the worker received it as a prompt (its UserPromptSubmit
+# hook). On 2026-11-13 PMAT-312's tab was in Claude Code's history mode, so the typed relay was never submitted.
+COMMENT = {"PMAT-1": Ticket(labels=["AWAITING-USER-RESPONSE"], done=False, comment_id="13765")}
+RELAY = loop.REPLY.format(key="PMAT-1", after="the ones from before you started", comment="13765")
+
+
+def test_a_lost_relay_is_not_counted_as_passed_on_and_is_typed_again(running):
+    running.lost = True
+    out = loop.tick(["PMAT-1"], COMMENT, running.ops())
+    assert status.read("PMAT-1")["relayed_comment"] is None
+    assert out == ["PMAT-1: comment 13765 not received (the tab's input may be in use), trying again next check"]
+    loop.tick(["PMAT-1"], COMMENT, running.ops())
+    assert running.sent == [("PMAT-1", RELAY), ("PMAT-1", RELAY)]
+
+
+def test_a_delivered_relay_is_passed_on_as_before(running):
+    out = loop.tick(["PMAT-1"], COMMENT, running.ops())
+    s = status.read("PMAT-1")
+    assert s["relayed_comment"] == "13765" and s["state"] == "working" and not s.get("undelivered")
+    assert out == ["PMAT-1: passed on the owner's comment 13765"]
+
+
+def test_a_relay_that_arrives_on_the_second_try_is_passed_on(running):
+    running.lost = True
+    loop.tick(["PMAT-1"], COMMENT, running.ops())
+    running.lost = False  # the owner left history mode
+    out = loop.tick(["PMAT-1"], COMMENT, running.ops())
+    assert out == ["PMAT-1: passed on the owner's comment 13765"]
+    assert status.read("PMAT-1")["relayed_comment"] == "13765" and not status.read("PMAT-1")["undelivered"]
+
+
+def test_after_the_retry_cap_it_stops_typing_and_the_screen_says_check_the_tab(running):
+    from orchestrator import display
+    running.lost = True
+    outs = [loop.tick(["PMAT-1"], COMMENT, running.ops()) for _ in range(loop.MAX_ATTEMPTS + 2)]
+    assert running.sent == [("PMAT-1", RELAY)] * loop.MAX_ATTEMPTS
+    assert outs[loop.MAX_ATTEMPTS - 1] == ["PMAT-1: comment 13765 not delivered: check the tab"]
+    assert outs[loop.MAX_ATTEMPTS:] == [[], []]  # no event spam while it waits
+    s = status.read("PMAT-1")
+    assert s["relayed_comment"] is None
+    assert display.needs(s, COMMENT["PMAT-1"], None, True, running.clock, 5)[0] == \
+        "▶ comment 13765 not delivered: check the tab"
+    # The owner fixes the tab and types there; at the prompt again, the relay is typed once more and arrives.
+    running.lost = False
+    running.clock += timedelta(minutes=1)
+    running.prompt_at("PMAT-1", 10)
+    out = loop.tick(["PMAT-1"], COMMENT, running.ops())
+    assert out == ["PMAT-1: passed on the owner's comment 13765"] and len(running.sent) == loop.MAX_ATTEMPTS + 1
+    assert display.needs(status.read("PMAT-1"), COMMENT["PMAT-1"], None, True, running.clock, 5)[0] == "▶ answer on Jira"
+
+
+def test_a_lost_closing_warning_does_not_start_the_grace_period(running):
+    running.lost = True
+    out = loop.tick(["PMAT-1"], DONE, running.ops())
+    assert out == ["PMAT-1: the closing warning not received (the tab's input may be in use), trying again next check"]
+    assert not status.read("PMAT-1").get("close_warned_at")
+    running.clock += timedelta(minutes=10)
+    loop.tick(["PMAT-1"], DONE, running.ops())
+    assert running.killed == [] and len(running.sent) == 2  # typed again, never closed

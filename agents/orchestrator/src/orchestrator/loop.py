@@ -4,6 +4,7 @@ what the owner would do by hand in that tab. The worker runs the ticket itself t
 """
 
 import shlex
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -31,6 +32,11 @@ CLOSE_GRACE = timedelta(minutes=5)
 
 # Hook states in which the worker sits at its prompt, so typing into the tab is safe.
 AT_PROMPT = ("idle", "waiting")
+# Typed text counts as received only once the worker's UserPromptSubmit hook records it, within this long. It can
+# be lost (PMAT-337): if the owner left the tab's input in Claude Code's history mode, the Enter submits nothing.
+CONFIRM = timedelta(seconds=15)
+# Lost this many times in a row, the orchestrator stops typing it and the screen asks the owner to check the tab.
+MAX_ATTEMPTS = 3
 
 
 @dataclass
@@ -43,6 +49,7 @@ class Ops:
     now: Callable[[], datetime] = lambda: datetime.now(timezone.utc)
     background: Callable[[], set[str]] = set  # tabs with a background command still running (screen only)
     prune: Callable[[str], None] = lambda folder: None  # clear git's records of removed worktrees in a repo
+    sleep: Callable[[float], None] = time.sleep
 
 
 def _claude(key: str, args: str) -> str:
@@ -79,6 +86,42 @@ def _prompts_since(s: dict, since: str) -> int:
                if h.get("event") == "UserPromptSubmit" and datetime.fromisoformat(h["at"]) >= t)
 
 
+def _send_confirmed(key: str, text: str, ops: Ops) -> str | None:
+    """Type text into the tab, then wait for the worker to receive it as a prompt. Returns the time it was typed
+    (to the second, as hook times are) if it arrived, else None. The input is never cleared first: it may hold
+    the owner's draft, and in Claude Code a double Esc opens the rewind menu."""
+    sent = ops.now().replace(microsecond=0)
+    ops.send(key, text)
+    while not _prompts_since(status.read(key), sent.isoformat()):
+        if ops.now() - sent >= CONFIRM:
+            return None
+        ops.sleep(1)
+    return sent.isoformat()
+
+
+def _gave_up(key: str, s: dict, what: str) -> bool:
+    """True while `what` has been lost MAX_ATTEMPTS times and the tab has received no prompt since: typing it
+    again would be lost too. Once a prompt gets through (the owner fixed the tab), it is typed again."""
+    u = s.get("undelivered") or {}
+    if u.get("what") != what or u["attempts"] < MAX_ATTEMPTS:
+        return False
+    if _prompts_since(s, u["at"]):
+        status.update(key, undelivered=None)
+        return False
+    return True
+
+
+def _lost(key: str, s: dict, what: str, ops: Ops) -> str:
+    """Count a lost attempt; the next check at the prompt tries again, until MAX_ATTEMPTS."""
+    u = s.get("undelivered") or {}
+    attempts = (u["attempts"] if u.get("what") == what else 0) + 1
+    status.update(key, undelivered={"what": what, "attempts": attempts,
+                                    "at": ops.now().isoformat(timespec="seconds")})
+    if attempts >= MAX_ATTEMPTS:
+        return f"{key}: {what} not delivered: check the tab"
+    return f"{key}: {what} not received (the tab's input may be in use), trying again next check"
+
+
 def _tick_one(key: str, alive: bool, t: Ticket | None, ops: Ops) -> str | None:
     s = status.read(key)
     if not alive:
@@ -97,17 +140,24 @@ def _tick_one(key: str, alive: bool, t: Ticket | None, ops: Ops) -> str | None:
         return None
     # Any new owner comment is passed on, whatever the labels: an answer, a rejected merge, feedback.
     if t.comment_id and t.comment_id != s["relayed_comment"]:
+        what = f"comment {t.comment_id}"
+        if _gave_up(key, s, what):
+            return None
         after = s["relayed_comment"] or "the ones from before you started"
-        ops.send(key, REPLY.format(key=key, after=after, comment=t.comment_id))
-        status.update(key, relayed_comment=t.comment_id)
+        if not _send_confirmed(key, REPLY.format(key=key, after=after, comment=t.comment_id), ops):
+            return _lost(key, s, what, ops)  # relayed_comment unchanged, so the next check types it again
+        status.update(key, relayed_comment=t.comment_id, undelivered=None)
         return f"{key}: passed on the owner's comment {t.comment_id}"
     if t.done and "AWAITING-USER-RESPONSE" not in t.labels:
         # Done at the prompt with no open question: finished. Warn in the tab first, so an owner working in it
         # can keep it. (The owner merges and tells the worker, on Jira or in its tab.)
         if not (warned := s.get("close_warned_at")):
-            now = ops.now().isoformat(timespec="seconds")
-            status.update(key, close_warned_at=now)
-            ops.send(key, CLOSING.format(key=key, minutes=CLOSE_GRACE.seconds // 60))
+            # The grace period starts only once the warning arrived: a tab whose input is in use is never closed.
+            if _gave_up(key, s, "the closing warning"):
+                return None
+            if not (sent := _send_confirmed(key, CLOSING.format(key=key, minutes=CLOSE_GRACE.seconds // 60), ops)):
+                return _lost(key, s, "the closing warning", ops)
+            status.update(key, close_warned_at=sent, undelivered=None)
             return f"{key}: Done, warned the tab it closes in {CLOSE_GRACE.seconds // 60} minutes"
         if _prompts_since(s, warned) > 1:  # our warning, then the owner typed
             status.update(key, finished=True, kept_by_owner=True)

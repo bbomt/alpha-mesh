@@ -73,7 +73,8 @@ sums them up as they stood on 2026-10-23.
   the same session when a tab is missing (reboot, closed tab). Works across repos: each ticket keeps the folder
   it started in.
 - **Passes on the team lead's comments:** the newest one not from a worker, when it is newer than the last one
-  passed on, typed as "comments after X, newest Y", only while the worker is at its prompt.
+  passed on, typed as "comments after X, newest Y", only while the worker is at its prompt. It counts as passed
+  on only once the worker received it (see [Typed text must arrive](#typed-text-must-arrive)).
 - **Shows what needs the team lead:** WORKER is `working` (a turn, or a background command), `idle` or `waiting`
   (a prompt in the tab); NEEDS YOU appears only while the worker is at its prompt. The header shows disk use,
   in red from 90%.
@@ -133,6 +134,24 @@ Each tick, per ticket:
 It types into a tab only when the worker sits at its prompt (hook state `idle` or `waiting`). Each ticket
 is handled on its own: an error on one (a tab closed mid-tick, `gh` offline) is printed and retried next
 tick, and the others carry on.
+
+### Typed text must arrive
+
+Typing can be lost (PMAT-337): if the tab's input is in Claude Code's history mode (e.g. the owner pressed Up,
+or left a draft), the Enter submits nothing. So after typing a comment relay or the closing warning, the
+orchestrator waits up to 15 seconds (`CONFIRM` in `loop.py`) for the worker's `UserPromptSubmit` hook.
+
+- **Arrived:** the comment counts as passed on (`relayed_comment`); the warning starts the 5-minute grace period.
+- **Not arrived:** Recent says "PMAT-312: comment 13765 not received (the tab's input may be in use), trying
+  again next check", nothing counts as done, and the next check at the prompt types it again.
+- **Lost 3 times** (`MAX_ATTEMPTS`): it stops typing, and NEEDS YOU shows "▶ comment 13765 not delivered:
+  check the tab". In the tab, press Esc to leave history mode, then type anything (e.g. `Read the owner's
+  Jira comment 13765 and act on it`). Once a prompt gets through, the next check at the prompt types it again.
+  A tab whose warning never arrived is never closed.
+- It never clears the input first (no Esc or Ctrl-U): the input may hold the owner's draft, and a double Esc
+  opens Claude Code's rewind menu.
+- Limitation: any prompt in that window counts, so if the owner submits something in the tab at that same
+  moment, a lost relay is taken as received.
 
 Each tick's Jira check has a 2-minute deadline (`JIRA_DEADLINE` in `cli.py`), as an Atlassian MCP call can
 wait for a reply forever (PMAT-306). If Jira is down or the check runs out of time, Recent says so ("Jira check
