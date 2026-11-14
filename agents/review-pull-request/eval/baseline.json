@@ -1,4 +1,5 @@
 {
+  "run": "PMAT-325-base6-nemotron",
   "commit": "ba8705a04c877afd04133f4c82dddb16cbafb836",
   "model": "nvidia/nemotron-3.5-super-vl:free",
   "date": "2026-11-11",

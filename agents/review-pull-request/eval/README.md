@@ -122,6 +122,7 @@ a real bug here that no one raised. Use these for instructive comparison.
 | `baseline.json`, `error_analysis.json` | the committed baseline and the error analysis behind it (development cases only) |
 | `holdout.json` | the hold-out's seed and case IDs |
 | `runs/` | eval runs (gitignored) |
+| `scripts/archive_runs.py` | keeps the runs that `baseline.json` and `judge/sample.json` name in S3 ([Archived runs](#archived-runs)) |
 | `tests/` | acceptance tests with a fake `gh`, a fake GitHub and a fake model |
 
 A case applies to `raised_sha`, the commit the review saw. `head_sha` is the PR's final commit, kept
@@ -529,7 +530,7 @@ because `[]` would say the agent read nothing. New checkpoints no longer hold `f
 
 From `agents/review-pull-request`. Prerequisites: `gh auth login`, the repo's `.env` (model URL and token),
 `uv sync`, Promptfoo (`pnpm add -g promptfoo`) and Node 24 under nvm (the script switches to it for its own
-session; the machine default stays). No AWS is needed.
+session; the machine default stays). A run needs no AWS. Archiving a new baseline's run does (below).
 
 ```bash
 eval/scripts/run_eval.sh --run base1                                                  # k=3, every development case (.env model)
@@ -538,8 +539,35 @@ eval/scripts/run_eval.sh --k 1 --run smoke --filter-pattern '^R37-1fbb920-001$' 
 eval/scripts/run_eval.sh --run base1 --max-concurrency 4                              # fewer workers (default 8)
 uv run python eval/scripts/compare_baseline.py eval/runs/base1/results.json           # vs baseline.json
 uv run python eval/scripts/baseline.py eval/runs/base1                                # write a new baseline
+uv run python eval/scripts/archive_runs.py push eval/runs/base1                       # then archive its run
+uv run python eval/scripts/archive_runs.py prune --yes                                # and drop the run it replaced
 PROMPTFOO_CONFIG_DIR=eval/runs/base1/.promptfoo promptfoo view                        # browse (Node 24)
 ```
+
+### Archived runs
+
+`baseline.json` and `judge/sample.json` each name a run (`run`): the run behind the baseline, and the run whose
+reviews the calibration labels score (the sample itself was drawn from the case files). `--stored`, the labelling sheet
+and the silver labeller need that raw run, which lives only in `~/.mesh/eval-runs/<run>/` on the dev EC2. So
+`archive_runs.py` keeps it in S3 (PMAT-336), in the bucket from SSM
+`/pmat/{env}/alpha-mesh/review-pull-request/eval-runs-bucket` (or `EVAL_RUNS_BUCKET`). It needs AWS credentials
+(SSO `dev-EC2`).
+
+```bash
+uv run python eval/scripts/archive_runs.py push ~/.mesh/eval-runs/<run>     # upload eval-runs/<run>.tar.gz
+uv run python eval/scripts/archive_runs.py pull <run> [--to <dir>]          # default ~/.mesh/eval-runs/<run>
+uv run python eval/scripts/archive_runs.py prune [--yes]                    # dry run without --yes
+ARCHIVE_LIVE=1 uv run pytest eval/tests/test_archive_runs.py -k live        # round trip of base6 through the bucket
+```
+
+- **What is archived:** `results.json`, `run.json` and `traces/` only. No checkpoints, locks or promptfoo state.
+  Trace paths are written relative to the run folder, and promptfoo's `basePath` and `outputPath` are dropped, so a
+  pulled run works from any folder. A push is refused if a file still names this machine.
+- **Only what is still needed is kept:** `prune` deletes every archived run that neither file names. It refuses while a
+  named run is missing from the bucket, so push the new baseline's run first. When a sample is redrawn and relabelled,
+  set its `run` to the run the new labels score.
+- **Recovery:** the bucket is versioned and retained in every env (`infra/cdk`, `EvalRunsStack`). A deleted or replaced
+  run can be restored for 30 days, after which the old version expires.
 
 `run_eval.sh` records the run's commit, model, date, k, window and `dirty` (uncommitted changes in `src/`, `eval/promptfoo/` or `eval/cases/`: such a run never becomes the baseline) in `runs/<run>/run.json`. One run folder
 holds one model's reviews (the checkpoint key has no model), so a new model needs a new `--run`. A resumed run

@@ -486,6 +486,14 @@ Storage for resumable reviews (PMAT-237): every non-dry run saves its progress h
 - The stack creates no IAM access: the agent runs on EC2 through the SSO `dev-EC2` permission set,
   like the PMATFE-mfe-* projects.
 
+It also deploys `PmatAlphaMeshReviewEvalRunsStack-{env}` (PMAT-336). It's a separate stack, so a checkpoint teardown can't
+touch it:
+
+| Resource | Details |
+|----------|---------|
+| S3 bucket `pmat-{env}-alpha-mesh-eval-runs-{account}` | The eval runs that committed files depend on (`eval/scripts/archive_runs.py`, [eval/README.md](eval/README.md#archived-runs)). Retained in every env, no auto-delete. Public access blocked, SSE-S3, versioned. Noncurrent versions expire after 30 days, expired delete markers and incomplete uploads (7 days) are cleaned up |
+| SSM `/pmat/{env}/alpha-mesh/review-pull-request/eval-runs-bucket` | The bucket name the script reads |
+
 Deploy to dev (needs `aws sso login`, Node and pnpm):
 
 ```bash

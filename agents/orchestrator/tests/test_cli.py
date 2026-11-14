@@ -175,6 +175,7 @@ def test_a_jira_check_that_never_returns_is_cut_off_and_retried_next_check(tmp_p
     # (resuming a missing tab) still happens, nothing Jira-driven does, and the next check tries Jira again.
     import asyncio
     import threading
+    from datetime import datetime, timezone
     monkeypatch.setattr(status, "DIR", tmp_path)
     monkeypatch.setattr(cli, "JIRA_DEADLINE", 0.2)
     monkeypatch.setattr(cli.jira, "logged_in", lambda: True)
@@ -191,8 +192,14 @@ def test_a_jira_check_that_never_returns_is_cut_off_and_retried_next_check(tmp_p
     tabs, sent, after_check = {"PMAT-1"}, [], []
     monkeypatch.setattr(cli.jira, "snapshot", snapshot)
     monkeypatch.setattr(cli, "prs", lambda keys, repo_dir: {})
+
+    def send(key, text):  # received: the worker's UserPromptSubmit hook records it
+        sent.append((key, text))
+        at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        status.update(key, history=status.read(key).get("history", []) + [{"event": "UserPromptSubmit", "at": at}])
+
     monkeypatch.setattr(cli, "OPS", loop.Ops(windows=lambda: set(tabs), new_window=lambda key, *a: tabs.add(key),
-                                             send=lambda key, text: sent.append((key, text)), kill=None))
+                                             send=send, kill=None))
 
     def sleep(seconds):  # between checks; stop after the second
         after_check.append((set(tabs), list(sent), capsys.readouterr().out))
