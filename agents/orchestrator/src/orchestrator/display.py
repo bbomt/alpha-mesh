@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from orchestrator.jira import Ticket
+from orchestrator.loop import MAX_ATTEMPTS
 
 # Redraw over the old screen (cursor home, clear each line's rest and below) rather than clearing it: no flicker.
 HOME, CLEAR_LINE, CLEAR_BELOW = "\033[H", "\033[K", "\033[J"
@@ -39,6 +40,8 @@ def needs(s: dict, t: Ticket | None, pr: Pr | None, alive: bool, now: datetime, 
         # A reconnect is not a turn, so the worker sits idle until typed to.
         return (f'▶ Jira lost: in tab {s.get("ticket")} run /mcp (may need a browser login), '
                 f'then type "continue"'), BOLD + RED
+    if (u := s.get("undelivered")) and u["attempts"] >= MAX_ATTEMPTS:  # typed, but the tab never received it
+        return f"▶ {u['what']} not delivered: check the tab", BOLD + RED
     if t and "AWAITING-USER-RESPONSE" in t.labels:
         return "▶ answer on Jira", BOLD + YELLOW
     if s.get("state") == "waiting" and s.get("notification_type") not in (None, "idle_prompt"):
