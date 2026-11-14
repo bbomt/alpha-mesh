@@ -103,7 +103,11 @@ def _stored_review(path: str, case_id: str, repeat: int) -> dict:
     output = response["output"]
     output = json.loads(output) if isinstance(output, str) else output
     if output.get("trace") and not os.path.isabs(output["trace"]):  # a run pulled from the archive (PMAT-336)
-        output = {**output, "trace": str(Path(path).resolve().parent / output["trace"])}
+        run = Path(path).resolve().parent
+        trace = (run / output["trace"]).resolve()
+        if not trace.is_relative_to(run):  # the judge reads the trace: never a file outside the run
+            raise LookupError(f"trace {output['trace']} is outside the run folder {run}")
+        output = {**output, "trace": str(trace)}
     return output
 
 

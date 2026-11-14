@@ -82,6 +82,8 @@ def pack(run_dir: Path) -> bytes:
     files = {"results.json": json.dumps(results).encode(), "run.json": (real / "run.json").read_bytes()}
     if (real / "traces").is_dir():
         for path in sorted((real / "traces").rglob("*")):
+            if path.is_symlink():  # its target may be anywhere on this machine: never upload it
+                raise ArchiveError(f"{path.relative_to(real)} is a symlink: not pushed")
             if path.is_file():
                 files[str(path.relative_to(real))] = path.read_bytes()
     for name, data in files.items():
@@ -111,6 +113,8 @@ def _allowed(member: tarfile.TarInfo) -> bool:
 
 
 def pull(name: str, s3, bucket: str, target: Path | None = None) -> Path:
+    if not name or name != Path(name).name or name.startswith("."):
+        raise ArchiveError(f"{name!r} is not a run name (a folder name, as push gives it)")
     target = Path(target or LOCAL_RUNS / name).expanduser()
     if target.exists() and any(target.iterdir()):
         raise ArchiveError(f"{target} is not empty: pull into a new folder")

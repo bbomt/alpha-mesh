@@ -173,6 +173,40 @@ def test_an_absolute_trace_still_loads_as_it_was(tmp_path):
     assert review["trace"] == str((run / "traces" / "repeat-0" / "abc.jsonl").resolve())
 
 
+# Security review (owner, PR #63): no path outside the run is uploaded, written or read ─────────────
+
+def test_push_refuses_a_symlink_in_traces_so_no_file_outside_the_run_is_uploaded(tmp_path):
+    secret = tmp_path / "secret.txt"
+    secret.write_text("CANARY-OUTSIDE-THE-RUN")
+    run = make_run(tmp_path)
+    (run / "traces" / "repeat-0" / "link.jsonl").symlink_to(secret)
+    s3 = FakeS3()
+
+    with pytest.raises(archive_runs.ArchiveError, match="link.jsonl"):
+        archive_runs.push(run, s3, "bucket")
+    assert s3.objects == {}
+
+
+@pytest.mark.parametrize("name", ["../escape", "a/b", ".", ""])
+def test_pull_refuses_a_run_name_that_is_not_a_plain_folder_name(tmp_path, name):
+    s3 = FakeS3()
+    with pytest.raises(archive_runs.ArchiveError, match="run name"):
+        archive_runs.pull(name, s3, "bucket", tmp_path / "copy")
+    assert not (tmp_path / "copy").exists()
+
+
+def test_a_relative_trace_outside_the_run_folder_is_refused(tmp_path):
+    """A pulled results.json can't make the judge read a file outside its run."""
+    run = make_run(tmp_path)
+    results = json.loads((run / "results.json").read_text())
+    results["results"]["results"][0]["response"]["output"]["trace"] = "../../outside.jsonl"
+    (run / "results.json").write_text(json.dumps(results))
+    agent_provider._stored_rows.cache_clear()
+
+    with pytest.raises(LookupError, match="outside"):
+        agent_provider._stored_review(str(run / "results.json"), "C1", 0)
+
+
 # 2: prune keeps only what's needed ─────────────────────────────────────────────────────────────────
 
 def needed():
