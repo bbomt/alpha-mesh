@@ -37,7 +37,7 @@ gate_check="$mesh_dir/agents/review-pull-request/eval/scripts/gate_check.py"
 if ! checklist="$(python3 "$gate_check" "$url")"; then
   echo "Not merged: the review-pull-request eval gate does not allow it yet:" >&2
   echo "$checklist" >&2
-  if grep -qx "next: mesh eval-gate $url" <<<"$checklist" && { [ -t 0 ] || [ -n "${MESH_ASSUME_TTY:-}" ]; }; then
+  if grep -Fqx "next: mesh eval-gate $url" <<<"$checklist" && { [ -t 0 ] || [ -n "${MESH_ASSUME_TTY:-}" ]; }; then
     printf "The gate has not passed on this head. Run it now (about 75 min, about a day's free-model quota), then merge? [y/N] " >&2
     read -r answer || answer=""
     [[ "$answer" =~ ^[Yy]$ ]] || exit 1

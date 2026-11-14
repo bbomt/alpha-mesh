@@ -73,6 +73,7 @@ case "$STUB_GATE" in
   pass) echo "runs passed 142/195 · baseline 140/195 · needs at least 133/195 (tolerance 7) · change +2" > "${10}"; exit 0 ;;
   fail) echo "runs passed 90/195 · baseline 140/195 · needs at least 133/195 (tolerance 7) · change -50" > "${10}"; exit 1 ;;
   crash) exit 2 ;;
+  *) echo "unexpected STUB_GATE: $STUB_GATE" >&2; exit 99 ;;
 esac
 EOF
 chmod +x "$WORK/bin/"*
