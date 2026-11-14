@@ -596,10 +596,11 @@ uv run python eval/scripts/check_gate.py eval/runs/<run>        # the gate rule 
   test fix after review), and otherwise needs a new gate run.
 - **The rule (`check_gate.py`):** it counts the runs (case × repeat) that pass their case's line check, on the cases
   the baseline also holds, and fails when the count drops more than `TOLERANCE` (10) below the baseline's. It counts
-  runs, not cases: in the noise test (the same, unchanged code as base6, run again as `PMAT-312-aa1`), 14 of the 65 cases changed
-  result (10 new failures, 4 new passes) while the runs passed moved from 140/195 to 142/195. The rows per category
-  move too (`public` went from 19/24 to 14/24), so only the total gates. 10 is provisional, from that one sample:
-  tighten it as same-code runs come in, or as the agent gets less flaky.
+  runs, not cases: in the noise test (the same, unchanged code as base6, run twice more as `PMAT-312-aa1` and
+  `PMAT-312-aa2`), 25 to 29 of the 65 cases changed in at least one repeat between any two runs, while the runs passed
+  were 140, 142 and 146 of 195. The rows per category move too (`public` went from 19/24 to 14/24), so only the total
+  gates. 10 is provisional, from those three samples (a spread of 6, about 3 runs either side): tighten it as same-code
+  runs come in, or as the agent gets less flaky.
 - **It also fails, whatever the count,** on a harness error (a run stopped by the model's quota never passes), a
   missing case or repeat, or a run on another model or k than the baseline's: a model change needs a new baseline
   first.
@@ -607,8 +608,9 @@ uv run python eval/scripts/check_gate.py eval/runs/<run>        # the gate rule 
   judge's means against PMAT-311's provisional proposal.
 - **The quick check (`mesh eval-gate --quick`)** runs each case once (k=1, 65 reviews, only the judge's first
   repeat) and compares it with the baseline's first repeat, with the tolerance scaled down to 6 (`quick_tolerance`: the
-  noise grows with the square root of the runs; between base6 and aa1 the first repeat moved by 2 of 65). It catches a
-  large drop early and cheaply, and posts only a PR comment: it can never let a PR merge.
+  noise grows with the square root of the runs). A single repeat is noisy: across the 9 repeats of the three noise-test
+  runs it passed 43 to 54 of 65, so on unchanged code about 1 quick check in 10 warns for nothing. It catches a large
+  drop early and cheaply, and posts only a PR comment: it can never let a PR merge.
 - **Cost:** the agent is free; the judge is about $0.005 per judged run, so about $1 per gate run. **Time:** about
   75 min (`PMAT-312-aa1`: 1 h 16 min at concurrency 8). **Quota:** a full run uses about a day's free-model quota
   on OpenRouter (`free-models-per-day-high-balance`; the second noise-test run on 2026-11-13 hit it after 32 minutes), shared

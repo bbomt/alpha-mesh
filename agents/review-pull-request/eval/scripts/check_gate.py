@@ -4,7 +4,7 @@
 
 It counts the development runs (case x repeat) that pass their case's line check and fails when that count drops
 more than the tolerance below the baseline's, on the cases both hold. It counts runs, not cases: between two runs of
-the same code about 1 case in 5 changes result, but the total barely moves (PMAT-312's noise test), so a case-level
+the same code over a third of the cases change in some repeat, but the total barely moves (PMAT-312's noise test), so a case-level
 rule would fail at random.
 
 It also fails, whatever the count, on a harness error, a missing case, or a run on another model or k than the
@@ -28,16 +28,16 @@ import baseline as bl  # noqa: E402
 import case_rules  # noqa: E402
 import judge_report  # noqa: E402
 
-# Runs the count may drop below the baseline's before the gate fails. Provisional: base6 and the rerun aa1 of the
-# same code differed by 2 of 195 (140 vs 142); 10 is about 5 points. Tighten it as same-code runs come in.
+# Runs the count may drop below the baseline's before the gate fails. Provisional: three runs of the same code
+# (base6, aa1, aa2) passed 140, 142 and 146 of 195; 10 is about 5 points. Tighten it as same-code runs come in.
 TOLERANCE = 10
 REBASELINE_NEW_CASES = 5  # suggest a rebaseline once this many cases are new since the baseline (not gated)
 
 
 def quick_tolerance(tolerance: int, baseline_k: int) -> int:
     """The tolerance for a k=1 run: the noise in a count grows with the square root of the runs, so a third of the
-    runs gets about 1/sqrt(3) of the tolerance (10 -> 6). In the same-code runs, the first repeat alone moved by 2
-    (47 vs 45 of 65)."""
+    runs gets about 1/sqrt(3) of the tolerance (10 -> 6). A single repeat is noisy: the 9 repeats of the three
+    same-code runs passed 43 to 54 of 65, so about 1 quick check in 10 warns on unchanged code."""
     return round(tolerance / math.sqrt(baseline_k))
 
 
