@@ -5,7 +5,7 @@ import sys
 
 import pytest
 
-import gate_triggers
+import list_evals_gated_files
 
 A = "agents/review-pull-request/"
 
@@ -22,7 +22,7 @@ A = "agents/review-pull-request/"
     A + "eval/holdout.json",
 ])
 def test_a_file_that_can_change_the_findings_or_their_score_is_a_trigger(path):
-    assert gate_triggers.triggers([path]) == [path]
+    assert list_evals_gated_files.triggers([path]) == [path]
 
 
 @pytest.mark.parametrize("path", [
@@ -34,16 +34,16 @@ def test_a_file_that_can_change_the_findings_or_their_score_is_a_trigger(path):
     A + "eval/README.md",
     A + "tests/test_review.py",
     A + "eval/tests/test_gate.py",
-    A + "eval/scripts/check_gate.py",
+    A + "eval/scripts/decide_evals_gate_status.py",
     A + "eval/judge/rubric.v1.md",
     A + "eval/baseline.json",
     "other/agents/review-pull-request/src/x.py",
 ])
 def test_a_file_that_cannot_is_not(path):
-    assert gate_triggers.triggers([path]) == []
+    assert list_evals_gated_files.triggers([path]) == []
 
 
 def test_the_command_line_prints_only_the_triggers():
-    out = subprocess.run([sys.executable, gate_triggers.__file__], input=f"README.md\n{A}uv.lock\n\n",
+    out = subprocess.run([sys.executable, list_evals_gated_files.__file__], input=f"README.md\n{A}uv.lock\n\n",
                          capture_output=True, text=True, check=True).stdout
     assert out.split() == [A + "uv.lock"]

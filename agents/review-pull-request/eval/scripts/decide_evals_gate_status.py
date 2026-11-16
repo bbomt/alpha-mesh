@@ -1,6 +1,6 @@
 """The regression gate (PMAT-312): does an eval run keep the baseline's score, within the noise?
 
-    uv run python eval/scripts/check_gate.py eval/runs/<run> [--tolerance N] [--markdown <file>] [--quick]
+    uv run python eval/scripts/decide_evals_gate_status.py eval/runs/<run> [--tolerance N] [--markdown <file>] [--quick]
 
 It counts the development runs (case x repeat) that pass their case's line check and fails when that count drops
 more than the tolerance below the baseline's, on the cases both hold. It counts runs, not cases: between two runs of
@@ -13,7 +13,7 @@ baseline's: those runs measure something else, and a model change needs a new ba
 Reported, never gating yet (the owner switches them on): security misses, failing style_only runs, and the judge's
 means against PMAT-311's provisional proposal. Exits 1 when the gate fails.
 
---quick scores a k=1 run (mesh eval-gate --quick) against the baseline's first repeat, with the tolerance scaled to
+--quick scores a k=1 run (mesh run-evals --quick) against the baseline's first repeat, with the tolerance scaled to
 the smaller run (QUICK_TOLERANCE). It is a cheap early warning for large drops, never the gate.
 """
 
@@ -24,7 +24,7 @@ import sys
 from pathlib import Path
 
 sys.path[:0] = [str(Path(__file__).resolve().parent), str(Path(__file__).resolve().parent.parent / "promptfoo")]
-import baseline as bl  # noqa: E402
+import write_baseline as bl  # noqa: E402
 import case_rules  # noqa: E402
 import judge_report  # noqa: E402
 

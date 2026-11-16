@@ -1,17 +1,25 @@
 #!/usr/bin/env bash
 # alpha-mesh/bin/merge-pr
-# mesh merge-pr <PR url>: the owner's merge. Squash-merges the PR only if it is open and its branch already
+# mesh merge-pr <PR url>: the owner's merge.
+# mesh merge-pr --status <PR url>: print the merge status report (what would block the merge) and merge nothing. Squash-merges the PR only if it is open and its branch already
 # has the latest commit of its base branch, so nothing merges onto a base it was not tested against.
 # --match-head-commit makes the merge fail if the branch moves between the check and the merge.
 # A PR that changes a file the review-pull-request eval gate covers also needs `evals` = success on its head commit.
 
 set -euo pipefail
 
+status_only=""
+if [ "${1:-}" = --status ]; then status_only=1; shift; fi
 if [ $# -ne 1 ] || [[ ! "$1" =~ ^https://github\.com/([^/]+/[^/]+)/pull/[0-9]+$ ]]; then
-  echo "usage: mesh merge-pr https://github.com/<owner>/<repo>/pull/<number>" >&2
+  echo "usage: mesh merge-pr [--status] https://github.com/<owner>/<repo>/pull/<number>" >&2
   exit 2
 fi
 url="$1"
+mesh_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+status_report="$mesh_dir/agents/review-pull-request/eval/scripts/check_evals_gate_allows_merge.py"
+if [ -n "$status_only" ]; then
+  exec python3 "$status_report" "$url"
+fi
 repo="${BASH_REMATCH[1]}"
 
 read -r state head base < <(gh pr view "$url" --json state,headRefOid,baseRefName \
@@ -28,21 +36,19 @@ if [ "$behind" != "0" ]; then
   exit 1
 fi
 
-# The review-pull-request eval gate (PMAT-312, gate_check.py): master is not red (eval-audit), and a PR that changes a
-# file the gate covers has `evals` = success on its head, or on an older commit with no gated file changed since.
+# The review-pull-request evals gate (PMAT-312, check_evals_gate_allows_merge.py): master is not red
+# (master-evals-gated), and a PR that changes a file the gate covers has `evals` = success on its head, or on an older commit with no gated file changed since.
 # When the gate run is all that is missing and the owner is at a terminal, offer to run it now: the full gate is
 # expensive, so it runs once the rest of the ticket's code is accepted, at merge time.
-mesh_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-gate_check="$mesh_dir/agents/review-pull-request/eval/scripts/gate_check.py"
-if ! checklist="$(python3 "$gate_check" "$url")"; then
-  echo "Not merged: the review-pull-request eval gate does not allow it yet:" >&2
-  echo "$checklist" >&2
-  if grep -Fqx "next: mesh eval-gate $url" <<<"$checklist" && { [ -t 0 ] || [ -n "${MESH_ASSUME_TTY:-}" ]; }; then
-    printf "The gate has not passed on this head. Run it now (about 75 min, about a day's free-model quota), then merge? [y/N] " >&2
+if ! report="$(python3 "$status_report" "$url")"; then
+  echo "Not merged:" >&2
+  echo "$report" >&2
+  if grep -Fqx "Next: mesh run-evals $url" <<<"$report" && { [ -t 0 ] || [ -n "${MESH_ASSUME_TTY:-}" ]; }; then
+    printf "The evals have not passed on this head. Run them now (about 75 min, about a day's free-model quota), then merge? [y/N] " >&2
     read -r answer || answer=""
     [[ "$answer" =~ ^[Yy]$ ]] || exit 1
-    "${MESH_EVAL_GATE:-$mesh_dir/bin/eval-gate}" "$url" || { echo "Not merged: the gate failed." >&2; exit 1; }
-    checklist="$(python3 "$gate_check" "$url")" || { echo "Not merged:" >&2; echo "$checklist" >&2; exit 1; }
+    "${MESH_RUN_EVALS:-$mesh_dir/bin/run-evals}" "$url" || { echo "Not merged: the evals failed." >&2; exit 1; }
+    report="$(python3 "$status_report" "$url")" || { echo "Not merged:" >&2; echo "$report" >&2; exit 1; }
   else
     exit 1
   fi

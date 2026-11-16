@@ -1,6 +1,6 @@
-"""Which changed files need the eval gate (PMAT-312): the one list `mesh merge-pr` and `mesh eval-gate` read.
+"""Which changed files need the eval gate (PMAT-312): the one list `mesh merge-pr` and `mesh run-evals` read.
 
-    git diff --name-only master... | python3 eval/scripts/gate_triggers.py    # prints the trigger files, if any
+    git diff --name-only master... | python3 eval/scripts/list_evals_gated_files.py    # prints the trigger files, if any
 
 A trigger is a file that can change the agent's findings or how they are scored: the agent's code and prompts, its
 config and dependencies, the harness and the cases. Docs, tests, the reporting scripts, the judge (it reports, never

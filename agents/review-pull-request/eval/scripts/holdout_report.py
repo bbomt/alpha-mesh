@@ -11,7 +11,7 @@ import json
 import sys
 from pathlib import Path
 
-import baseline as bl
+import write_baseline as bl
 
 case_rules = bl.case_rules
 

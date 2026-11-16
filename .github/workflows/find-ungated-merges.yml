@@ -1,0 +1,28 @@
+# Find ungated merges (PMAT-312): on every push to master, check that each agent change came through a passing
+# `mesh run-evals`, and post the verdict as the commit status `master-evals-gated`. No model call: about a minute.
+# A failure fails this run (GitHub emails the owner) and makes `mesh merge-pr` refuse other merges until
+# `mesh run-evals --master` passes or the revert lands. See agents/review-pull-request/eval/scripts/find_ungated_merges.py.
+name: find-ungated-merges
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "The master commit to check (default: the branch head)"
+        required: false
+permissions:
+  contents: read
+  statuses: write
+  pull-requests: write
+jobs:
+  find-ungated-merges:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the commit for an ungated agent change
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ inputs.sha || github.sha }}
+        run: python3 agents/review-pull-request/eval/scripts/find_ungated_merges.py "$GITHUB_REPOSITORY" "$SHA"

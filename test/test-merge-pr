@@ -23,10 +23,10 @@ case "$1 $2" in
   "api repos/o/r/compare/master...abc123") printf '{"behind_by":%s,"ahead_by":1}\n' "$STUB_BEHIND" ;;
   "pr merge") echo "merged" ;;
   "pr diff") printf '%s\n' "$STUB_FILES" ;;
-  "api repos/o/r/commits/master/status") printf '{"statuses":[{"context":"eval-audit","state":"%s"}]}\n' "${STUB_AUDIT:-success}" ;;
+  "api repos/o/r/commits/master/status") printf '{"statuses":[{"context":"master-evals-gated","state":"%s"}]}\n' "${STUB_AUDIT:-success}" ;;
   "api repos/o/r/pulls/15/commits?per_page=100") printf '[{"sha":"abc123"}]\n' ;;
   "api repos/o/r/commits/abc123/status")
-    [ -f "$STUB_EVALS_FILE" ] && STUB_EVALS="$(cat "$STUB_EVALS_FILE")"  # written by the stand-in eval-gate
+    [ -f "$STUB_EVALS_FILE" ] && STUB_EVALS="$(cat "$STUB_EVALS_FILE")"  # written by the stand-in run-evals
     if [ -n "$STUB_EVALS" ]; then
       printf '{"statuses":[{"context":"lint","state":"success"},{"context":"evals","state":"%s"}]}\n' "$STUB_EVALS"
     else
@@ -36,13 +36,13 @@ case "$1 $2" in
 esac
 EOF
 chmod +x "$WORK/bin/gh"
-# The stand-in `mesh eval-gate`: logs its call and posts evals = success.
-cat > "$WORK/eval-gate" <<'EOF'
+# The stand-in `mesh run-evals`: logs its call and posts evals = success.
+cat > "$WORK/run-evals" <<'EOF'
 #!/usr/bin/env bash
-echo "eval-gate $*" >> "$STUB_LOG"
+echo "run-evals $*" >> "$STUB_LOG"
 echo success > "$STUB_EVALS_FILE"
 EOF
-chmod +x "$WORK/eval-gate"
+chmod +x "$WORK/run-evals"
 
 fails=0
 run() {  # run <name> <state> <behind> <want exit 0|1> <want merge call yes|no> <want text>
@@ -51,8 +51,8 @@ run() {  # run <name> <state> <behind> <want exit 0|1> <want merge call yes|no> 
   set +e
   out="$(PATH="$WORK/bin:$PATH" STUB_LOG="$WORK/log" STUB_STATE="$2" STUB_BEHIND="$3" \
          STUB_FILES="${FILES:-README.md}" STUB_EVALS="${EVALS:-}" STUB_AUDIT="${AUDIT:-success}" \
-         STUB_EVALS_FILE="$WORK/evals-state" MESH_EVAL_GATE="$WORK/eval-gate" MESH_ASSUME_TTY="${TTY:-}" \
-         "$MESH_DIR/bin/mesh" merge-pr "$URL" 2>&1 <<<"${ANSWER:-}")"
+         STUB_EVALS_FILE="$WORK/evals-state" MESH_RUN_EVALS="$WORK/run-evals" MESH_ASSUME_TTY="${TTY:-}" \
+         "$MESH_DIR/bin/mesh" merge-pr ${STATUS:+--status} "$URL" 2>&1 <<<"${ANSWER:-}")"
   code=$?
   set -e
   local ok=0 merged=no
@@ -77,17 +77,21 @@ run "a PR that is not open is refused" MERGED 0 1 no "not open"
 run "a current branch is squash-merged at the checked head" OPEN 0 0 yes "merged"
 
 AGENT_FILE="agents/review-pull-request/src/review_pull_request/stage2.py"
-FILES="$AGENT_FILE" EVALS="" run "an agent PR with no evals status is refused" OPEN 0 1 no "mesh eval-gate"
-FILES="$AGENT_FILE" EVALS="failure" run "an agent PR whose evals failed is refused" OPEN 0 1 no "failure"
-FILES="$AGENT_FILE" EVALS="pending" run "an agent PR whose evals is still pending is refused" OPEN 0 1 no "pending"
+FILES="$AGENT_FILE" EVALS="" run "an agent PR with no evals status is refused" OPEN 0 1 no "mesh run-evals"
+FILES="$AGENT_FILE" EVALS="failure" run "an agent PR whose evals failed is refused" OPEN 0 1 no "BLOCKED  evals failed"
+FILES="$AGENT_FILE" EVALS="pending" run "an agent PR whose evals is still pending is refused" OPEN 0 1 no "BLOCKED  evals are still running"
 FILES="$(printf 'README.md\n%s' "$AGENT_FILE")" EVALS="success" \
   run "an agent PR whose evals passed on its head is merged" OPEN 0 0 yes "merged"
 FILES="agents/dream/dream/core.py" EVALS="" run "a PR that changes no gated file needs no evals" OPEN 0 0 yes "merged"
-AUDIT="failure" run "nothing merges while master's eval-audit is red" OPEN 0 1 no "eval-gate --master"
-FILES="$AGENT_FILE" TTY=1 ANSWER=n run "at a terminal, answering no to running the gate refuses" OPEN 0 1 no "Run it now"
-if grep -q "^eval-gate" "$WORK/log"; then echo "  FAIL: answering no must not run the gate"; fails=$((fails + 1)); fi
+FILES="$AGENT_FILE" EVALS="success" STATUS=1 \
+  run "--status prints the report and merges nothing" OPEN 0 0 no "READY TO MERGE"
+FILES="$AGENT_FILE" EVALS="failure" STATUS=1 \
+  run "--status on a blocked PR exits 1 and merges nothing" OPEN 0 1 no "BLOCKED by 1 item"
+AUDIT="failure" run "nothing merges while master is red (master-evals-gated failed)" OPEN 0 1 no "Next: mesh run-evals --master"
+FILES="$AGENT_FILE" TTY=1 ANSWER=n run "at a terminal, answering no to running the gate refuses" OPEN 0 1 no "Run them now"
+if grep -q "^run-evals" "$WORK/log"; then echo "  FAIL: answering no must not run the gate"; fails=$((fails + 1)); fi
 FILES="$AGENT_FILE" TTY=1 ANSWER=y run "at a terminal, answering yes runs the gate, then merges" OPEN 0 0 yes "merged"
-grep -qx "eval-gate $URL" "$WORK/log" || { echo "  FAIL: answering yes must run mesh eval-gate on the PR"; fails=$((fails + 1)); }
+grep -qx "run-evals $URL" "$WORK/log" || { echo "  FAIL: answering yes must run mesh run-evals on the PR"; fails=$((fails + 1)); }
 if FILES="agents/dream/dream/core.py" EVALS="" run "(status not read)" OPEN 0 0 yes "merged" >/dev/null \
    && grep -q "commits/abc123/status" "$WORK/log"; then
   echo "  FAIL: a PR that changes no gated file must not read the evals status"; fails=$((fails + 1))

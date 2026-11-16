@@ -14,7 +14,7 @@
 #
 # Rerunning with the same --run resumes: finished reviews are reused, stopped ones continue from the
 # last finished file. Writes eval/runs/<name>/ (gitignored): results.json, run.json, checkpoints.
-# Then: uv run python eval/scripts/baseline.py eval/runs/<name>   (or compare_baseline.py <results.json>)
+# Then: uv run python eval/scripts/write_baseline.py eval/runs/<name>   (or compare_baseline.py <results.json>)
 set -euo pipefail
 
 EVAL="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -59,15 +59,15 @@ if [[ -z "$STORED" ]]; then
     DIRTY=true
     echo "WARNING: uncommitted changes in src/, eval/promptfoo/ or eval/cases/: this run cannot become the baseline" >&2
   fi
-  # run.json: what baseline.py records; a resumed run keeps its commit, model and k (run_meta.py).
-  "$AGENT/.venv/bin/python" "$EVAL/scripts/run_meta.py" "$RUN_DIR/run.json" "$COMMIT" "$MODEL" "$(date +%Y-%m-%d)" "$K" "$DIRTY"
+  # run.json: what write_baseline.py records; a resumed run keeps its commit, model and k (write_eval_run_info.py).
+  "$AGENT/.venv/bin/python" "$EVAL/scripts/write_eval_run_info.py" "$RUN_DIR/run.json" "$COMMIT" "$MODEL" "$(date +%Y-%m-%d)" "$K" "$DIRTY"
 fi
 
 echo "Run: $RUN_DIR (model $MODEL, k=$K, judge repeats $JUDGE_REPEATS, commit ${COMMIT:0:7}${STORED:+, stored reviews from $STORED})" >&2
 cd "$EVAL"
 RESULTS="$RUN_DIR/results.json"
 if [[ -n "$HOLDOUT" ]]; then
-  RESULTS="$RUN_DIR/results-holdout.json"  # apart, so baseline.py and compare_baseline.py never read it
+  RESULTS="$RUN_DIR/results-holdout.json"  # apart, so write_baseline.py and compare_baseline.py never read it
   set -- --no-table "$@"                   # Promptfoo's table would show the failures
 fi
 STATUS=0

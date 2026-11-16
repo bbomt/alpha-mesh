@@ -11,7 +11,8 @@ alpha-mesh/
 │   ├── model                # Switch/check model config
 │   ├── dream                # End-of-session memory consolidation (delegates to agents/dream/)
 │   ├── review-pull-request # PR review agent (delegates to agents/review-pull-request/)
-│   ├── eval-gate            # The review-pull-request eval gate: --check, a PR's gate run, --override, --master
+│   ├── run-evals            # Runs the review-pull-request evals on a PR (or --quick, --master) and posts `evals`;
+│   │                        #   also `mesh override-evals`
 │   ├── merge-pr             # The owner's merge: refuses a stale PR branch, or an agent PR without passing evals
 │   ├── sync-main            # Fast-forwards a main checkout and verifies it, or fails loudly
 │   ├── orchestrate          # One Claude worker per Jira ticket in tmux tabs (delegates to agents/orchestrator/)
@@ -201,6 +202,23 @@ tested against (parallel tickets make this likely). It doesn't rely on GitHub br
 
 ```bash
 mesh merge-pr https://github.com/org/repo/pull/123
+mesh merge-pr --status https://github.com/org/repo/pull/123   # the merge status report only: merges nothing
+```
+
+Every refusal prints the merge status report: a verdict line (READY TO MERGE, or BLOCKED by n items), then one
+line per item, `OK` or `BLOCKED`, saying what it found, then the next command:
+
+```
+Merge status for PR #65 (head 28348bb): BLOCKED by 1 item
+
+  OK       the PR is open
+  OK       it is up to date with master
+  OK       master is not red (find-ungated-merges has posted no result on it yet)
+  OK       it changes 11 agent file(s), so it needs a passing evals status
+           agents/review-pull-request/review_config.toml, ...
+  BLOCKED  evals failed on head 28348bb: runs passed 114/195 · baseline 140/195 · needs at least 130/195 ...
+
+Next: mesh run-evals https://github.com/bbomt/alpha-mesh/pull/65
 ```
 
 - **Stale:** it refuses and says how many commits the branch is behind. Ask the worker to merge the base in,
@@ -208,14 +226,15 @@ mesh merge-pr https://github.com/org/repo/pull/123
 - **The branch moves between the check and the merge:** the merge fails (`--match-head-commit`), so untested
   commits are never merged.
 - **A PR that changes the review-pull-request agent** (a file in
-  [`gate_triggers.py`](agents/review-pull-request/eval/scripts/gate_triggers.py): its code, prompts, config,
+  [`list_evals_gated_files.py`](agents/review-pull-request/eval/scripts/list_evals_gated_files.py): its code, prompts, config,
   dependencies, harness or cases): it also needs the commit status `evals` = success on the PR's head commit,
-  which `mesh eval-gate <PR url>` posts (or on an older commit, if no gated file changed since). Missing, pending or
-  failed: it refuses and prints the checklist with the next command (`mesh eval-gate --check <PR url>` prints it too).
-  At a terminal, when the gate run is all that is missing, it offers to run `mesh eval-gate` now and then merge
-  (`[y/N]`): the full gate is expensive, so it runs once, when the rest of the ticket's code is accepted.
-- **Master is red** (`eval-audit` failed: an agent change landed without a passing gate): it merges only the revert
-  PR or a gated PR whose gate passed, until `mesh eval-gate --master` passes
+  which `mesh run-evals <PR url>` posts (or on an older commit, if no gated file changed since). Missing, pending or
+  failed: it refuses and prints the report with the next command.
+  At a terminal, when the evals are all that is missing, it offers to run `mesh run-evals` now and then merge
+  (`[y/N]`): the full run is expensive, so it runs once, when the rest of the ticket's code is accepted.
+- **Master is red** (`master-evals-gated` failed: an agent change landed without passing evals, found by the
+  `find-ungated-merges` workflow): it merges only the revert PR or a gated PR whose evals passed, until
+  `mesh run-evals --master` passes
   ([the regression gate](agents/review-pull-request/eval/README.md#the-regression-gate)).
 - Workers end their "ready to merge" Jira comment with this command, ready to copy.
 
