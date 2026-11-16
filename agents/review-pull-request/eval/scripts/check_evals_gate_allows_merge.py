@@ -61,7 +61,7 @@ def check(url: str, gh=_gh) -> Result:
     head, base, branch = pr["headRefOid"], pr["baseRefName"], pr.get("headRefName", "")
     items, nxt = [], None
 
-    def item(passed: bool, text: str, detail: str = ""):
+    def item(passed: bool, text: str, detail=()):
         items.append((passed, text, detail))
 
     is_open = pr["state"] == "OPEN"
@@ -74,18 +74,18 @@ def check(url: str, gh=_gh) -> Result:
     gated = list_evals_gated_files.triggers(gh("pr", "diff", url, "--name-only").split())
     evals_items, evals_ok = [], True
     if not gated:
-        evals_items.append((True, "it changes no agent file, so it needs no evals", ""))
+        evals_items.append((True, "it changes no agent file, so it needs no evals", ()))
     else:
         evals_items.append((True, f"it changes {len(gated)} agent file(s), so it needs a passing evals status",
-                            ", ".join(gated)))
+                            gated))
         state, desc = _status(gh, repo, head, "evals")
         carried = None if state == "success" else _carried(gh, repo, number, head)
         if carried:
             evals_items.append((True, f"evals passed on {carried[:7]}, an older commit of this PR, and no agent file "
-                                      f"changed since (head {head[:7]}: {state})", ""))
+                                      f"changed since (head {head[:7]}: {state})", ()))
         else:
             evals_ok = state == "success"
-            evals_items.append((evals_ok, _evals_line(state, desc, head), ""))
+            evals_items.append((evals_ok, _evals_line(state, desc, head), ()))
 
     # Red master: only a PR that recovers it may merge, the revert PR or a gated PR whose evals passed on this
     # up-to-date head (the evals then ran on the whole code, as find_ungated_merges.py counts it).
@@ -114,8 +114,7 @@ def check(url: str, gh=_gh) -> Result:
     lines = [f"Merge status for PR #{number} (head {head[:7]}): {verdict}", ""]
     for passed, text, detail in items:
         lines.append(f"  {'OK' if passed else 'BLOCKED':<8} {text}")
-        if detail:
-            lines.append(f"           {detail}")
+        lines += [f"           {d}" for d in detail]
     if nxt:
         lines += ["", f"Next: {nxt}"]
     return Result(not blocked, "\n".join(lines))

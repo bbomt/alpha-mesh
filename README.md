@@ -215,7 +215,8 @@ Merge status for PR #65 (head 28348bb): BLOCKED by 1 item
   OK       it is up to date with master
   OK       master is not red (find-ungated-merges has posted no result on it yet)
   OK       it changes 11 agent file(s), so it needs a passing evals status
-           agents/review-pull-request/review_config.toml, ...
+           agents/review-pull-request/eval/promptfoo/agent_provider.py
+           ... (one line per file)
   BLOCKED  evals failed on head 28348bb: runs passed 114/195 · baseline 140/195 · needs at least 130/195 ...
 
 Next: mesh run-evals https://github.com/bbomt/alpha-mesh/pull/65
