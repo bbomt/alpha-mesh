@@ -23,7 +23,6 @@ case "$1 $2" in
   "api repos/o/r/compare/master...abc123") printf '{"behind_by":%s,"ahead_by":1}\n' "$STUB_BEHIND" ;;
   "pr merge") echo "merged" ;;
   "pr diff") printf '%s\n' "$STUB_FILES" ;;
-  "api repos/o/r/commits/master/status") printf '{"statuses":[{"context":"master-evals-gated","state":"%s"}]}\n' "${STUB_AUDIT:-success}" ;;
   "api repos/o/r/pulls/15/commits?per_page=100") printf '[{"sha":"abc123"}]\n' ;;
   "api repos/o/r/commits/abc123/status")
     [ -f "$STUB_EVALS_FILE" ] && STUB_EVALS="$(cat "$STUB_EVALS_FILE")"  # written by the stand-in run-evals
@@ -50,7 +49,7 @@ run() {  # run <name> <state> <behind> <want exit 0|1> <want merge call yes|no> 
   : > "$WORK/log"; rm -f "$WORK/evals-state"
   set +e
   out="$(PATH="$WORK/bin:$PATH" STUB_LOG="$WORK/log" STUB_STATE="$2" STUB_BEHIND="$3" \
-         STUB_FILES="${FILES:-README.md}" STUB_EVALS="${EVALS:-}" STUB_AUDIT="${AUDIT:-success}" \
+         STUB_FILES="${FILES:-README.md}" STUB_EVALS="${EVALS:-}" \
          STUB_EVALS_FILE="$WORK/evals-state" MESH_RUN_EVALS="$WORK/run-evals" MESH_ASSUME_TTY="${TTY:-}" \
          "$MESH_DIR/bin/mesh" merge-pr ${STATUS:+--status} "$URL" 2>&1 <<<"${ANSWER:-}")"
   code=$?
@@ -87,7 +86,6 @@ FILES="$AGENT_FILE" EVALS="success" STATUS=1 \
   run "--status prints the report and merges nothing" OPEN 0 0 no "READY TO MERGE"
 FILES="$AGENT_FILE" EVALS="failure" STATUS=1 \
   run "--status on a blocked PR exits 1 and merges nothing" OPEN 0 1 no "BLOCKED by 1 item"
-AUDIT="failure" run "nothing merges while master is red (master-evals-gated failed)" OPEN 0 1 no "Next: mesh run-evals --master"
 FILES="$AGENT_FILE" TTY=1 ANSWER=n run "at a terminal, answering no to running the gate refuses" OPEN 0 1 no "Run them now"
 if grep -q "^run-evals" "$WORK/log"; then echo "  FAIL: answering no must not run the gate"; fails=$((fails + 1)); fi
 FILES="$AGENT_FILE" TTY=1 ANSWER=y run "at a terminal, answering yes runs the gate, then merges" OPEN 0 0 yes "merged"

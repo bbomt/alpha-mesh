@@ -3,8 +3,8 @@
 # Runs `mesh run-evals` against stand-in `gh`, `git` and `uv` and a stand-in eval run, and checks that it posts the
 # gate's verdict as the `evals` status on the PR's head commit (pending first), comments the report, scores with
 # master's baseline and tolerance, refuses a stale branch, and leaves the eval runs folder alone (PMAT-312). Also
-# `mesh merge-pr --status` (the merge status report), `mesh override-evals` (evals = success by hand) and
-# `--master` (master-evals-gated on master's head, and on a failure the PR that reverts the ungated commit).
+# `mesh merge-pr --status` (the merge status report) and `mesh override-evals` (evals = success by hand). Each post of
+# `evals` re-runs the GitHub check `evals-gate` (gh run rerun), so it reads the new status without a push.
 
 set -euo pipefail
 
@@ -28,11 +28,8 @@ case "$1 $2" in
   "api repos/o/r/commits/master/status") printf '{"statuses":[]}\n' ;;
   "api repos/o/r/commits/$STUB_HEAD/status") printf '{"statuses":[]}\n' ;;
   "api repos/o/r/pulls/15/commits?per_page=100") printf '[{"sha":"%s"}]\n' "$STUB_HEAD" ;;
-  "api repos/o/r/commits?sha=master&per_page=30") printf '[{"sha":"%s"},{"sha":"0ff1ce0ff1ce"}]\n' "$STUB_HEAD" ;;
-  "api repos/o/r/commits/0ff1ce0ff1ce/status")
-    printf '{"statuses":[{"context":"master-evals-gated","state":"failure","description":"ungated agent change: PR #3"}]}\n' ;;
-  "pr create") echo "https://github.com/o/r/pull/99" ;;
-  "api repos/o/r/commits/0ff1ce0ff1ce/pulls") printf '[{"number":3}]\n' ;;
+  "run list") echo "${STUB_RUN_ID-4242}" ;;  # the newest evals-gate check run on the head ("" when none)
+  "run rerun") ;;
   *) echo "unexpected gh call: $*" >&2; exit 9 ;;
 esac
 EOF
@@ -50,9 +47,6 @@ case "$1" in
       *decide_evals_gate_status.py) printf '"""doc"""\nTOLERANCE = 9  # runs\n' ;;
     esac ;;
   rev-parse) echo "$STUB_HEAD" ;;
-  remote) echo "https://github.com/o/r.git" ;;
-  checkout|push|branch) ;;
-  revert) [ "${STUB_REVERT:-ok}" = ok ] || exit 1 ;;
   worktree)
     if [ "$2" = add ]; then  # worktree add -q --detach <dir> <sha>
       mkdir -p "$5/agents/review-pull-request/eval/scripts"
@@ -118,6 +112,13 @@ if run "a passing run posts pending, then success, and comments the report" 0 pa
     || { echo "  FAIL: the eval did not judge every repeat"; fails=$((fails + 1)); }
   grep -q "abc1234" "$WORK/comment" || { echo "  FAIL: the comment does not name the commit"; fails=$((fails + 1)); }
   [ ! -e "$WORK/gates/${HEAD_SHA:0:12}" ] || { echo "  FAIL: the worktree was left behind"; fails=$((fails + 1)); }
+  grep -q "^gh run list -R o/r --workflow evals-gate.yml --commit $HEAD_SHA" "$WORK/log" \
+    && grep -q "^gh run rerun 4242 -R o/r" "$WORK/log" \
+    || { echo "  FAIL: posting evals did not re-run the evals-gate check"; fails=$((fails + 1)); }
+fi
+if STUB_RUN_ID="" run "with no evals-gate check run yet, it still posts evals and says the check runs on the next push" \
+     0 pass 0 "pending,success" yes; then
+  if grep -q "^gh run rerun" "$WORK/log"; then echo "  FAIL: re-ran a check run that does not exist"; fails=$((fails + 1)); fi
 fi
 run "a failing run posts failure and comments the report" 0 fail 1 "pending,failure" yes || true
 run "a run the gate cannot score posts error, no comment" 0 crash 1 "pending,error" no || true
@@ -128,33 +129,6 @@ if STUB_NO_GATE=1 run "before the gate is on master, it scores with the head's t
     || { echo "  FAIL: the comment does not say the tolerance came from the head"; fails=$((fails + 1)); }
 fi
 
-
-# --master: the gate on master's head posts master-evals-gated; a failure opens the revert PR of the ungated commit.
-master() {  # master <name> <gate> <want exit> <want statuses> <want revert PR yes|no>; leaves the output in $out
-  local code statuses pr=no
-  : > "$WORK/log"
-  set +e
-  out="$(PATH="$WORK/bin:$PATH" HOME="$WORK/home" MESH_RUN_EVALS_DIR="$WORK/gates" STUB_LOG="$WORK/log" \
-         STUB_HEAD="$HEAD_SHA" STUB_GATE="$2" STUB_COMMENT="$WORK/comment" STUB_BASELINE_SEEN="$WORK/baseline-seen" \
-         "$MESH_DIR/bin/mesh" run-evals --master 2>&1)"
-  code=$?
-  set -e
-  statuses="$(grep 'context=master-evals-gated' "$WORK/log" | grep -o 'state=[a-z]*' | cut -d= -f2 | paste -sd, - || true)"
-  grep -q "^gh pr create" "$WORK/log" && pr=yes
-  if [ "$code" -ne "$3" ] || [ "$statuses" != "$4" ] || [ "$pr" != "$5" ]; then
-    echo "  FAIL: $1: exit $code, master-evals-gated '$statuses', revert PR $pr"; echo "$out" | sed 's/^/    /'
-    fails=$((fails + 1)); return 1
-  fi
-  echo "  PASS: $1"
-}
-master "a passing gate on master turns it green and opens no PR" pass 0 "pending,success" no || true
-if master "a failing gate on master stays red and opens the revert PR" fail 1 "pending,failure" yes; then
-  grep -q "git revert --no-edit 0ff1ce0ff1ce" "$WORK/log" || { echo "  FAIL: did not revert the ungated commit"; fails=$((fails + 1)); }
-  grep -q "MASTER IS RED" <<<"$out" && grep -q "Team lead, next:" <<<"$out" && grep -q "mesh merge-pr https://github.com/o/r/pull/99" <<<"$out" \
-    || { echo "  FAIL: the console does not say plainly what happened and what the team lead does next"; fails=$((fails + 1)); }
-  grep -q "git checkout -q -b eval-revert/0ff1ce0" "$WORK/log" \
-    || { echo "  FAIL: the revert branch is not eval-revert/<sha>"; fails=$((fails + 1)); }
-fi
 
 # override-evals: evals = success by hand, recorded on the PR.
 : > "$WORK/log"; rm -f "$WORK/comment"

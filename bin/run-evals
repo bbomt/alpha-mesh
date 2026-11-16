@@ -4,10 +4,10 @@
 #
 #   mesh run-evals <PR url>                  run the evals on the PR's head; post `evals` and the score table
 #   mesh run-evals --quick <PR url>          a k=1 early warning (a third of the quota): a PR comment, no status
-#   mesh run-evals --master                  run the evals on master's head, post `master-evals-gated`; a failure opens the revert PR
 #   mesh override-evals <PR url> --reason R  post `evals` = success by hand ("override: R"), recorded on the PR
 #
-# mesh merge-pr --status <PR url> prints the merge status report (check_evals_gate_allows_merge.py) that these feed.
+# GitHub's required check `evals-gate` (.github/workflows/evals-gate.yml) reads the `evals` status these post; each
+# post re-runs that check, so it updates without a push. mesh merge-pr --status <PR url> prints the same report locally.
 #
 # An evals run is the full eval (the development cases, k=3, every repeat judged) in a clean worktree, compared with
 # master's baseline and master's tolerance (decide_evals_gate_status.py), so a PR cannot loosen its own gate. About 75 min and about
@@ -20,7 +20,7 @@ agent_rel="agents/review-pull-request"
 pr_re='^https://github\.com/([^/]+/[^/]+)/pull/([0-9]+)$'
 
 usage() {
-  sed -n '5,8p' "${BASH_SOURCE[0]}" | sed 's/^# */usage: /' >&2
+  sed -n '5,7p' "${BASH_SOURCE[0]}" | sed 's/^# */usage: /' >&2
   exit 2
 }
 
@@ -29,6 +29,17 @@ post_status() {  # post_status <repo> <sha> <context> <state> <description>
   gh api "repos/$1/statuses/$2" -f state="$4" -f context="$3" -f description="${5:0:140}" >/dev/null
   if [ "$4" = pending ]; then pending_repo="$1" pending_sha="$2" pending_context="$3"; else pending_sha=""; fi
 }
+# rerun_evals_gate <repo> <sha>: re-run the newest `evals-gate` check run on <sha>, so GitHub reads the new `evals`.
+# None yet (the workflow is not on the base branch, or never ran on this head): GitHub runs it on the next push.
+rerun_evals_gate() {
+  local id
+  id="$(gh run list -R "$1" --workflow evals-gate.yml --commit "$2" --json databaseId -q '.[0].databaseId' 2>/dev/null || true)"
+  if [ -n "$id" ]; then
+    gh run rerun "$id" -R "$1" >/dev/null && echo "Re-ran the evals-gate check (run $id)." >&2 && return
+  fi
+  echo "NOTE: no evals-gate check run on ${2:0:7} to re-run; it runs on the next push to the PR." >&2
+}
+
 # A run that stops before its verdict (a crash, a missing file) never leaves its status pending: it posts error.
 on_exit() {
   local code=$?
@@ -103,82 +114,10 @@ case "${1:-}" in
     url="$2" repo="${BASH_REMATCH[1]}" reason="$4"
     head="$(gh pr view "$url" --json headRefOid | jq -r .headRefOid)"
     post_status "$repo" "$head" evals success "override: $reason"
+    rerun_evals_gate "$repo" "$head"
     gh pr comment "$url" --body "**evals overridden** on \`${head:0:7}\` by hand (\`mesh override-evals\`): $reason" >/dev/null
     echo "evals = success (override) on $head." >&2
     exit 0 ;;
-
-  --master)
-    [ $# -eq 1 ] || usage
-    remote="$(git -C "$mesh_dir" remote get-url origin)"
-    [[ "$remote" =~ github\.com[:/]([^/]+/[^/.]+)(\.git)?$ ]] || { echo "ERROR: origin is not on GitHub: $remote" >&2; exit 1; }
-    repo="${BASH_REMATCH[1]}"
-    git -C "$mesh_dir" fetch -q origin master
-    head="$(git -C "$mesh_dir" rev-parse origin/master)"
-    context=master-evals-gated
-    post_status "$repo" "$head" master-evals-gated pending "mesh run-evals --master is running on ${head:0:7}"
-    run_gate "$head" "gate-master-${head:0:7}" origin/master
-    cat "$run_dir/gate.md"
-    if [ "$gate" -eq 0 ]; then
-      post_status "$repo" "$head" master-evals-gated success "mesh run-evals --master passed: $summary"
-      remove_worktree
-      echo "Master is green: master-evals-gated = success on $head." >&2
-      exit 0
-    fi
-    post_status "$repo" "$head" master-evals-gated failure "mesh run-evals --master failed: $summary"
-    # The change to revert: the newest master commit find-ungated-merges marked as an ungated agent change.
-    offender="$(gh api "repos/$repo/commits?sha=master&per_page=30" | jq -r '.[].sha' | while read -r sha; do
-      gh api "repos/$repo/commits/$sha/status" \
-        | jq -e '[.statuses[] | select(.context == "master-evals-gated" and (.description | startswith("ungated")))] | length > 0' \
-        >/dev/null && { echo "$sha"; break; }
-    done)"
-    if [ -z "$offender" ]; then
-      remove_worktree
-      echo "Master is red and no ungated commit was found in its last 30 commits: revert by hand." >&2
-      exit 1
-    fi
-    branch="eval-revert/${offender:0:7}"
-    git -C "$wt" checkout -q -b "$branch"
-    if ! git -C "$wt" revert --no-edit "$offender" >/dev/null; then
-      git -C "$wt" revert --abort || true
-      echo "Master is red; reverting ${offender:0:7} conflicts: revert it by hand on a branch named $branch." >&2
-      remove_worktree
-      exit 1
-    fi
-    git -C "$wt" push -q origin "$branch"
-    offender_pr="$(gh api "repos/$repo/commits/$offender/pulls" | jq -r '.[0].number // empty')"
-    from="${offender:0:7}${offender_pr:+ (PR #$offender_pr)}"
-    { echo "## Automatic revert: master is red"
-      echo
-      echo "**What happened:** \`$from\` changed the review-pull-request agent without a passing eval gate, and"
-      echo "\`mesh run-evals --master\` then failed on master's head \`${head:0:7}\`: $summary."
-      echo
-      echo "**What this PR does:** reverts \`${offender:0:7}\`, and nothing else. Nothing has been merged."
-      echo
-      echo "**Team lead, next:**"
-      echo "1. \`mesh run-evals <this PR's url>\`: the revert must pass the gate too."
-      echo "2. \`mesh merge-pr <this PR's url>\`: while master is red, mesh merge-pr merges only this PR, or a gated PR"
-      echo "   whose gate passed. Every other merge is refused until then."
-      echo
-      echo "**Developer of \`$from\`:** redo the change on a new branch, and run the gate before it merges."
-      echo
-      echo "The gate's report on master:"; echo; cat "$run_dir/gate.md"
-    } > "$run_dir/revert-pr.md"
-    pr_url="$(gh pr create --repo "$repo" --base master --head "$branch" \
-      --title "revert[evals]: reverted ${offender:0:7}, an ungated agent change that fails the eval gate" \
-      --body-file "$run_dir/revert-pr.md")"
-    remove_worktree
-    git -C "$mesh_dir" branch -q -D "$branch" || true
-    cat >&2 <<MSG
-
-==== MASTER IS RED: the eval gate failed on master (${head:0:7}) ====
-What happened: $from changed the agent without a passing gate; the gate on master now fails: $summary.
-What was done: opened the revert PR $pr_url (branch $branch), reverting ${offender:0:7}. Nothing was merged.
-Team lead, next:
-  1. mesh run-evals $pr_url
-  2. mesh merge-pr $pr_url      (until then, every other merge is refused)
-Developer of $from: redo the change on a new branch and gate it before merging.
-MSG
-    exit 1 ;;
 
   --quick)
     [ $# -eq 2 ] && [[ "$2" =~ $pr_re ]] || usage
@@ -228,6 +167,7 @@ if [ "$gate" -eq 0 ]; then
 else
   post_status "$repo" "$head" evals failure "$summary"
 fi
+rerun_evals_gate "$repo" "$head"
 { echo "**mesh run-evals** on \`${head:0:7}\` (run \`gate-pr$number-${head:0:7}\`)"; echo; cat "$run_dir/gate.md"; } \
   > "$run_dir/gate-comment.md"
 gh pr comment "$url" --body-file "$run_dir/gate-comment.md" >/dev/null

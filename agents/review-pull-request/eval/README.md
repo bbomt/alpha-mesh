@@ -114,7 +114,7 @@ a real bug here that no one raised. Use these for instructive comparison.
 | `promptfooconfig.yaml`, `promptfoo/` | the harness: provider, eval adapter, loader, asserts, `case_rules.py` |
 | `scripts/run_eval.sh`, `scripts/write_eval_run_info.py`, `scripts/write_baseline.py`, `scripts/compare_baseline.py` | run (and its `run.json`), baseline, compare |
 | `scripts/split_holdout.py`, `scripts/holdout_report.py` | draw the hold-out, report its totals |
-| `scripts/decide_evals_gate_status.py`, `scripts/list_evals_gated_files.py`, `scripts/check_evals_gate_allows_merge.py`, `scripts/find_ungated_merges.py` | the gate decision on a run, the files that need evals, the merge status report, the after-merge check for ungated merges ([The regression gate](#the-regression-gate)) |
+| `scripts/decide_evals_gate_status.py`, `scripts/list_evals_gated_files.py`, `scripts/check_evals_gate_allows_merge.py` | the gate decision on a run, the files that need evals, the merge status report (and the `evals-gate` check's logic) ([The regression gate](#the-regression-gate)) |
 | `schema/review.schema.json`, `schema/baseline.schema.json` | the provider's output, the baseline's guard |
 | `promptfoo/llm_rubric.py`, `judge/rubric.v1.md` | the judge and its versioned rubric ([The judge](#the-judge)) |
 | `judge/sample.json`, `judge/gold-human-calibration.json`, `judge/silver-ai-calibration.json`, `judge/judge_scores.json` | the 25 calibration cases, the human (gold) scores, the silver labeller's scores, the judge's scores for them |
@@ -596,15 +596,11 @@ flowchart TD
   R1 --> D["decide_evals_gate_status.py: runs passed >= baseline minus tolerance?"]
   R2 --> D
   D --> E["PR status 'evals' = success or failure, plus the score table as a PR comment"]
-  E --> F["mesh merge-pr PR-url"]
-  F -->|check_evals_gate_allows_merge.py| G{merge allowed?}
-  G -- no --> H[refuse, and print the next command]
-  G -- yes --> I[merge to master]
-  X[someone merges by hand on GitHub] --> K
-  I --> K["on every push to master: workflow find-ungated-merges runs find_ungated_merges.py"]
-  K --> M{did an agent change land without a passing 'evals'?}
-  M -- no --> N["status 'master-evals-gated' = success"]
-  M -- yes --> O["status = failure: the team lead runs mesh run-evals --master; if that fails, it opens a revert PR"]
+  E -->|"re-runs the check"| GH["GitHub required check evals-gate (.github/workflows/evals-gate.yml)"]
+  P[every PR, every push] --> GH
+  GH -->|check_evals_gate_allows_merge.py --evals-only| G{"no agent file changed, or evals = success?"}
+  G -- no --> H["check fails: run mesh run-evals PR-url"]
+  G -- yes --> I["check passes: the merge button (or mesh merge-pr) may merge"]
 ```
 
 **The steps for an agent PR.** The full run is expensive (about a day's free quota), so it runs once, at merge time,
@@ -627,7 +623,6 @@ Merge status for PR #<n> (head 1a2b3c4): BLOCKED by 1 item
 
   OK       the PR is open
   OK       it is up to date with master
-  OK       master is not red (master-evals-gated: success)
   OK       it changes 1 agent file(s), so it needs a passing evals status
            agents/review-pull-request/src/review_pull_request/prompts/per_file.md
   BLOCKED  evals have not run on head 1a2b3c4
@@ -639,7 +634,6 @@ Also:
 
 ```bash
 mesh override-evals <PR url> --reason "<why>"   # evals = success by hand ("override: <why>"), recorded on the PR
-mesh run-evals --master                         # the evals on master's head: clears a red master, or opens the revert PR
 uv run python eval/scripts/decide_evals_gate_status.py eval/runs/<run>   # the gate rule on any finished run, by hand
 ```
 
@@ -676,15 +670,16 @@ uv run python eval/scripts/decide_evals_gate_status.py eval/runs/<run>   # the g
   75 min (`PMAT-312-aa1`: 1 h 16 min at concurrency 8). **Quota:** a full run uses about a day's free-model quota
   on OpenRouter (`free-models-per-day-high-balance`; the second noise-test run on 2026-11-13 hit it after 32 minutes), shared
   with every `mesh review-pull-request`. Run `mesh run-evals` again after the reset: it resumes.
-- **A merge that skips the gate is caught, not prevented.** The repo is private on GitHub's free plan, so `evals`
-  cannot be a required check and GitHub's merge button ignores it. So on every push to master the `find-ungated-merges`
-  workflow (`scripts/find_ungated_merges.py`, no model call) posts `master-evals-gated` on the commit: green when it came from a PR
-  whose gate passed on a head holding master's previous commit; red when it changes a gated file without that (a
-  manual merge, a failing or stale gate, a push without a PR), with a comment on the PR and a failed run that GitHub
-  emails about; otherwise its parent's colour. **While master is red, `mesh merge-pr` merges nothing** but the
-  revert PR (branch `eval-revert/...`) or a gated PR whose gate passed. `mesh run-evals --master` runs the gate on
-  master: a pass turns it green; a failure opens the revert PR of the ungated commit.
-- **Known limit:** anyone with write access can post a status by hand (that is what `mesh override-evals` does, visibly).
+- **GitHub blocks the merge, whoever merges.** The required check `evals-gate` (`.github/workflows/evals-gate.yml`)
+  runs on every PR and push, in seconds, with no model call: `check_evals_gate_allows_merge.py --evals-only` passes a
+  PR that changes no agent file at once, and an agent PR only when `evals` = success on its head (or carried over).
+  `mesh run-evals` and `mesh override-evals` re-run that check when they post `evals`, so it updates without a push.
+  The agent-file filter is inside the job, not a `paths:` filter: a workflow skipped by `paths:` never reports, and a
+  required check that never reports blocks every PR. **Setup, once** (the owner, after this lands): in the repo's
+  settings, rule for `master`: require the status check `evals-gate`, and require branches to be up to date. The check
+  can only be picked once it has run on a PR.
+- **Known limit:** anyone with write access can post a status by hand (that is what `mesh override-evals` does,
+  visibly), and a PR can change the workflow or `check_evals_gate_allows_merge.py` it runs (code review sees it).
   The gate guards against mistakes, not against someone bypassing it on purpose.
 
 #### Reading a gate report
@@ -741,17 +736,6 @@ Rebaselines are made by hand, never automatically. **When:**
 so their PR runs the gate. A case the baseline does not hold yet is run and reported as "new since the baseline, not
 gated"; it joins the gate at the next rebaseline. A new mined case also needs the owner's decision on how it joins
 the hold-out split ([Hold-out set](#hold-out-set)).
-
-#### When master is red
-
-`master-evals-gated` failed on master: an agent change landed without a passing gate. GitHub emails the owner (a failed
-workflow run), and the PR gets a comment. Until it is fixed, `mesh merge-pr` merges nothing else.
-
-1. The team lead runs `mesh run-evals --master`. If the gate passes on master, master turns green and that is all.
-2. If it fails, it opens the revert PR (branch `eval-revert/<sha7>`) of the ungated commit and prints, and writes in
-   the PR, what happened and what to run next: `mesh run-evals <revert PR>`, then `mesh merge-pr <revert PR>`. Nothing
-   is merged automatically.
-3. The developer of the reverted change redoes it on a new branch, and its PR goes through the gate.
 
 ### Error analysis
 

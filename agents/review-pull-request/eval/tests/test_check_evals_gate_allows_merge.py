@@ -12,15 +12,14 @@ HEAD, OLD = "h" * 40, "o" * 40
 GATED = "agents/review-pull-request/src/review_pull_request/stage2.py"
 
 
-def fake(*, files=(GATED,), head_evals=None, audit=None, behind=0, branch="feature/x", commits=(OLD, HEAD),
+def fake(*, files=(GATED,), head_evals=None, behind=0, commits=(OLD, HEAD),
          old_evals=None, since_old=("README.md",)):
     def status(state, context):
         desc = "runs passed 142/195 · needs at least 130/195" if state == "success" else ""
         return {"statuses": [{"context": context, "state": state, "description": desc}] if state else []}
     answers = {
-        ("pr", "view"): {"state": "OPEN", "headRefOid": HEAD, "baseRefName": "master", "headRefName": branch},
+        ("pr", "view"): {"state": "OPEN", "headRefOid": HEAD, "baseRefName": "master"},
         ("api", "repos/o/r/compare/master..." + HEAD): {"behind_by": behind},
-        ("api", "repos/o/r/commits/master/status"): status(audit, "master-evals-gated"),
         ("api", f"repos/o/r/commits/{HEAD}/status"): status(head_evals, "evals"),
         ("api", f"repos/o/r/commits/{OLD}/status"): status(old_evals, "evals"),
         ("api", "repos/o/r/pulls/7/commits?per_page=100"): [{"sha": c} for c in commits],
@@ -37,9 +36,9 @@ def fake(*, files=(GATED,), head_evals=None, audit=None, behind=0, branch="featu
     return gh
 
 
-def check(**kw):
+def check(evals_only=False, **kw):
     gh = fake(**kw)
-    return check_evals_gate_allows_merge.check(URL, gh=gh), gh
+    return check_evals_gate_allows_merge.check(URL, gh=gh, evals_only=evals_only), gh
 
 
 def test_an_agent_pr_with_evals_on_its_head_may_merge():
@@ -48,7 +47,6 @@ def test_an_agent_pr_with_evals_on_its_head_may_merge():
     assert result.text.startswith("Merge status for PR #7 (head hhhhhhh): READY TO MERGE")
     assert "  OK       evals passed on head hhhhhhh: runs passed 142/195 · needs at least 130/195" in result.text
     assert "  OK       it changes 1 agent file(s), so it needs a passing evals status" in result.text
-    assert "  OK       master is not red (find-ungated-merges has posted no result on it yet)" in result.text
     assert "Next:" not in result.text
 
 
@@ -85,16 +83,6 @@ def test_a_pr_that_changes_no_gated_file_needs_no_evals_and_reads_no_status():
     assert not any("/status" in a[1] and HEAD in a[1] for a in gh.calls if a[0] == "api")
 
 
-def test_a_red_master_blocks_every_merge():
-    result, _ = check(files=("README.md",), audit="failure")
-    assert not result.ok
-    assert "  BLOCKED  master is red: an agent change landed without passing evals (master-evals-gated: failure)" in result.text
-    assert "Next: mesh run-evals --master" in result.text
-
-
-def test_a_red_master_still_lets_the_revert_pr_through():
-    result, _ = check(audit="failure", branch="eval-revert/abc1234", head_evals="success")
-    assert result.ok
 
 
 def test_a_stale_branch_is_shown_blocked():
@@ -103,11 +91,10 @@ def test_a_stale_branch_is_shown_blocked():
     assert "  BLOCKED  it is 2 commit(s) behind master" in result.text
 
 
-def test_a_red_master_lets_a_gated_pr_with_a_passing_gate_through():
-    result, _ = check(audit="failure", head_evals="success")
-    assert result.ok and "  OK       master is red, and this PR's passing evals recover it" in result.text
-
-
-def test_a_red_master_blocks_a_gated_pr_whose_gate_has_not_passed():
-    result, _ = check(audit="failure")
-    assert not result.ok and "BLOCKED by 2 items" in result.text and "Next: mesh run-evals --master" in result.text
+def test_evals_only_is_the_jobs_report_without_the_items_github_checks_itself():
+    result, gh = check(evals_only=True, head_evals="success", behind=3)
+    assert result.ok  # a stale branch is GitHub's own rule to enforce, not the evals check's
+    assert "the PR is open" not in result.text and "behind" not in result.text
+    assert not any(a[1].startswith("repos/o/r/compare/master...") for a in gh.calls if a[0] == "api")
+    result, _ = check(evals_only=True)
+    assert not result.ok and f"Next: mesh run-evals {URL}" in result.text

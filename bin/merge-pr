@@ -4,7 +4,7 @@
 # mesh merge-pr --status <PR url>: print the merge status report (what would block the merge) and merge nothing. Squash-merges the PR only if it is open and its branch already
 # has the latest commit of its base branch, so nothing merges onto a base it was not tested against.
 # --match-head-commit makes the merge fail if the branch moves between the check and the merge.
-# A PR that changes a file the review-pull-request eval gate covers also needs `evals` = success on its head commit.
+# A PR that changes a file the review-pull-request evals gate covers also needs `evals` = success on its head commit.
 
 set -euo pipefail
 
@@ -36,9 +36,10 @@ if [ "$behind" != "0" ]; then
   exit 1
 fi
 
-# The review-pull-request evals gate (PMAT-312, check_evals_gate_allows_merge.py): master is not red
-# (master-evals-gated), and a PR that changes a file the gate covers has `evals` = success on its head, or on an older commit with no gated file changed since.
-# When the gate run is all that is missing and the owner is at a terminal, offer to run it now: the full gate is
+# The review-pull-request evals gate (PMAT-312, check_evals_gate_allows_merge.py): a PR that changes a file the gate
+# covers needs `evals` = success on its head, or on an older commit with no gated file changed since. GitHub enforces
+# the same rule (the required check `evals-gate`); checking here first gives the report and the offer below.
+# When the evals are all that is missing and the owner is at a terminal, offer to run them now: the full run is
 # expensive, so it runs once the rest of the ticket's code is accepted, at merge time.
 if ! report="$(python3 "$status_report" "$url")"; then
   echo "Not merged:" >&2

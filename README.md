@@ -11,7 +11,7 @@ alpha-mesh/
 │   ├── model                # Switch/check model config
 │   ├── dream                # End-of-session memory consolidation (delegates to agents/dream/)
 │   ├── review-pull-request # PR review agent (delegates to agents/review-pull-request/)
-│   ├── run-evals            # Runs the review-pull-request evals on a PR (or --quick, --master) and posts `evals`;
+│   ├── run-evals            # Runs the review-pull-request evals on a PR (or --quick) and posts `evals`;
 │   │                        #   also `mesh override-evals`
 │   ├── merge-pr             # The owner's merge: refuses a stale PR branch, or an agent PR without passing evals
 │   ├── sync-main            # Fast-forwards a main checkout and verifies it, or fails loudly
@@ -213,7 +213,6 @@ Merge status for PR #65 (head 28348bb): BLOCKED by 1 item
 
   OK       the PR is open
   OK       it is up to date with master
-  OK       master is not red (find-ungated-merges has posted no result on it yet)
   OK       it changes 11 agent file(s), so it needs a passing evals status
            agents/review-pull-request/eval/promptfoo/agent_provider.py
            ... (one line per file)
@@ -233,9 +232,9 @@ Next: mesh run-evals https://github.com/bbomt/alpha-mesh/pull/65
   failed: it refuses and prints the report with the next command.
   At a terminal, when the evals are all that is missing, it offers to run `mesh run-evals` now and then merge
   (`[y/N]`): the full run is expensive, so it runs once, when the rest of the ticket's code is accepted.
-- **Master is red** (`master-evals-gated` failed: an agent change landed without passing evals, found by the
-  `find-ungated-merges` workflow): it merges only the revert PR or a gated PR whose evals passed, until
-  `mesh run-evals --master` passes
+- **GitHub enforces the same rule** for every merge, including its own merge button: the required check
+  `evals-gate` ([`.github/workflows/evals-gate.yml`](.github/workflows/evals-gate.yml)) passes at once for a PR that
+  changes no agent file, and otherwise only when `evals` = success
   ([the regression gate](agents/review-pull-request/eval/README.md#the-regression-gate)).
 - Workers end their "ready to merge" Jira comment with this command, ready to copy.
 

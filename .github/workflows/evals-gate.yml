@@ -1,0 +1,27 @@
+# The required check `evals-gate` (PMAT-312): GitHub merges a PR into master only when this job passes.
+# It runs on every PR, in seconds, and runs no eval itself:
+#   - a PR that changes no agent file (list_evals_gated_files.py) passes at once;
+#   - an agent PR passes when `mesh run-evals` (on the dev box: it needs the model key, the free quota and about
+#     75 min) has posted the commit status `evals` = success on its head, or on an older commit with no agent file
+#     changed since. Otherwise it fails and names the command to run. `mesh run-evals` re-runs this job when it posts.
+# The filter is inside the job, not a `paths:` filter: a workflow skipped by `paths:` never reports, and a required
+# check that never reports blocks the merge. See agents/review-pull-request/eval/README.md, "The regression gate".
+name: evals-gate
+on:
+  pull_request:
+    branches: [master]
+permissions:
+  contents: read
+  pull-requests: read
+  statuses: read
+jobs:
+  evals-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Evals passed, or not needed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: python3 agents/review-pull-request/eval/scripts/check_evals_gate_allows_merge.py --evals-only "$PR_URL"

@@ -1,14 +1,17 @@
-"""The merge status report for one PR (PMAT-312): `mesh merge-pr` merges only when nothing in it blocks, and
-`mesh merge-pr --status` prints it without merging.
+"""The merge status report for one PR (PMAT-312), and the logic of the required check `evals-gate`.
 
     python3 eval/scripts/check_evals_gate_allows_merge.py https://github.com/<owner>/<repo>/pull/<n>   # exit 0: may merge
+    python3 eval/scripts/check_evals_gate_allows_merge.py --evals-only <PR url>   # the evals items only (the job)
+
+`mesh merge-pr` merges only when nothing in the report blocks, and `mesh merge-pr --status` prints it without
+merging. The workflow `.github/workflows/evals-gate.yml` runs it with `--evals-only` on every PR: GitHub then blocks
+the merge itself (the check is required on master), whoever merges.
 
 The report's first line is the verdict (READY TO MERGE, or BLOCKED by n items); then one line per item, OK or BLOCKED,
 saying in words what it found; then, when blocked, the next command. The items, in order: the PR is open; it is up to
-date with its base; master is not red (a `master-evals-gated` failure on it blocks every merge except the revert PR,
-branch `eval-revert/...`, or a gated PR whose evals passed); and, when the PR changes a gated file
-(list_evals_gated_files.py), `evals` = success on its head, or on an older commit of the PR with no gated file changed
-since. Standard library only: `mesh merge-pr` runs it with the system python3.
+date with its base; and, when the PR changes a gated file (list_evals_gated_files.py), `evals` = success on its head
+(posted by `mesh run-evals` on the dev box), or on an older commit of the PR with no gated file changed since. A PR
+that changes no gated file needs no evals. Standard library only: `mesh merge-pr` runs it with the system python3.
 """
 
 from __future__ import annotations  # the system python3 that mesh merge-pr uses may be older than 3.10
@@ -22,9 +25,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import list_evals_gated_files  # noqa: E402
-
-REVERT_PREFIX = "eval-revert/"
-
 
 @dataclass
 class Result:
@@ -52,62 +52,40 @@ def _evals_line(state: str, desc: str, head: str) -> str:
             "missing": f"evals have not run on {at}"}.get(state, f"evals on {at}: {state}") + (f": {desc}" if desc else "")
 
 
-def check(url: str, gh=_gh) -> Result:
+def check(url: str, gh=_gh, evals_only: bool = False) -> Result:
     m = re.fullmatch(r"https://github\.com/([^/]+/[^/]+)/pull/(\d+)", url)
     if not m:
         raise ValueError(f"not a PR url: {url}")
     repo, number = m.groups()
-    pr = json.loads(gh("pr", "view", url, "--json", "state,headRefOid,baseRefName,headRefName"))
-    head, base, branch = pr["headRefOid"], pr["baseRefName"], pr.get("headRefName", "")
+    pr = json.loads(gh("pr", "view", url, "--json", "state,headRefOid,baseRefName"))
+    head, base = pr["headRefOid"], pr["baseRefName"]
     items, nxt = [], None
 
     def item(passed: bool, text: str, detail=()):
         items.append((passed, text, detail))
 
-    is_open = pr["state"] == "OPEN"
-    item(is_open, "the PR is open" if is_open else f"the PR is not open (it is {pr['state'].lower()})")
-    behind = json.loads(gh("api", f"repos/{repo}/compare/{base}...{head}"))["behind_by"]
-    item(behind == 0, f"it is up to date with {base}" if not behind else f"it is {behind} commit(s) behind {base}")
-    if behind:
-        nxt = f"merge {base} into the branch, rerun the tests, push"
+    if not evals_only:  # GitHub checks these itself (the branch rule "up to date"); the job reports evals only
+        is_open = pr["state"] == "OPEN"
+        item(is_open, "the PR is open" if is_open else f"the PR is not open (it is {pr['state'].lower()})")
+        behind = json.loads(gh("api", f"repos/{repo}/compare/{base}...{head}"))["behind_by"]
+        item(behind == 0, f"it is up to date with {base}" if not behind else f"it is {behind} commit(s) behind {base}")
+        if behind:
+            nxt = f"merge {base} into the branch, rerun the tests, push"
 
     gated = list_evals_gated_files.triggers(gh("pr", "diff", url, "--name-only").split())
-    evals_items, evals_ok = [], True
     if not gated:
-        evals_items.append((True, "it changes no agent file, so it needs no evals", ()))
+        item(True, "it changes no agent file, so it needs no evals")
     else:
-        evals_items.append((True, f"it changes {len(gated)} agent file(s), so it needs a passing evals status",
-                            gated))
+        item(True, f"it changes {len(gated)} agent file(s), so it needs a passing evals status", gated)
         state, desc = _status(gh, repo, head, "evals")
         carried = None if state == "success" else _carried(gh, repo, number, head)
         if carried:
-            evals_items.append((True, f"evals passed on {carried[:7]}, an older commit of this PR, and no agent file "
-                                      f"changed since (head {head[:7]}: {state})", ()))
+            item(True, f"evals passed on {carried[:7]}, an older commit of this PR, and no agent file changed since "
+                       f"(head {head[:7]}: {state})")
         else:
-            evals_ok = state == "success"
-            evals_items.append((evals_ok, _evals_line(state, desc, head), ()))
-
-    # Red master: only a PR that recovers it may merge, the revert PR or a gated PR whose evals passed on this
-    # up-to-date head (the evals then ran on the whole code, as find_ungated_merges.py counts it).
-    audit, _ = _status(gh, repo, base, "master-evals-gated")
-    red = audit in ("failure", "error")
-    revert = branch.startswith(REVERT_PREFIX)
-    recovers = revert or (bool(gated) and evals_ok)
-    if not red:
-        why = ("find-ungated-merges has posted no result on it yet" if audit == "missing"
-               else f"master-evals-gated: {audit}")
-        item(True, f"{base} is not red ({why})")
-    elif revert:
-        item(True, f"{base} is red, and this is the revert PR that recovers it")
-    elif recovers:
-        item(True, f"{base} is red, and this PR's passing evals recover it")
-    else:
-        item(False, f"{base} is red: an agent change landed without passing evals (master-evals-gated: {audit})")
-        nxt = nxt or "mesh run-evals --master"
-    for passed, text, detail in evals_items:
-        item(passed, text, detail)
-    if not evals_ok:
-        nxt = nxt or f"mesh run-evals {url}"
+            item(state == "success", _evals_line(state, desc, head))
+            if state != "success":
+                nxt = nxt or f"mesh run-evals {url}"
 
     blocked = sum(not passed for passed, _, _ in items)
     verdict = "READY TO MERGE" if not blocked else f"BLOCKED by {blocked} item{'s' if blocked > 1 else ''}"
@@ -134,6 +112,11 @@ def _carried(gh, repo: str, number: str, head: str) -> str | None:
 
 
 if __name__ == "__main__":
-    result = check(sys.argv[1])
+    args = sys.argv[1:]
+    only = "--evals-only" in args
+    args = [a for a in args if a != "--evals-only"]
+    if len(args) != 1:
+        sys.exit("usage: check_evals_gate_allows_merge.py [--evals-only] <PR url>")
+    result = check(args[0], evals_only=only)
     print(result.text)
     sys.exit(0 if result.ok else 1)
