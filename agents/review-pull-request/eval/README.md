@@ -676,8 +676,9 @@ uv run python eval/scripts/decide_evals_gate_status.py eval/runs/<run>   # the g
   `mesh run-evals` and `mesh override-evals` re-run that check when they post `evals`, so it updates without a push.
   The agent-file filter is inside the job, not a `paths:` filter: a workflow skipped by `paths:` never reports, and a
   required check that never reports blocks every PR. **Setup, once** (the owner, after this lands): in the repo's
-  settings, rule for `master`: require the status check `evals-gate`, and require branches to be up to date. The check
-  can only be picked once it has run on a PR.
+  settings, rule for `master`: require a pull request before merging (so no direct push skips the check), require
+  the status check `evals-gate`, require branches to be up to date, and do not allow bypassing the rule. The check can
+  only be picked once it has run on a PR.
 - **Known limit:** anyone with write access can post a status by hand (that is what `mesh override-evals` does,
   visibly), and a PR can change the workflow or `check_evals_gate_allows_merge.py` it runs (code review sees it).
   The gate guards against mistakes, not against someone bypassing it on purpose.
