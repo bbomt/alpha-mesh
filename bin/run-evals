@@ -10,7 +10,7 @@
 # post re-runs that check, so it updates without a push. `gh pr checks <PR url>` shows the result.
 #
 # An evals run is the full eval (the development cases, k=3, every repeat judged) in a clean worktree, compared with
-# master's baseline and master's tolerance (score_eval_run.py), so a PR cannot loosen its own gate. About 75 min and about
+# master's baseline, tolerance and scoring rule (score_eval_run.py, write_baseline.py), so a PR cannot loosen its own gate. About 75 min and about
 # a day's free-model quota. Run it again on the same head to resume: a run stopped by the quota continues.
 
 set -euo pipefail
@@ -91,8 +91,16 @@ run_gate() {
   "$agent/eval/scripts/run_eval.sh" --run "$run" "${eval_args[@]}" || true
   gate=0
   rm -f "$run_dir/gate.md"  # a report left by an earlier gate run on this head must never be posted as this one's
+  # Score with <base ref>'s rule, not the PR's: its score_eval_run.py and the write_baseline.py it counts passes with
+  # replace the head's in this throwaway worktree, so a PR cannot change how its own run is scored (only the PR that
+  # installs the gate, before <base ref> has them, scores with its own). Restored after, so a resume starts clean.
+  local scorer=(eval/scripts/score_eval_run.py eval/scripts/write_baseline.py) f src
+  for f in "${scorer[@]}"; do
+    if src="$(git -C "$mesh_dir" show "$ref:$agent_rel/$f" 2>/dev/null)"; then printf '%s\n' "$src" > "$agent/$f"; fi
+  done
   (cd "$agent" && uv run python eval/scripts/score_eval_run.py "eval/runs/$run" --baseline "$run_dir/baseline-${ref##*/}.json" \
      --tolerance "$tolerance" --markdown "$run_dir/gate.md" "${check_args[@]}") || gate=$?
+  git -C "$wt" checkout -q -- "${scorer[@]/#/$agent_rel/}" || true
   if [ ! -s "$run_dir/gate.md" ]; then
     [ -z "$context" ] || post_status "$repo" "$head" "$context" error "the gate could not score run $run: see its log"
     echo "ERROR: score_eval_run.py wrote no report (exit $gate)" >&2

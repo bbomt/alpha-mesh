@@ -45,8 +45,11 @@ case "$1" in
       origin/master:*score_eval_run.py)  # STUB_NO_GATE: master predates the gate (the PR that installs it)
         [ -z "${STUB_NO_GATE:-}" ] || exit 128; printf '"""doc"""\nTOLERANCE = 7  # runs\n' ;;
       *score_eval_run.py) printf '"""doc"""\nTOLERANCE = 9  # runs\n' ;;
+      origin/master:*write_baseline.py) [ -z "${STUB_NO_GATE:-}" ] || exit 128; echo '# master write_baseline' ;;
+      *) exit 128 ;;
     esac ;;
   rev-parse) echo "$STUB_HEAD" ;;
+  checkout) ;;
   worktree)
     if [ "$2" = add ]; then  # worktree add -q --detach <dir> <sha>
       mkdir -p "$5/agents/review-pull-request/eval/scripts"
@@ -65,6 +68,7 @@ echo "uv $*" >> "$STUB_LOG"
 [ "$1" = sync ] && exit 0
 # uv run python eval/scripts/score_eval_run.py <run> --baseline <f> --tolerance <t> --markdown <md>
 cp "$6" "$STUB_BASELINE_SEEN"
+cat eval/scripts/score_eval_run.py eval/scripts/write_baseline.py > "$STUB_BASELINE_SEEN.scorer" 2>/dev/null || true
 case "$STUB_GATE" in
   pass) echo "runs passed 142/195 · baseline 140/195 · needs at least 133/195 (tolerance 7) · change +2" > "${10}"; exit 0 ;;
   fail) echo "runs passed 90/195 · baseline 140/195 · needs at least 133/195 (tolerance 7) · change -50" > "${10}"; exit 1 ;;
@@ -106,6 +110,8 @@ if run "a passing run posts pending, then success, and comments the report" 0 pa
   grep -q 'description=runs passed 142/195 · baseline 140/195 · needs at least 133/195 (tolerance 7) · change +2' "$WORK/log" \
     || { echo "  FAIL: the success status lacks the count"; fails=$((fails + 1)); }
   grep -q -- "--tolerance 7 " "$WORK/log" || { echo "  FAIL: not scored with master's tolerance"; fails=$((fails + 1)); }
+  grep -q "TOLERANCE = 7" "$WORK/baseline-seen.scorer" && grep -q "# master write_baseline" "$WORK/baseline-seen.scorer" \
+    || { echo "  FAIL: not scored with master's score_eval_run.py and write_baseline.py"; fails=$((fails + 1)); }
   grep -q '"master-baseline"' "$WORK/baseline-seen" \
     || { echo "  FAIL: not scored against master's baseline"; fails=$((fails + 1)); }
   grep -q -- "--run gate-pr15-abc1234 --judge-repeats all" "$WORK/log" \

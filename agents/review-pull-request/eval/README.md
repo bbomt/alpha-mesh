@@ -645,7 +645,7 @@ uv run python eval/scripts/score_eval_run.py eval/runs/<run>   # the gate rule o
   measures the agent as it runs (committed: a model change is a PR, so the gate sees it). `baseline.json` must be on that model (a test checks it), or every gate run fails as a model change.
 - **What `mesh run-evals` does:** in a clean worktree at the PR's head (refused if the branch is behind master), it
   runs the development cases at k=3 with every repeat judged (`--judge-repeats all`), then `score_eval_run.py` against
-  **master's** `baseline.json` and master's `TOLERANCE`, so a PR cannot loosen its own gate. (Only the PR that installs the gate, before master has `score_eval_run.py`, takes the tolerance from its own head; the report says so.) It posts the verdict as
+  **master's** `baseline.json`, `TOLERANCE` and scoring rule (its `score_eval_run.py` and `write_baseline.py` replace the PR's for the scoring), so a PR cannot loosen its own gate. (Only the PR that installs the gate, before master has `score_eval_run.py`, scores with its own head's; the report says so.) It posts the verdict as
   the commit status `evals` on that head (`pending` while it runs) and the score table as a PR comment. A new push is
   a new head: `mesh merge-pr` still accepts the older head's success when no gated file changed since (a README or
   test fix after review), and otherwise needs a new gate run.
