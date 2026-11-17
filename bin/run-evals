@@ -2,15 +2,15 @@
 # alpha-mesh/bin/run-evals
 # Run the review-pull-request evals on a PR and post the verdict (PMAT-312).
 #
-#   mesh run-evals <PR url>                  run the evals on the PR's head; post `evals` and the score table
-#   mesh run-evals --quick <PR url>          a k=1 early warning (a third of the quota): a PR comment, no status
-#   mesh override-evals <PR url> --reason R  post `evals` = success by hand ("override: R"), recorded on the PR
+#   mesh run-evals <PR url>                              run the evals on the PR's head; post `evals` and the score table
+#   mesh run-evals --quick <PR url>                      a k=1 early warning (a third of the quota): a PR comment, no status
+#   mesh run-evals --force-success <PR url> --reason R   post `evals` = success by hand ("forced: R"), recorded on the PR
 #
 # GitHub's required check `evals-gate` (.github/workflows/evals-gate.yml) reads the `evals` status these post; each
-# post re-runs that check, so it updates without a push. mesh merge-pr --status <PR url> prints the same report locally.
+# post re-runs that check, so it updates without a push. `gh pr checks <PR url>` shows the result.
 #
 # An evals run is the full eval (the development cases, k=3, every repeat judged) in a clean worktree, compared with
-# master's baseline and master's tolerance (decide_evals_gate_status.py), so a PR cannot loosen its own gate. About 75 min and about
+# master's baseline and master's tolerance (score_eval_run.py), so a PR cannot loosen its own gate. About 75 min and about
 # a day's free-model quota. Run it again on the same head to resume: a run stopped by the quota continues.
 
 set -euo pipefail
@@ -59,16 +59,16 @@ run_gate() {
   [ "$mode" = quick ] && eval_args=(--k 1 --judge-repeats first) check_args=(--quick)
   baseline_json="$(git -C "$mesh_dir" show "$ref:$agent_rel/eval/baseline.json")"
   local gate_src tolerance_note=""
-  if ! gate_src="$(git -C "$mesh_dir" show "$ref:$agent_rel/eval/scripts/decide_evals_gate_status.py" 2>/dev/null)"; then
-    # Only for the PR that installs the gate: <base ref> has no decide_evals_gate_status.py yet, so no tolerance of its own.
+  if ! gate_src="$(git -C "$mesh_dir" show "$ref:$agent_rel/eval/scripts/score_eval_run.py" 2>/dev/null)"; then
+    # Only for the PR that installs the gate: <base ref> has no score_eval_run.py yet, so no tolerance of its own.
     git -C "$mesh_dir" rev-parse -q --verify "$ref^{commit}" >/dev/null || { echo "ERROR: no $ref" >&2; exit 1; }
-    gate_src="$(git -C "$mesh_dir" show "$head:$agent_rel/eval/scripts/decide_evals_gate_status.py")"
+    gate_src="$(git -C "$mesh_dir" show "$head:$agent_rel/eval/scripts/score_eval_run.py")"
     tolerance_note="The gate is not on $ref yet (this PR installs it), so the tolerance comes from this head."
     echo "NOTE: $tolerance_note" >&2
   fi
   tolerance="$(sed -n 's/^TOLERANCE = \([0-9][0-9]*\).*/\1/p' <<<"$gate_src")"
   if [ -z "$tolerance" ]; then
-    echo "ERROR: no TOLERANCE in $ref's decide_evals_gate_status.py" >&2
+    echo "ERROR: no TOLERANCE in $ref's score_eval_run.py" >&2
     exit 1
   fi
   wt="${MESH_RUN_EVALS_DIR:-$HOME/environment/pmat/alpha-mesh-run-evals}/${head:0:12}"
@@ -91,11 +91,11 @@ run_gate() {
   "$agent/eval/scripts/run_eval.sh" --run "$run" "${eval_args[@]}" || true
   gate=0
   rm -f "$run_dir/gate.md"  # a report left by an earlier gate run on this head must never be posted as this one's
-  (cd "$agent" && uv run python eval/scripts/decide_evals_gate_status.py "eval/runs/$run" --baseline "$run_dir/baseline-${ref##*/}.json" \
+  (cd "$agent" && uv run python eval/scripts/score_eval_run.py "eval/runs/$run" --baseline "$run_dir/baseline-${ref##*/}.json" \
      --tolerance "$tolerance" --markdown "$run_dir/gate.md" "${check_args[@]}") || gate=$?
   if [ ! -s "$run_dir/gate.md" ]; then
     [ -z "$context" ] || post_status "$repo" "$head" "$context" error "the gate could not score run $run: see its log"
-    echo "ERROR: decide_evals_gate_status.py wrote no report (exit $gate)" >&2
+    echo "ERROR: score_eval_run.py wrote no report (exit $gate)" >&2
     exit 1
   fi
   summary="$(grep -m1 '^runs passed' "$run_dir/gate.md")"
@@ -109,14 +109,14 @@ remove_worktree() {
 }
 
 case "${1:-}" in
-  --override)
+  --force-success)
     [ $# -eq 4 ] && [[ "$2" =~ $pr_re ]] && [ "$3" = --reason ] && [ -n "$4" ] || usage
     url="$2" repo="${BASH_REMATCH[1]}" reason="$4"
     head="$(gh pr view "$url" --json headRefOid | jq -r .headRefOid)"
-    post_status "$repo" "$head" evals success "override: $reason"
+    post_status "$repo" "$head" evals success "forced: $reason"
     rerun_evals_gate "$repo" "$head"
-    gh pr comment "$url" --body "**evals overridden** on \`${head:0:7}\` by hand (\`mesh override-evals\`): $reason" >/dev/null
-    echo "evals = success (override) on $head." >&2
+    gh pr comment "$url" --body "**evals forced to success** on \`${head:0:7}\` by hand (\`mesh run-evals --force-success\`): $reason" >/dev/null
+    echo "evals = success (forced) on $head." >&2
     exit 0 ;;
 
   --quick)

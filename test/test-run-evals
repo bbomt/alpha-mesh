@@ -3,7 +3,7 @@
 # Runs `mesh run-evals` against stand-in `gh`, `git` and `uv` and a stand-in eval run, and checks that it posts the
 # gate's verdict as the `evals` status on the PR's head commit (pending first), comments the report, scores with
 # master's baseline and tolerance, refuses a stale branch, and leaves the eval runs folder alone (PMAT-312). Also
-# `mesh merge-pr --status` (the merge status report) and `mesh override-evals` (evals = success by hand). Each post of
+# `mesh run-evals --force-success` (evals = success by hand). Each post of
 # `evals` re-runs the GitHub check `evals-gate` (gh run rerun), so it reads the new status without a push.
 
 set -euo pipefail
@@ -42,9 +42,9 @@ case "$1" in
   show)
     case "$2" in
       *baseline.json) [ -z "${STUB_NO_BASELINE:-}" ] || exit 128; echo '{"model": "master-baseline"}' ;;
-      origin/master:*decide_evals_gate_status.py)  # STUB_NO_GATE: master predates the gate (the PR that installs it)
+      origin/master:*score_eval_run.py)  # STUB_NO_GATE: master predates the gate (the PR that installs it)
         [ -z "${STUB_NO_GATE:-}" ] || exit 128; printf '"""doc"""\nTOLERANCE = 7  # runs\n' ;;
-      *decide_evals_gate_status.py) printf '"""doc"""\nTOLERANCE = 9  # runs\n' ;;
+      *score_eval_run.py) printf '"""doc"""\nTOLERANCE = 9  # runs\n' ;;
     esac ;;
   rev-parse) echo "$STUB_HEAD" ;;
   worktree)
@@ -63,7 +63,7 @@ cat > "$WORK/bin/uv" <<'EOF'
 #!/usr/bin/env bash
 echo "uv $*" >> "$STUB_LOG"
 [ "$1" = sync ] && exit 0
-# uv run python eval/scripts/decide_evals_gate_status.py <run> --baseline <f> --tolerance <t> --markdown <md>
+# uv run python eval/scripts/score_eval_run.py <run> --baseline <f> --tolerance <t> --markdown <md>
 cp "$6" "$STUB_BASELINE_SEEN"
 case "$STUB_GATE" in
   pass) echo "runs passed 142/195 · baseline 140/195 · needs at least 133/195 (tolerance 7) · change +2" > "${10}"; exit 0 ;;
@@ -130,32 +130,22 @@ if STUB_NO_GATE=1 run "before the gate is on master, it scores with the head's t
 fi
 
 
-# override-evals: evals = success by hand, recorded on the PR.
+# --force-success: evals = success by hand, recorded on the PR.
 : > "$WORK/log"; rm -f "$WORK/comment"
 PATH="$WORK/bin:$PATH" STUB_LOG="$WORK/log" STUB_HEAD="$HEAD_SHA" STUB_COMMENT="$WORK/comment" \
-  "$MESH_DIR/bin/mesh" override-evals "$URL" --reason "judge outage, scores read by hand" >/dev/null 2>&1
-if grep -q "state=success -f context=evals -f description=override: judge outage" "$WORK/log" \
+  "$MESH_DIR/bin/mesh" run-evals --force-success "$URL" --reason "judge outage, scores read by hand" >/dev/null 2>&1
+if grep -q "state=success -f context=evals -f description=forced: judge outage" "$WORK/log" \
    && grep -q "judge outage" "$WORK/comment"; then
-  echo "  PASS: override-evals posts evals = success with the reason and records it on the PR"
+  echo "  PASS: --force-success posts evals = success with the reason and records it on the PR"
 else
-  echo "  FAIL: override-evals"; sed 's/^/    log: /' "$WORK/log"; fails=$((fails + 1))
+  echo "  FAIL: --force-success"; sed 's/^/    log: /' "$WORK/log"; fails=$((fails + 1))
 fi
-if PATH="$WORK/bin:$PATH" STUB_LOG="$WORK/log" "$MESH_DIR/bin/mesh" override-evals "$URL" >/dev/null 2>&1; then
-  echo "  FAIL: override-evals without a reason must be refused"; fails=$((fails + 1))
+if PATH="$WORK/bin:$PATH" STUB_LOG="$WORK/log" "$MESH_DIR/bin/mesh" run-evals --force-success "$URL" >/dev/null 2>&1; then
+  echo "  FAIL: --force-success without a reason must be refused"; fails=$((fails + 1))
 else
-  echo "  PASS: override-evals without a reason is refused"
+  echo "  PASS: --force-success without a reason is refused"
 fi
 
-# merge-pr --status: the merge status report, with the next command.
-set +e
-out="$(PATH="$WORK/bin:$PATH" STUB_LOG="$WORK/log" STUB_HEAD="$HEAD_SHA" STUB_BEHIND=0 "$MESH_DIR/bin/mesh" merge-pr --status "$URL" 2>&1)"
-code=$?
-set -e
-if [ "$code" -ne 0 ] && grep -q "  BLOCKED  evals have not run on head abc1234" <<<"$out" && grep -q "Next: mesh run-evals $URL" <<<"$out"; then
-  echo "  PASS: merge-pr --status prints the report and the next command"
-else
-  echo "  FAIL: merge-pr --status: exit $code"; echo "$out" | sed 's/^/    /'; fails=$((fails + 1))
-fi
 
 # --quick: k=1, the first repeat judged, scored with --quick; a PR comment, and never an evals status.
 : > "$WORK/log"; rm -f "$WORK/comment"
@@ -166,7 +156,7 @@ PATH="$WORK/bin:$PATH" HOME="$WORK/home" MESH_RUN_EVALS_DIR="$WORK/gates" STUB_L
 code=$?
 set -e
 if [ "$code" -eq 0 ] && grep -q -- "--run quick-pr15-abc1234 --k 1 --judge-repeats first" "$WORK/log" \
-   && grep -q -- "--quick" <(grep "decide_evals_gate_status.py" "$WORK/log") && ! grep -q "context=evals" "$WORK/log" \
+   && grep -q -- "--quick" <(grep "score_eval_run.py" "$WORK/log") && ! grep -q "context=evals" "$WORK/log" \
    && grep -q "not the gate" "$WORK/comment"; then
   echo "  PASS: --quick runs k=1, comments an early warning and posts no evals status"
 else

@@ -34,7 +34,7 @@ def test_a_file_that_can_change_the_findings_or_their_score_is_a_trigger(path):
     A + "eval/README.md",
     A + "tests/test_review.py",
     A + "eval/tests/test_gate.py",
-    A + "eval/scripts/decide_evals_gate_status.py",
+    A + "eval/scripts/score_eval_run.py",
     A + "eval/judge/rubric.v1.md",
     A + "eval/baseline.json",
     "other/agents/review-pull-request/src/x.py",

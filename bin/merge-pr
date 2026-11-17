@@ -1,26 +1,20 @@
 #!/usr/bin/env bash
 # alpha-mesh/bin/merge-pr
-# mesh merge-pr <PR url>: the owner's merge.
-# mesh merge-pr --status <PR url>: print the merge status report (what would block the merge) and merge nothing. Squash-merges the PR only if it is open and its branch already
+# mesh merge-pr <PR url>: the owner's merge. Squash-merges the PR only if it is open and its branch already
 # has the latest commit of its base branch, so nothing merges onto a base it was not tested against.
 # --match-head-commit makes the merge fail if the branch moves between the check and the merge.
 # A PR that changes a file the review-pull-request evals gate covers also needs `evals` = success on its head commit.
 
 set -euo pipefail
 
-status_only=""
-if [ "${1:-}" = --status ]; then status_only=1; shift; fi
 if [ $# -ne 1 ] || [[ ! "$1" =~ ^https://github\.com/([^/]+/[^/]+)/pull/[0-9]+$ ]]; then
-  echo "usage: mesh merge-pr [--status] https://github.com/<owner>/<repo>/pull/<number>" >&2
+  echo "usage: mesh merge-pr https://github.com/<owner>/<repo>/pull/<number>" >&2
   exit 2
 fi
 url="$1"
-mesh_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-status_report="$mesh_dir/agents/review-pull-request/eval/scripts/check_evals_gate_allows_merge.py"
-if [ -n "$status_only" ]; then
-  exec python3 "$status_report" "$url"
-fi
 repo="${BASH_REMATCH[1]}"
+mesh_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+status_report="$mesh_dir/agents/review-pull-request/eval/scripts/check_pr_evals.py"
 
 read -r state head base < <(gh pr view "$url" --json state,headRefOid,baseRefName \
   | jq -r '"\(.state) \(.headRefOid) \(.baseRefName)"')
@@ -36,7 +30,7 @@ if [ "$behind" != "0" ]; then
   exit 1
 fi
 
-# The review-pull-request evals gate (PMAT-312, check_evals_gate_allows_merge.py): a PR that changes a file the gate
+# The review-pull-request evals gate (PMAT-312, check_pr_evals.py): a PR that changes a file the gate
 # covers needs `evals` = success on its head, or on an older commit with no gated file changed since. GitHub enforces
 # the same rule (the required check `evals-gate`); checking here first gives the report and the offer below.
 # When the evals are all that is missing and the owner is at a terminal, offer to run them now: the full run is

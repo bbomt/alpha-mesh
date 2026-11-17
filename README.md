@@ -11,8 +11,7 @@ alpha-mesh/
 │   ├── model                # Switch/check model config
 │   ├── dream                # End-of-session memory consolidation (delegates to agents/dream/)
 │   ├── review-pull-request # PR review agent (delegates to agents/review-pull-request/)
-│   ├── run-evals            # Runs the review-pull-request evals on a PR (or --quick) and posts `evals`;
-│   │                        #   also `mesh override-evals`
+│   ├── run-evals            # Runs the review-pull-request evals on a PR (or --quick, --force-success); posts `evals`
 │   ├── merge-pr             # The owner's merge: refuses a stale PR branch, or an agent PR without passing evals
 │   ├── sync-main            # Fast-forwards a main checkout and verifies it, or fails loudly
 │   ├── orchestrate          # One Claude worker per Jira ticket in tmux tabs (delegates to agents/orchestrator/)
@@ -202,7 +201,7 @@ tested against (parallel tickets make this likely). It doesn't rely on GitHub br
 
 ```bash
 mesh merge-pr https://github.com/org/repo/pull/123
-mesh merge-pr --status https://github.com/org/repo/pull/123   # the merge status report only: merges nothing
+gh pr checks https://github.com/org/repo/pull/123             # the PR's checks (evals-gate among them): merges nothing
 ```
 
 Every refusal prints the merge status report: a verdict line (READY TO MERGE, or BLOCKED by n items), then one

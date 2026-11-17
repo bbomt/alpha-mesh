@@ -24,4 +24,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PR_URL: ${{ github.event.pull_request.html_url }}
-        run: python3 agents/review-pull-request/eval/scripts/check_evals_gate_allows_merge.py --evals-only "$PR_URL"
+        run: python3 agents/review-pull-request/eval/scripts/check_pr_evals.py --evals-only "$PR_URL"

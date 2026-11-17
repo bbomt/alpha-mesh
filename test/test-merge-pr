@@ -51,7 +51,7 @@ run() {  # run <name> <state> <behind> <want exit 0|1> <want merge call yes|no> 
   out="$(PATH="$WORK/bin:$PATH" STUB_LOG="$WORK/log" STUB_STATE="$2" STUB_BEHIND="$3" \
          STUB_FILES="${FILES:-README.md}" STUB_EVALS="${EVALS:-}" \
          STUB_EVALS_FILE="$WORK/evals-state" MESH_RUN_EVALS="$WORK/run-evals" MESH_ASSUME_TTY="${TTY:-}" \
-         "$MESH_DIR/bin/mesh" merge-pr ${STATUS:+--status} "$URL" 2>&1 <<<"${ANSWER:-}")"
+         "$MESH_DIR/bin/mesh" merge-pr "$URL" 2>&1 <<<"${ANSWER:-}")"
   code=$?
   set -e
   local ok=0 merged=no
@@ -82,10 +82,6 @@ FILES="$AGENT_FILE" EVALS="pending" run "an agent PR whose evals is still pendin
 FILES="$(printf 'README.md\n%s' "$AGENT_FILE")" EVALS="success" \
   run "an agent PR whose evals passed on its head is merged" OPEN 0 0 yes "merged"
 FILES="agents/dream/dream/core.py" EVALS="" run "a PR that changes no gated file needs no evals" OPEN 0 0 yes "merged"
-FILES="$AGENT_FILE" EVALS="success" STATUS=1 \
-  run "--status prints the report and merges nothing" OPEN 0 0 no "READY TO MERGE"
-FILES="$AGENT_FILE" EVALS="failure" STATUS=1 \
-  run "--status on a blocked PR exits 1 and merges nothing" OPEN 0 1 no "BLOCKED by 1 item"
 FILES="$AGENT_FILE" TTY=1 ANSWER=n run "at a terminal, answering no to running the gate refuses" OPEN 0 1 no "Run them now"
 if grep -q "^run-evals" "$WORK/log"; then echo "  FAIL: answering no must not run the gate"; fails=$((fails + 1)); fi
 FILES="$AGENT_FILE" TTY=1 ANSWER=y run "at a terminal, answering yes runs the gate, then merges" OPEN 0 0 yes "merged"

@@ -1,10 +1,9 @@
-"""The merge status report for one PR (PMAT-312), and the logic of the required check `evals-gate`.
+"""Check one PR's evals (PMAT-312): the logic of the required check `evals-gate`, and `mesh merge-pr`'s report.
 
-    python3 eval/scripts/check_evals_gate_allows_merge.py https://github.com/<owner>/<repo>/pull/<n>   # exit 0: may merge
-    python3 eval/scripts/check_evals_gate_allows_merge.py --evals-only <PR url>   # the evals items only (the job)
+    python3 eval/scripts/check_pr_evals.py https://github.com/<owner>/<repo>/pull/<n>   # exit 0: may merge
+    python3 eval/scripts/check_pr_evals.py --evals-only <PR url>   # the evals items only (the job)
 
-`mesh merge-pr` merges only when nothing in the report blocks, and `mesh merge-pr --status` prints it without
-merging. The workflow `.github/workflows/evals-gate.yml` runs it with `--evals-only` on every PR: GitHub then blocks
+`mesh merge-pr` merges only when nothing in the report blocks, and prints it when it refuses. The workflow `.github/workflows/evals-gate.yml` runs it with `--evals-only` on every PR: GitHub then blocks
 the merge itself (the check is required on master), whoever merges.
 
 The report's first line is the verdict (READY TO MERGE, or BLOCKED by n items); then one line per item, OK or BLOCKED,
@@ -116,7 +115,7 @@ if __name__ == "__main__":
     only = "--evals-only" in args
     args = [a for a in args if a != "--evals-only"]
     if len(args) != 1:
-        sys.exit("usage: check_evals_gate_allows_merge.py [--evals-only] <PR url>")
+        sys.exit("usage: check_pr_evals.py [--evals-only] <PR url>")
     result = check(args[0], evals_only=only)
     print(result.text)
     sys.exit(0 if result.ok else 1)

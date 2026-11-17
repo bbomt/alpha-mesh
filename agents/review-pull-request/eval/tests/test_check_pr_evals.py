@@ -1,11 +1,11 @@
-"""The merge status report for one PR (PMAT-312): what `mesh merge-pr` enforces and `mesh merge-pr --status` prints.
+"""The merge status report for one PR (PMAT-312): what `mesh merge-pr` enforces and the `evals-gate` job runs.
 
 GitHub is a fake: a dict from the `gh` call to its JSON answer.
 """
 
 import json
 
-import check_evals_gate_allows_merge
+import check_pr_evals
 
 URL = "https://github.com/o/r/pull/7"
 HEAD, OLD = "h" * 40, "o" * 40
@@ -38,7 +38,7 @@ def fake(*, files=(GATED,), head_evals=None, behind=0, commits=(OLD, HEAD),
 
 def check(evals_only=False, **kw):
     gh = fake(**kw)
-    return check_evals_gate_allows_merge.check(URL, gh=gh, evals_only=evals_only), gh
+    return check_pr_evals.check(URL, gh=gh, evals_only=evals_only), gh
 
 
 def test_an_agent_pr_with_evals_on_its_head_may_merge():

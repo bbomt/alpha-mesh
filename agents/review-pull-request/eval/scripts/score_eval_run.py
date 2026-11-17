@@ -1,6 +1,6 @@
 """The regression gate (PMAT-312): does an eval run keep the baseline's score, within the noise?
 
-    uv run python eval/scripts/decide_evals_gate_status.py eval/runs/<run> [--tolerance N] [--markdown <file>] [--quick]
+    uv run python eval/scripts/score_eval_run.py eval/runs/<run> [--tolerance N] [--markdown <file>] [--quick]
 
 It counts the development runs (case x repeat) that pass their case's line check and fails when that count drops
 more than the tolerance below the baseline's, on the cases both hold. It counts runs, not cases: between two runs of

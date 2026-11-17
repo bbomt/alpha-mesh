@@ -114,7 +114,7 @@ a real bug here that no one raised. Use these for instructive comparison.
 | `promptfooconfig.yaml`, `promptfoo/` | the harness: provider, eval adapter, loader, asserts, `case_rules.py` |
 | `scripts/run_eval.sh`, `scripts/write_eval_run_info.py`, `scripts/write_baseline.py`, `scripts/compare_baseline.py` | run (and its `run.json`), baseline, compare |
 | `scripts/split_holdout.py`, `scripts/holdout_report.py` | draw the hold-out, report its totals |
-| `scripts/decide_evals_gate_status.py`, `scripts/list_evals_gated_files.py`, `scripts/check_evals_gate_allows_merge.py` | the gate decision on a run, the files that need evals, the merge status report (and the `evals-gate` check's logic) ([The regression gate](#the-regression-gate)) |
+| `scripts/score_eval_run.py`, `scripts/list_evals_gated_files.py`, `scripts/check_pr_evals.py` | the gate decision on a run, the files that need evals, the merge status report (and the `evals-gate` check's logic) ([The regression gate](#the-regression-gate)) |
 | `schema/review.schema.json`, `schema/baseline.schema.json` | the provider's output, the baseline's guard |
 | `promptfoo/llm_rubric.py`, `judge/rubric.v1.md` | the judge and its versioned rubric ([The judge](#the-judge)) |
 | `judge/sample.json`, `judge/gold-human-calibration.json`, `judge/silver-ai-calibration.json`, `judge/judge_scores.json` | the 25 calibration cases, the human (gold) scores, the silver labeller's scores, the judge's scores for them |
@@ -593,12 +593,12 @@ flowchart TD
     AS --> J["llm_rubric.py: the judge scores the findings (reported only, never gates)"]
   end
   J -->|Promptfoo writes| R1["results.json: every review, its line-check pass or fail, its judge scores"]
-  R1 --> D["decide_evals_gate_status.py: runs passed >= baseline minus tolerance?"]
+  R1 --> D["score_eval_run.py: runs passed >= baseline minus tolerance?"]
   R2 --> D
   D --> E["PR status 'evals' = success or failure, plus the score table as a PR comment"]
   E -->|"re-runs the check"| GH["GitHub required check evals-gate (.github/workflows/evals-gate.yml)"]
   P[every PR, every push] --> GH
-  GH -->|check_evals_gate_allows_merge.py --evals-only| G{"no agent file changed, or evals = success?"}
+  GH -->|check_pr_evals.py --evals-only| G{"no agent file changed, or evals = success?"}
   G -- no --> H["check fails: run mesh run-evals PR-url"]
   G -- yes --> I["check passes: the merge button (or mesh merge-pr) may merge"]
 ```
@@ -609,7 +609,7 @@ after the team lead has accepted the rest of the ticket's code. Before that, the
 ```bash
 mesh run-evals --quick https://github.com/bbomt/alpha-mesh/pull/<n>   # the worker, before AWAITING-MERGE: k=1, a third
                                                                       #   of the quota; a PR comment, never a status
-mesh merge-pr --status https://github.com/bbomt/alpha-mesh/pull/<n>   # anyone: the merge status report, merges nothing
+gh pr checks https://github.com/bbomt/alpha-mesh/pull/<n>             # anyone: the PR's checks, evals-gate among them
 mesh merge-pr https://github.com/bbomt/alpha-mesh/pull/<n>            # the team lead: if the evals are all that is
                                                                       #   missing, it offers to run them, then merges [y/N]
 mesh run-evals https://github.com/bbomt/alpha-mesh/pull/<n>           # the full run on its own: about 75 min; again: resumes
@@ -633,8 +633,8 @@ Next: mesh run-evals https://github.com/bbomt/alpha-mesh/pull/<n>
 Also:
 
 ```bash
-mesh override-evals <PR url> --reason "<why>"   # evals = success by hand ("override: <why>"), recorded on the PR
-uv run python eval/scripts/decide_evals_gate_status.py eval/runs/<run>   # the gate rule on any finished run, by hand
+mesh run-evals --force-success <PR url> --reason "<why>"   # evals = success by hand ("forced: <why>"), on the PR
+uv run python eval/scripts/score_eval_run.py eval/runs/<run>   # the gate rule on any finished run, by hand
 ```
 
 - **What needs it:** a PR that changes a file in `scripts/list_evals_gated_files.py`: `src/**` (code and the prompts in
@@ -644,12 +644,12 @@ uv run python eval/scripts/decide_evals_gate_status.py eval/runs/<run>   # the g
 - **The model it runs on** is `[model] review` in `review_config.toml`, the model the reviews themselves use: the gate
   measures the agent as it runs (committed: a model change is a PR, so the gate sees it). `baseline.json` must be on that model (a test checks it), or every gate run fails as a model change.
 - **What `mesh run-evals` does:** in a clean worktree at the PR's head (refused if the branch is behind master), it
-  runs the development cases at k=3 with every repeat judged (`--judge-repeats all`), then `decide_evals_gate_status.py` against
-  **master's** `baseline.json` and master's `TOLERANCE`, so a PR cannot loosen its own gate. (Only the PR that installs the gate, before master has `decide_evals_gate_status.py`, takes the tolerance from its own head; the report says so.) It posts the verdict as
+  runs the development cases at k=3 with every repeat judged (`--judge-repeats all`), then `score_eval_run.py` against
+  **master's** `baseline.json` and master's `TOLERANCE`, so a PR cannot loosen its own gate. (Only the PR that installs the gate, before master has `score_eval_run.py`, takes the tolerance from its own head; the report says so.) It posts the verdict as
   the commit status `evals` on that head (`pending` while it runs) and the score table as a PR comment. A new push is
   a new head: `mesh merge-pr` still accepts the older head's success when no gated file changed since (a README or
   test fix after review), and otherwise needs a new gate run.
-- **The rule (`decide_evals_gate_status.py`):** it counts the runs (case × repeat) that pass their case's line check, on the cases
+- **The rule (`score_eval_run.py`):** it counts the runs (case × repeat) that pass their case's line check, on the cases
   the baseline also holds, and fails when the count drops more than `TOLERANCE` (10) below the baseline's. It counts
   runs, not cases: in the noise test (the same, unchanged code as base6, run twice more as `PMAT-312-aa1` and
   `PMAT-312-aa2`), 25 to 29 of the 65 cases changed in at least one repeat between any two runs, while the runs passed
@@ -671,21 +671,21 @@ uv run python eval/scripts/decide_evals_gate_status.py eval/runs/<run>   # the g
   on OpenRouter (`free-models-per-day-high-balance`; the second noise-test run on 2026-11-13 hit it after 32 minutes), shared
   with every `mesh review-pull-request`. Run `mesh run-evals` again after the reset: it resumes.
 - **GitHub blocks the merge, whoever merges.** The required check `evals-gate` (`.github/workflows/evals-gate.yml`)
-  runs on every PR and push, in seconds, with no model call: `check_evals_gate_allows_merge.py --evals-only` passes a
+  runs on every PR and push, in seconds, with no model call: `check_pr_evals.py --evals-only` passes a
   PR that changes no agent file at once, and an agent PR only when `evals` = success on its head (or carried over).
-  `mesh run-evals` and `mesh override-evals` re-run that check when they post `evals`, so it updates without a push.
+  `mesh run-evals` (also with `--force-success`) re-runs that check when they post `evals`, so it updates without a push.
   The agent-file filter is inside the job, not a `paths:` filter: a workflow skipped by `paths:` never reports, and a
   required check that never reports blocks every PR. **Setup, once** (the owner, after this lands): in the repo's
   settings, rule for `master`: require a pull request before merging (so no direct push skips the check), require
   the status check `evals-gate`, require branches to be up to date, and do not allow bypassing the rule. The check can
   only be picked once it has run on a PR.
-- **Known limit:** anyone with write access can post a status by hand (that is what `mesh override-evals` does,
-  visibly), and a PR can change the workflow or `check_evals_gate_allows_merge.py` it runs (code review sees it).
+- **Known limit:** anyone with write access can post a status by hand (that is what `mesh run-evals --force-success` does,
+  visibly), and a PR can change the workflow or `check_pr_evals.py` it runs (code review sees it).
   The gate guards against mistakes, not against someone bypassing it on purpose.
 
 #### Reading a gate report
 
-`mesh run-evals` posts it as a PR comment and prints it; `decide_evals_gate_status.py eval/runs/<run>` prints it for any finished
+`mesh run-evals` posts it as a PR comment and prints it; `score_eval_run.py eval/runs/<run>` prints it for any finished
 run, and `promptfoo view` (see [How to run](#how-to-run)) shows each review.
 
 ```
@@ -707,12 +707,12 @@ runs passed 142/195 · baseline 140/195 · needs at least 130/195 (tolerance 10)
 
 #### The tolerance T
 
-`TOLERANCE` in `scripts/decide_evals_gate_status.py`, committed: the drop in runs passed the gate allows. Smaller is stricter; 0
+`TOLERANCE` in `scripts/score_eval_run.py`, committed: the drop in runs passed the gate allows. Smaller is stricter; 0
 fails any drop at all, which the noise alone would trip often. `mesh run-evals` always uses master's value, so a PR
 cannot loosen its own gate, and there is no flag for it: retrying a failed gate with a larger T until it passes would
 make the gate meaningless. Change T in its own reviewed PR, from how far runs of the same, unchanged code differ (a
 noise test). To see a finished run under
-another T, without running anything again: `decide_evals_gate_status.py eval/runs/<run> --tolerance 5`.
+another T, without running anything again: `score_eval_run.py eval/runs/<run> --tolerance 5`.
 
 #### Rebaselining, and new cases
 
@@ -727,7 +727,7 @@ Rebaselines are made by hand, never automatically. **When:**
 **How**, in the PR whose change moved the score:
 
 1. The gate runs on the PR as usual. A **model** change always fails it (the run's model is not the baseline's): the
-   owner reads the new run's report and uses `mesh override-evals <PR url> --reason "new model: rebaselined"`.
+   owner reads the new run's report and uses `mesh run-evals --force-success <PR url> --reason "new model: rebaselined"`.
 2. `uv run python eval/scripts/write_baseline.py eval/runs/gate-pr<n>-<sha7>` writes `baseline.json` from that gate run. It
    first asks for an entry in `error_analysis.json` for every failing case ([Error analysis](#error-analysis)).
 3. Commit `baseline.json` and `error_analysis.json` in the same PR. Neither is a gated file, so the passing status
