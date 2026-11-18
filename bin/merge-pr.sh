@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# alpha-mesh/bin/merge-pr
+# alpha-mesh/bin/merge-pr.sh
 # mesh merge-pr <PR url>: the owner's merge. Squash-merges the PR only if it is open and its branch already
 # has the latest commit of its base branch, so nothing merges onto a base it was not tested against.
 # --match-head-commit makes the merge fail if the branch moves between the check and the merge.
@@ -42,7 +42,7 @@ if ! report="$(python3 "$status_report" "$url")"; then
     printf "The evals have not passed on this head. Run them now (about 75 min, about a day's free-model quota), then merge? [y/N] " >&2
     read -r answer || answer=""
     [[ "$answer" =~ ^[Yy]$ ]] || exit 1
-    "${MESH_RUN_EVALS:-$mesh_dir/bin/run-evals}" "$url" || { echo "Not merged: the evals failed." >&2; exit 1; }
+    "${MESH_RUN_EVALS:-$mesh_dir/bin/run-evals.sh}" "$url" || { echo "Not merged: the evals failed." >&2; exit 1; }
     report="$(python3 "$status_report" "$url")" || { echo "Not merged:" >&2; echo "$report" >&2; exit 1; }
   else
     exit 1

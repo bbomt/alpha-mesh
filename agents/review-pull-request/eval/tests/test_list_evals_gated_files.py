@@ -28,7 +28,7 @@ def test_a_file_that_can_change_the_findings_or_their_score_is_a_trigger(path):
 @pytest.mark.parametrize("path", [
     "agents/dream/dream/core.py",
     "agents/orchestrator/src/orchestrator/cli.py",
-    "bin/merge-pr",
+    "bin/merge-pr.sh",
     "README.md",
     A + "README.md",
     A + "eval/README.md",

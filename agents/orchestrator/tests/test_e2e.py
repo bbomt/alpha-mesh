@@ -40,7 +40,7 @@ def world(tmp_path, monkeypatch):
     home, stubs, repo, record = tmp_path / "home", tmp_path / "bin", tmp_path / "repo", tmp_path / "record"
     for d in (home, stubs, repo, record):
         d.mkdir()
-    shutil.copy(HERE / "claude-stub", stubs / "claude")
+    shutil.copy(HERE / "claude-stub.sh", stubs / "claude")
     (stubs / "claude").chmod(0o755)
     subprocess.run(["git", "init", "-q", str(repo)], check=True)
 

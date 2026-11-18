@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# alpha-mesh/test-apps/hello-b/test-hello
+# alpha-mesh/test-apps/hello-b/test-hello.sh
 # Tests for hello.sh: prints "hello world" followed by today's date (ISO 8601)
 
 set -euo pipefail

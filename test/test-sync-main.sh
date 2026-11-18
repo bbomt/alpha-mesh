@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# alpha-mesh/test/test-sync-main
+# alpha-mesh/test/test-sync-main.sh
 # Runs `mesh sync-main` against temp clones of a temp upstream and checks it either fast-forwards to a clean,
 # verified default branch or fails loudly with the branch unchanged. A write-protected directory stands in for
 # the sandbox's mask on settings.json (git unlinks and recreates files, so a read-only file alone does not block it).

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# alpha-mesh/test/test-install
+# alpha-mesh/test/test-install.sh
 # Tests for install script
 
 set -euo pipefail
@@ -34,22 +34,22 @@ file_mtime() {
 }
 backup_before="$(file_mtime "$REAL_BACKUP")"
 
-run_install() { echo 'n' | HOME="$FAKE_HOME" "$MESH_DIR/bin/install" 2>&1; }
+run_install() { echo 'n' | HOME="$FAKE_HOME" "$MESH_DIR/bin/install.sh" 2>&1; }
 
 echo "=== install tests ==="
 echo ""
 
-# ─── test: bin/install exists and is executable ────────────────────────────────
-echo "[1/8] bin/install exists and is executable..."
-if [[ -x "$MESH_DIR/bin/install" ]]; then
+# ─── test: bin/install.sh exists and is executable ────────────────────────────────
+echo "[1/9] bin/install.sh exists and is executable..."
+if [[ -x "$MESH_DIR/bin/install.sh" ]]; then
   echo "  PASS"
 else
-  echo "  FAIL: bin/install not found or not executable"
+  echo "  FAIL: bin/install.sh not found or not executable"
   FAILED=1
 fi
 
 # ─── test: required tools are available ─────────────────────────────────────────
-echo "[2/8] Required tools are available..."
+echo "[2/9] Required tools are available..."
 for tool in jq sqlite3 curl python3; do
   if command -v "$tool" >/dev/null 2>&1; then
     echo "  PASS: $tool found"
@@ -59,8 +59,8 @@ for tool in jq sqlite3 curl python3; do
   fi
 done
 
-# ─── test: bin/install can be run (dry-run mode if available) ───────────────────
-echo "[3/8] bin/install runs without error..."
+# ─── test: bin/install.sh can be run (dry-run mode if available) ───────────────────
+echo "[3/9] bin/install.sh runs without error..."
 # Run install and capture output — may need to handle interactive prompts
 # Use expect-style timeout or check for non-interactive mode
 output=$(run_install || true)
@@ -78,8 +78,8 @@ else
 fi
 
 # ─── test: install keeps .claude/ and .mesh/ ignored ───────────────────────────
-# bin/install rewrites .gitignore; it must not drop the runtime-dir entries.
-echo "[4/8] .gitignore still ignores .claude/ and .mesh/ after install..."
+# bin/install.sh rewrites .gitignore; it must not drop the runtime-dir entries.
+echo "[4/9] .gitignore still ignores .claude/ and .mesh/ after install..."
 # The assertions are only meaningful if install got as far as writing .gitignore.
 if ! echo "$output" | grep -q ".gitignore written"; then
   echo "  FAIL: install did not reach the .gitignore step (output above is from test 3)"
@@ -96,7 +96,7 @@ for d in .claude/ .mesh/ 'tasks/*.db'; do
 done
 
 # ─── test: install does not create the removed tasks/ directory ────────────────
-echo "[5/8] install does not create tasks/ (task-log was removed)..."
+echo "[5/9] install does not create tasks/ (task-log was removed)..."
 if [[ -e "$MESH_DIR/tasks" ]]; then
   echo "  SKIP: tasks/ already exists in this checkout (see the legacy-data check below)"
 else
@@ -111,7 +111,7 @@ else
 fi
 
 # ─── test: install warns about leftover task-log data instead of deleting it ────
-echo "[6/8] install warns about legacy tasks/ data and keeps it..."
+echo "[6/9] install warns about legacy tasks/ data and keeps it..."
 if [[ -e "$MESH_DIR/tasks" ]]; then
   echo "  SKIP: tasks/ already exists in this checkout"
 else
@@ -132,7 +132,7 @@ else
 fi
 
 # ─── test: install removes dangling links to retired commands ───────────────────
-echo "[7/8] install removes dangling ~/bin links that point into alpha-mesh..."
+echo "[7/9] install removes dangling ~/bin links that point into alpha-mesh..."
 mkdir -p "$FAKE_HOME/bin"
 ln -s "$MESH_DIR/bin/retired-command" "$FAKE_HOME/bin/retired-command"   # dangling, ours
 ln -s "../$(basename "$MESH_DIR")/bin/retired-relative" "$FAKE_HOME/bin/retired-relative"   # relative form
@@ -155,8 +155,35 @@ else
   echo "  PASS"
 fi
 
+# ─── test: install links only mesh, replacing the per-command links ─────────────
+# Before PMAT-348 every bin/ entry was linked into ~/bin under its own name;
+# mesh <command> is now the one way in, so install leaves only ~/bin/mesh.
+echo "[8/9] install links only mesh into ~/bin and removes the old per-command links..."
+rm -rf "$FAKE_HOME/bin" && mkdir -p "$FAKE_HOME/bin"
+for old in model install dream review-pull-request; do ln -s "$MESH_DIR/bin/$old" "$FAKE_HOME/bin/$old"; done
+ln -s "$MESH_DIR/bin/lib" "$FAKE_HOME/bin/lib"   # still a valid target: not dangling
+ln -s /nonexistent/other-tool "$FAKE_HOME/bin/other-tool"
+run_install >/dev/null || true
+ours=$(for l in "$FAKE_HOME/bin/"*; do
+  [[ -L "$l" ]] || continue
+  t="$(readlink -f "$l" 2>/dev/null || readlink "$l")"
+  if [[ "$t" == "$MESH_DIR/"* || "$t" == "$(readlink -f "$MESH_DIR")/"* ]]; then basename "$l"; fi
+done | tr '\n' ' ')
+if [[ "$(readlink -f "$FAKE_HOME/bin/mesh" 2>/dev/null)" != "$(readlink -f "$MESH_DIR/bin/mesh")" ]]; then
+  echo "  FAIL: ~/bin/mesh does not point at bin/mesh"
+  FAILED=1
+elif [[ "$ours" != "mesh " ]]; then
+  echo "  FAIL: ~/bin links into alpha-mesh are '$ours', expected only 'mesh'"
+  FAILED=1
+elif [[ ! -L "$FAKE_HOME/bin/other-tool" ]]; then
+  echo "  FAIL: install removed a link that does not belong to alpha-mesh"
+  FAILED=1
+else
+  echo "  PASS"
+fi
+
 # ─── test: the suite left the real HOME alone ───────────────────────────────────
-echo "[8/8] tests did not touch the real ~/.claude settings backup..."
+echo "[9/9] tests did not touch the real ~/.claude settings backup..."
 backup_after="$(file_mtime "$REAL_BACKUP")"
 if [[ "$backup_before" == "unsupported" ]]; then
   echo "  FAIL: cannot read file mtimes with this platform's stat, so the check proves nothing"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# alpha-mesh/bin/run-evals
+# alpha-mesh/bin/run-evals.sh
 # Run the review-pull-request evals on a PR and post the verdict (PMAT-312).
 #
 #   mesh run-evals <PR url>                              run the evals on the PR's head; post `evals` and the score table

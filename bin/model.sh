@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# alpha-mesh/bin/model
+# alpha-mesh/bin/model.sh
 # Replaces manual settings.json swapping.
-# Tokens: stored in env vars or .env (never commit secrets to GitHub)
+# Tokens: only in .env as ALPHA_MESH_<PROVIDER>_TOKEN (gitignored); config/models.json holds no keys
 #
 # Syntax:
 #   model use {-g|-l} <profile> [model]   switch profile with explicit scope
@@ -35,8 +35,8 @@ ENV_FILE="$MESH_DIR/.env"
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
 
 # Load shared library
-# shellcheck source=bin/lib/repo
-source "$LIB_DIR/repo"
+# shellcheck source=bin/lib/repo.sh
+source "$LIB_DIR/repo.sh"
 
 # Requires jq
 if ! command -v jq &>/dev/null; then
@@ -87,8 +87,8 @@ list_profiles() {
   echo "Default: $default"
 }
 
-# Get token for a profile: env var takes precedence over models.json placeholder
-# Env var name is ALPHA_MESH_{PROVIDER}_TOKEN where provider comes from models.json
+# Get token for a profile, only from the env var ALPHA_MESH_{PROVIDER}_TOKEN (set in .env).
+# models.json holds no keys (PMAT-350), so there is no fallback: a missing var is an error.
 # e.g. "openrouter-default" has provider "openrouter" → ALPHA_MESH_OPENROUTER_TOKEN
 #       "claude-sonnet" has provider "anthropic" → ALPHA_MESH_ANTHROPIC_TOKEN
 get_token() {
@@ -98,12 +98,11 @@ get_token() {
   local env_var="ALPHA_MESH_${provider^^}_TOKEN"
   local token="${!env_var:-}"
 
-  # If env var is set, use it; otherwise fall back to models.json
-  if [[ -n "$token" ]]; then
-    echo "$token"
-  else
-    jq -r --arg p "$profile" '.profiles[$p].env.ANTHROPIC_AUTH_TOKEN // .profiles[$p].env.ANTHROPIC_API_KEY // ""' "$MODELS_JSON"
+  if [[ -z "$token" ]]; then
+    echo "ERROR: $env_var is not set. Add it to $ENV_FILE (see .env.example)." >&2
+    return 1
   fi
+  echo "$token"
 }
 
 health_check() {
@@ -122,9 +121,8 @@ health_check() {
   health_url="${base_url%/}/v1/models"
 
   echo -n "  Checking $profile ($health_url) ... "
-  token=$(get_token "$profile")
-  if [[ -z "$token" || "$token" == "REPLACE_WITH_"* ]]; then
-    echo "⚠ no token configured (set ALPHA_MESH_${profile^^}_TOKEN env var or in config/.env)"
+  if ! token=$(get_token "$profile"); then
+    echo "⚠ no token configured"
     return 1
   fi
 
@@ -185,22 +183,24 @@ write_settings() {
   fi
 
   # Build env block from models.json, then overlay token and optionally model
-  local env_block token
+  local env_block token auth
   env_block=$(jq --arg p "$profile" '.profiles[$p].env' "$MODELS_JSON")
-  token=$(get_token "$profile")
+  token=$(get_token "$profile") || exit 1
+  # The profile's "auth" field picks the variable: "api_key" (Anthropic direct) → ANTHROPIC_API_KEY;
+  # default "auth_token" (minimax/openrouter) → ANTHROPIC_AUTH_TOKEN. The other one is written empty.
+  auth=$(jq -r --arg p "$profile" '.profiles[$p].auth // "auth_token"' "$MODELS_JSON")
 
-  # Replace the token and optionally override the model
-  # Only set ANTHROPIC_API_KEY when models.json explicitly has a value for it (used by Anthropic direct)
-  # ANTHROPIC_AUTH_TOKEN is always set (used by minimax/openrouter)
+  if [[ "$auth" == "api_key" ]]; then
+    env_block=$(echo "$env_block" | jq --arg token "$token" '.ANTHROPIC_API_KEY = $token | .ANTHROPIC_AUTH_TOKEN = ""')
+  else
+    env_block=$(echo "$env_block" | jq --arg token "$token" '.ANTHROPIC_AUTH_TOKEN = $token | .ANTHROPIC_API_KEY = ""')
+  fi
+
+  # Optionally override the model
   if [[ -n "$model_override" ]]; then
     env_block=$(echo "$env_block" | jq \
-      --arg token "$token" \
       --arg model "$model_override" \
-      '.ANTHROPIC_AUTH_TOKEN = $token | .ANTHROPIC_MODEL = $model | .ANTHROPIC_DEFAULT_SONNET_MODEL = $model | .ANTHROPIC_DEFAULT_OPUS_MODEL = $model | if (.ANTHROPIC_API_KEY | length > 0) then .ANTHROPIC_API_KEY = $token else . end')
-  else
-    env_block=$(echo "$env_block" | jq \
-      --arg token "$token" \
-      '.ANTHROPIC_AUTH_TOKEN = $token | if (.ANTHROPIC_API_KEY | length > 0) then .ANTHROPIC_API_KEY = $token else . end')
+      '.ANTHROPIC_MODEL = $model | .ANTHROPIC_DEFAULT_SONNET_MODEL = $model | .ANTHROPIC_DEFAULT_OPUS_MODEL = $model')
   fi
 
   # Backup existing settings
@@ -296,8 +296,12 @@ case "$cmd" in
     fi
 
     profile=$(resolve_profile "$profile")
+    # Stop before any health check or write if the profile's key is not in .env
+    if jq -e --arg p "$profile" '.profiles[$p]' "$MODELS_JSON" > /dev/null 2>&1; then
+      get_token "$profile" > /dev/null || exit 1
+    fi
 
-    echo "Switching to: $profile${model_override:+, model: '"$model_override"'}"
+    echo "Switching to:$profile${model_override:+, model: '"$model_override"'}"
     health_check "$profile" || {
       echo ""
       echo "WARNING: $profile appears unreachable. Checking fallbacks..."

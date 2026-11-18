@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# alpha-mesh/test/test-evals-gate-workflow
+# alpha-mesh/test/test-evals-gate-workflow.sh
 # Runs the `evals-gate` job's step (.github/workflows/evals-gate.yml) in a scratch repo and checks that it runs the
 # base branch's check_pr_evals.py and list_evals_gated_files.py, not the PR's, so a PR cannot loosen the check
 # that judges it; and that the job fails, never running the PR's copy, when the base has none (PMAT-312, PMAT-349).

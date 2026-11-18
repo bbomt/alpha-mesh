@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# alpha-mesh/bin/install
+# alpha-mesh/bin/install.sh
 # Run once after cloning alpha-mesh.
 
 set -euo pipefail
@@ -90,48 +90,27 @@ fi
 echo "Creating symlinks in ~/bin..."
 mkdir -p "$HOME/bin"
 
-# Clean up any dangling .sh symlinks from old naming scheme
-for script in dream mesh model install bootstrap-memory task-log test-alpha-mesh; do
-  sh_link="$HOME/bin/${script}.sh"
-  if [[ -L "$sh_link" ]]; then
-    if [[ ! -e "$sh_link" ]] || [[ "$(readlink "$sh_link")" == *.sh ]]; then
-      echo "  Removing legacy: $sh_link"
-      rm -f "$sh_link"
-    fi
-  fi
-done
-
 # The task-log feature was removed; its local data is never deleted automatically.
 if [[ -d "$MESH_DIR/tasks" ]]; then
   echo "  NOTE: legacy tasks/ directory found (old task-log data); the task-log feature was removed."
   echo "        tasks/*.db stays git-ignored, but nothing uses this folder now. Back it up or delete it: $MESH_DIR/tasks"
 fi
 
-# Remove dangling links to commands alpha-mesh no longer ships (renamed or retired).
-# Only links whose target lives inside this repo are touched.
+# mesh <command> is the one way in, so ~/bin holds only mesh. Remove every other link into
+# this repo first (the per-command links older installs made, and dangling ones to retired
+# commands), then link mesh. Only links whose target lives inside this repo are touched.
 for link in "$HOME/bin/"*; do
-  if [[ -L "$link" && ! -e "$link" ]]; then
-    # Resolve relative targets too (readlink -f works for dangling links).
-    target="$(readlink -f "$link" 2>/dev/null || readlink "$link")"
-  else
-    continue
-  fi
+  [[ -L "$link" ]] || continue
+  # Resolve relative targets too (readlink -f works for dangling links).
+  target="$(readlink -f "$link" 2>/dev/null || readlink "$link")"
   if [[ "$target" == "$MESH_DIR/"* || "$target" == "$(readlink -f "$MESH_DIR")/"* ]]; then
-    echo "  Removing dangling: $link"
     rm -f "$link"
+    [[ "$(basename "$link")" == mesh ]] || echo "  Removing: $link"
   fi
 done
 
-# Link all scripts from bin/
-for script in "$MESH_DIR/bin/"*; do
-  name="$(basename "$script")"
-  link="$HOME/bin/$name"
-  if [[ -L "$link" ]]; then
-    rm -f "$link"
-  fi
-  ln -s "$script" "$link"
-  echo "  ✓ $name"
-done
+ln -sfn "$MESH_DIR/bin/mesh" "$HOME/bin/mesh"
+echo "  ✓ mesh"
 echo ""
 
 # ─── Prompt for API keys ────────────────────────────────────────────────────
@@ -144,6 +123,7 @@ echo "Tokens needed:"
 echo "  ALPHA_MESH_MINIMAX_TOKEN    → your Minimax sk-cp-... key"
 echo "  ALPHA_MESH_OPENROUTER_TOKEN  → your OpenRouter SK/... key"
 echo "  ALPHA_MESH_ANTHROPIC_TOKEN   → your Anthropic key (optional)"
+echo "Keys go in .env only — never in config/models.json."
 echo ""
 
 # ─── Backup existing settings.json ──────────────────────────────────────────
@@ -151,7 +131,7 @@ CLAUDE_SETTINGS="$HOME/.claude/settings.json"
 if [[ -f "$CLAUDE_SETTINGS" ]]; then
   cp "$CLAUDE_SETTINGS" "$CLAUDE_SETTINGS.pre-alpha-mesh.bak"
   echo "  ✓ Backed up existing settings.json → settings.json.pre-alpha-mesh.bak"
-  echo "    (alpha-mesh/bin/model will manage this file from now on)"
+  echo "    (alpha-mesh/bin/model.sh will manage this file from now on)"
   echo ""
 fi
 

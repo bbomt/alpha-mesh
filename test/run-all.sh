@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# alpha-mesh/test/run-all
+# alpha-mesh/test/run-all.sh
 # Runs all individual test suites
 
 set -euo pipefail
@@ -16,7 +16,7 @@ echo ""
 
 for test_script in "$MESH_DIR/test/test-"*; do
   name=$(basename "$test_script")
-  if [[ "$name" == "run-all" ]]; then
+  if [[ "$name" == "run-all.sh" ]]; then
     continue
   fi
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# alpha-mesh/test/test-run-evals
+# alpha-mesh/test/test-run-evals.sh
 # Runs `mesh run-evals` against stand-in `gh`, `git` and `uv` and a stand-in eval run, and checks that it posts the
 # gate's verdict as the `evals` status on the PR's head commit (pending first), comments the report, scores with
 # master's baseline and tolerance, refuses a stale branch, and leaves the eval runs folder alone (PMAT-312). Also
