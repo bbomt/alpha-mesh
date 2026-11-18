@@ -144,6 +144,7 @@ echo "Tokens needed:"
 echo "  ALPHA_MESH_MINIMAX_TOKEN    → your Minimax sk-cp-... key"
 echo "  ALPHA_MESH_OPENROUTER_TOKEN  → your OpenRouter SK/... key"
 echo "  ALPHA_MESH_ANTHROPIC_TOKEN   → your Anthropic key (optional)"
+echo "Keys go in .env only — never in config/models.json."
 echo ""
 
 # ─── Backup existing settings.json ──────────────────────────────────────────
