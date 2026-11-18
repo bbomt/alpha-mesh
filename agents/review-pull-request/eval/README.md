@@ -675,12 +675,14 @@ uv run python eval/scripts/score_eval_run.py eval/runs/<run>   # the gate rule o
   PR that changes no agent file at once, and an agent PR only when `evals` = success on its head (or carried over).
   `mesh run-evals` (also with `--force-success`) re-runs that check when they post `evals`, so it updates without a push.
   The agent-file filter is inside the job, not a `paths:` filter: a workflow skipped by `paths:` never reports, and a
-  required check that never reports blocks every PR. **Setup, once** (the owner, after this lands): in the repo's
+  required check that never reports blocks every PR. The job runs **master's** `check_pr_evals.py` and
+  `list_evals_gated_files.py`, not the PR's, so a PR cannot loosen the check that judges it (only the PR that adds
+  them runs its own; the job's log says so). **Setup, once** (the owner, after this lands): in the repo's
   settings, rule for `master`: require a pull request before merging (so no direct push skips the check), require
   the status check `evals-gate`, require branches to be up to date, and do not allow bypassing the rule. The check can
   only be picked once it has run on a PR.
 - **Known limit:** anyone with write access can post a status by hand (that is what `mesh run-evals --force-success` does,
-  visibly), and a PR can change the workflow or `check_pr_evals.py` it runs (code review sees it).
+  visibly), and a PR can change the workflow file itself, which GitHub runs from the PR (code review sees it).
   The gate guards against mistakes, not against someone bypassing it on purpose.
 
 #### Reading a gate report
