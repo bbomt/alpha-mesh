@@ -1,8 +1,8 @@
-"""Write runs/<run>/run.json, what baseline.py records (PMAT-304). Called by run_eval.sh:
+"""Write runs/<run>/run.json, what write_baseline.py records (PMAT-304). Called by run_eval.sh:
 
-    run_meta.py <run.json> <commit> <model> <date> <k> <dirty>
+    write_eval_run_info.py <run.json> <commit> <model> <date> <k> <dirty>
 
-A resumed run keeps the commit and date it started at: baseline.py counts label fixes since that commit, and a
+A resumed run keeps the commit and date it started at: write_baseline.py counts label fixes since that commit, and a
 fix made between passes must count. So a resume is refused when the agent (src/, eval/promptfoo/) changed
 since then, or with another model or k (the checkpoint key has neither).
 """

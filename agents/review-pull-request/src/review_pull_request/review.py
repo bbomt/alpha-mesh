@@ -157,7 +157,7 @@ Rerunning the same command after a failure resumes from the file it stopped at.
         "--model",
         type=str,
         default=None,
-        help="Override CODE_REVIEW_MODEL from .env",
+        help="Override [model] review from review_config.toml",
     )
     parser.add_argument(
         "--since-last-review",
@@ -534,7 +534,7 @@ def run_review_agent(
             f"  api host: {host}\n"
             "  The model API is unusable, so the review was aborted and nothing was posted.\n"
             f"{kept}"
-            "  Check CODE_REVIEW_MODEL / CODE_REVIEW_URL / CODE_REVIEW_TOKEN in .env.",
+            "  Check [model] review in review_config.toml and CODE_REVIEW_URL / CODE_REVIEW_TOKEN in .env.",
             file=sys.stderr,
         )
         return 1

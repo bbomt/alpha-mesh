@@ -162,7 +162,7 @@ def test_a_404_off_openrouter_fails_at_once_naming_the_url_and_model_as_sent(mon
 
     message = str(exc.value)
     assert "model 'Llama-3' not found (404) at https://gpu.local:8000/serve/v1/chat/completions" in message
-    assert "CODE_REVIEW_MODEL 'meta-llama/Llama-3' was sent as 'Llama-3'" in message
+    assert "model 'meta-llama/Llama-3' was sent as 'Llama-3'" in message
     assert "PMAT-276" in message and "model not found" in message
     assert "user:pw" not in message
     assert len(sent) == 1

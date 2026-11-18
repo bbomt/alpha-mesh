@@ -11,7 +11,8 @@ alpha-mesh/
 │   ├── model                # Switch/check model config
 │   ├── dream                # End-of-session memory consolidation (delegates to agents/dream/)
 │   ├── review-pull-request # PR review agent (delegates to agents/review-pull-request/)
-│   ├── merge-pr             # The owner's merge: refuses a PR branch that lacks the latest base branch
+│   ├── run-evals            # Runs the review-pull-request evals on a PR (or --quick, --force-success); posts `evals`
+│   ├── merge-pr             # The owner's merge: refuses a stale PR branch, or an agent PR without passing evals
 │   ├── sync-main            # Fast-forwards a main checkout and verifies it, or fails loudly
 │   ├── orchestrate          # One Claude worker per Jira ticket in tmux tabs (delegates to agents/orchestrator/)
 │   ├── bootstrap-memory     # One-time: extract from existing Claude Code logs
@@ -200,12 +201,40 @@ tested against (parallel tickets make this likely). It doesn't rely on GitHub br
 
 ```bash
 mesh merge-pr https://github.com/org/repo/pull/123
+gh pr checks https://github.com/org/repo/pull/123             # the PR's checks (evals-gate among them): merges nothing
+```
+
+Every refusal prints the merge status report: a verdict line (READY TO MERGE, or BLOCKED by n items), then one
+line per item, `OK` or `BLOCKED`, saying what it found, then the next command:
+
+```
+Merge status for PR #65 (head 28348bb): BLOCKED by 1 item
+
+  OK       the PR is open
+  OK       it is up to date with master
+  OK       it changes 11 agent file(s), so it needs a passing evals status
+           agents/review-pull-request/eval/promptfoo/agent_provider.py
+           ... (one line per file)
+  BLOCKED  evals failed on head 28348bb: runs passed 114/195 · baseline 140/195 · needs at least 130/195 ...
+
+Next: mesh run-evals https://github.com/bbomt/alpha-mesh/pull/65
 ```
 
 - **Stale:** it refuses and says how many commits the branch is behind. Ask the worker to merge the base in,
   rerun its tests and push, then run it again.
 - **The branch moves between the check and the merge:** the merge fails (`--match-head-commit`), so untested
   commits are never merged.
+- **A PR that changes the review-pull-request agent** (a file in
+  [`list_evals_gated_files.py`](agents/review-pull-request/eval/scripts/list_evals_gated_files.py): its code, prompts, config,
+  dependencies, harness or cases): it also needs the commit status `evals` = success on the PR's head commit,
+  which `mesh run-evals <PR url>` posts (or on an older commit, if no gated file changed since). Missing, pending or
+  failed: it refuses and prints the report with the next command.
+  At a terminal, when the evals are all that is missing, it offers to run `mesh run-evals` now and then merge
+  (`[y/N]`): the full run is expensive, so it runs once, when the rest of the ticket's code is accepted.
+- **GitHub enforces the same rule** for every merge, including its own merge button: the required check
+  `evals-gate` ([`.github/workflows/evals-gate.yml`](.github/workflows/evals-gate.yml)) passes at once for a PR that
+  changes no agent file, and otherwise only when `evals` = success
+  ([the regression gate](agents/review-pull-request/eval/README.md#the-regression-gate)).
 - Workers end their "ready to merge" Jira comment with this command, ready to copy.
 
 ## Sync Main Checkout

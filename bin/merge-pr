@@ -3,6 +3,7 @@
 # mesh merge-pr <PR url>: the owner's merge. Squash-merges the PR only if it is open and its branch already
 # has the latest commit of its base branch, so nothing merges onto a base it was not tested against.
 # --match-head-commit makes the merge fail if the branch moves between the check and the merge.
+# A PR that changes a file the review-pull-request evals gate covers also needs `evals` = success on its head commit.
 
 set -euo pipefail
 
@@ -12,6 +13,8 @@ if [ $# -ne 1 ] || [[ ! "$1" =~ ^https://github\.com/([^/]+/[^/]+)/pull/[0-9]+$ 
 fi
 url="$1"
 repo="${BASH_REMATCH[1]}"
+mesh_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+status_report="$mesh_dir/agents/review-pull-request/eval/scripts/check_pr_evals.py"
 
 read -r state head base < <(gh pr view "$url" --json state,headRefOid,baseRefName \
   | jq -r '"\(.state) \(.headRefOid) \(.baseRefName)"')
@@ -25,6 +28,25 @@ if [ "$behind" != "0" ]; then
   echo "Not merged: stale. The branch is $behind commit(s) behind $base." >&2
   echo "Ask the worker to merge $base in, rerun its tests and push; then run this again." >&2
   exit 1
+fi
+
+# The review-pull-request evals gate (PMAT-312, check_pr_evals.py): a PR that changes a file the gate
+# covers needs `evals` = success on its head, or on an older commit with no gated file changed since. GitHub enforces
+# the same rule (the required check `evals-gate`); checking here first gives the report and the offer below.
+# When the evals are all that is missing and the owner is at a terminal, offer to run them now: the full run is
+# expensive, so it runs once the rest of the ticket's code is accepted, at merge time.
+if ! report="$(python3 "$status_report" "$url")"; then
+  echo "Not merged:" >&2
+  echo "$report" >&2
+  if grep -Fqx "Next: mesh run-evals $url" <<<"$report" && { [ -t 0 ] || [ -n "${MESH_ASSUME_TTY:-}" ]; }; then
+    printf "The evals have not passed on this head. Run them now (about 75 min, about a day's free-model quota), then merge? [y/N] " >&2
+    read -r answer || answer=""
+    [[ "$answer" =~ ^[Yy]$ ]] || exit 1
+    "${MESH_RUN_EVALS:-$mesh_dir/bin/run-evals}" "$url" || { echo "Not merged: the evals failed." >&2; exit 1; }
+    report="$(python3 "$status_report" "$url")" || { echo "Not merged:" >&2; echo "$report" >&2; exit 1; }
+  else
+    exit 1
+  fi
 fi
 
 gh pr merge "$url" --squash --match-head-commit "$head"

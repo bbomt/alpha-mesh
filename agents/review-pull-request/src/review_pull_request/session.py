@@ -73,7 +73,7 @@ def not_found_reason(config) -> str | None:
         return None
     model, base_url = _sent(config, config.model)
     return (f"model '{model}' not found (404) at {_safe_url(base_url)}/chat/completions\n"
-            f"  CODE_REVIEW_MODEL '{config.model}' was sent as '{model}': for hosts other than openrouter.ai\n"
+            f"  model '{config.model}' was sent as '{model}': for hosts other than openrouter.ai\n"
             "  the provider/ prefix is stripped, and /v1 is appended to CODE_REVIEW_URL if missing.\n"
             "  Model ids with a real '/' and URLs not ending in /v1 are not supported yet (PMAT-276).")
 

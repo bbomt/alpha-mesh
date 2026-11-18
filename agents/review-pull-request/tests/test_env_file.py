@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from review_pull_request import config as config_module
-from review_pull_request.config import ENV_FILE, REQUIRED_ENV_VARS, load_config
+from review_pull_request.config import ENV_FILE, REQUIRED_ENV_VARS, configured_model, load_config
 
 AGENT_DIR = Path(__file__).resolve().parents[1]
 
@@ -33,18 +33,19 @@ def test_env_file_default_is_alpha_mesh_root():
 
 
 def test_values_come_from_the_file_at_the_explicit_path(env_file):
-    env_file.write_text("CODE_REVIEW_URL=http://from-file\nCODE_REVIEW_TOKEN=t\nCODE_REVIEW_MODEL=file/model\n")
+    env_file.write_text("CODE_REVIEW_URL=http://from-file\nCODE_REVIEW_TOKEN=t\n")
 
     cfg = load_config(_args())
 
-    assert (cfg.api_url, cfg.api_token, cfg.model) == ("http://from-file", "t", "file/model")
+    assert (cfg.api_url, cfg.api_token) == ("http://from-file", "t")
+    assert cfg.model == configured_model("review")  # the model is never in .env (PMAT-312)
 
 
 def test_a_variable_already_in_the_environment_wins_over_the_file(env_file, monkeypatch):
-    env_file.write_text("CODE_REVIEW_URL=http://from-file\nCODE_REVIEW_TOKEN=t\nCODE_REVIEW_MODEL=file/model\n")
-    monkeypatch.setenv("CODE_REVIEW_MODEL", "env/model")
+    env_file.write_text("CODE_REVIEW_URL=http://from-file\nCODE_REVIEW_TOKEN=t\n")
+    monkeypatch.setenv("CODE_REVIEW_URL", "http://from-env")
 
-    assert load_config(_args()).model == "env/model"
+    assert load_config(_args()).api_url == "http://from-env"
 
 
 def test_missing_file_exits_naming_the_path(env_file, capsys):
@@ -56,7 +57,7 @@ def test_missing_file_exits_naming_the_path(env_file, capsys):
 
 
 def test_missing_required_variable_exits_naming_the_variable_and_path(env_file, capsys):
-    env_file.write_text("CODE_REVIEW_URL=http://from-file\nCODE_REVIEW_MODEL=file/model\n")
+    env_file.write_text("CODE_REVIEW_URL=http://from-file\n")
 
     with pytest.raises(SystemExit):
         load_config(_args())
@@ -66,30 +67,19 @@ def test_missing_required_variable_exits_naming_the_variable_and_path(env_file, 
 
 
 def test_dry_run_uses_file_values_and_fills_only_the_gaps(env_file):
-    env_file.write_text("CODE_REVIEW_MODEL=file/model\n")
+    env_file.write_text("CODE_REVIEW_URL=http://from-file\n")
 
     cfg = load_config(_args(dry_run=True))
 
-    assert cfg.model == "file/model"
+    assert cfg.api_url == "http://from-file"
     assert cfg.api_token == "dry-run-placeholder"
 
 
 def test_dry_run_without_a_file_uses_placeholders(env_file):
-    assert load_config(_args(dry_run=True)).model == "dry-run-placeholder"
+    assert load_config(_args(dry_run=True)).api_token == "dry-run-placeholder"
 
 
 def test_bash_wrapper_does_not_touch_env_file():
     wrapper = (AGENT_DIR / "bin" / "review-pull-request").read_text(encoding="utf-8")
 
     assert ".env" not in wrapper
-
-
-# PMAT-327: run_eval.sh's default model comes from env_model(), the same parser the agent uses.
-@pytest.mark.parametrize("line", ["CODE_REVIEW_MODEL=a/b # note", 'CODE_REVIEW_MODEL="a/b"', "CODE_REVIEW_MODEL=  a/b  "])
-def test_env_model_reads_the_name_without_comment_quotes_or_spaces(tmp_path, line):
-    from review_pull_request.config import env_model
-
-    path = tmp_path / ".env"
-    path.write_text(f"# CODE_REVIEW_MODEL=old/model # commented out\n{line}\n")
-
-    assert env_model(path) == "a/b"

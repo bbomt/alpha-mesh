@@ -1,6 +1,6 @@
 """Build eval/baseline.json from one eval run (PMAT-304).
 
-    uv run python eval/scripts/baseline.py eval/runs/<run>
+    uv run python eval/scripts/write_baseline.py eval/runs/<run>
 
 The run folder holds Promptfoo's results.json and run.json (commit, model, date, k, window), both
 written by run_eval.sh. Each stored review is re-scored against the case files as they are now

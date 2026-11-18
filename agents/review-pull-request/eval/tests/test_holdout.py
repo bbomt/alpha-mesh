@@ -10,7 +10,7 @@ import uuid
 import jsonschema
 import pytest
 
-import baseline
+import write_baseline as baseline
 import case_rules
 import compare_baseline
 import holdout_report
@@ -150,7 +150,7 @@ def test_3_the_flag_runs_only_the_holdout_and_reports_its_pass_rate_apart(run_ev
 
     assert set(record["cases"]) == HOLDOUT
     assert "--no-table" in record["args"]  # Promptfoo's table would show the failures
-    assert not (run_dir / "results.json").exists()  # baseline.py and compare_baseline.py read that file
+    assert not (run_dir / "results.json").exists()  # write_baseline.py and compare_baseline.py read that file
     assert (run_dir / "results-holdout.json").exists()
     real = sum(c["label"] == "real_issue" for c in in_holdout())
     assert f"Hold-out: {len(HOLDOUT)} cases" in done.stdout

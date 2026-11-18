@@ -2,7 +2,7 @@
 
 import json
 
-import baseline
+import write_baseline as baseline
 import case_rules
 import split_holdout
 

@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# alpha-mesh/test/test-evals-gate-workflow
+# Runs the `evals-gate` job's step (.github/workflows/evals-gate.yml) in a scratch repo and checks that it runs the
+# base branch's check_pr_evals.py and list_evals_gated_files.py, not the PR's, so a PR cannot loosen the check
+# that judges it; and the PR's copy, with a note, while the base has none (PMAT-312).
+
+set -euo pipefail
+
+MESH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+WORK="$(mktemp -d)"
+trap 'rm -rf "$WORK"' EXIT
+S=agents/review-pull-request/eval/scripts
+fails=0
+
+# The step's shell, as written in the workflow.
+python3 - "$MESH_DIR/.github/workflows/evals-gate.yml" > "$WORK/step.sh" <<'PY'
+import re, sys
+text = open(sys.argv[1]).read()
+multi = re.search(r"\n        run: \|\n((?:          .*\n|\n)+)", text)
+body = "".join(l[10:] + "\n" for l in multi.group(1).splitlines()) if multi else \
+    re.search(r"\n        run: (.+)\n", text).group(1) + "\n"
+print("set -euo pipefail\n" + body)
+PY
+
+git_q() { git -C "$1" -c user.name=t -c user.email=t@t "${@:2}" >/dev/null 2>&1; }
+# write_scripts <dir> <who>: stand-in scripts that report whose copy ran (and that both came from the same side)
+write_scripts() {
+  mkdir -p "$1/$S"
+  printf 'import sys, pathlib\nsys.path.insert(0, str(pathlib.Path(__file__).parent))\nimport list_evals_gated_files as g\nprint("ran %s check_pr_evals with", g.WHO, sys.argv[1:])\n' "$2" > "$1/$S/check_pr_evals.py"
+  printf 'WHO = "%s"\n' "$2" > "$1/$S/list_evals_gated_files.py"
+}
+
+# setup <base has scripts: yes|no>: an origin with master, and a PR checkout whose copies differ
+setup() {
+  rm -rf "$WORK/origin" "$WORK/pr"
+  git init -q -b master "$WORK/origin"
+  echo x > "$WORK/origin/README.md"
+  [ "$1" = yes ] && write_scripts "$WORK/origin" base
+  git_q "$WORK/origin" add -A && git_q "$WORK/origin" commit -m base
+  git clone -q "$WORK/origin" "$WORK/pr"
+  write_scripts "$WORK/pr" pr
+  git_q "$WORK/pr" add -A && git_q "$WORK/pr" commit -m pr
+}
+
+run_step() { (cd "$WORK/pr" && BASE_REF=master PR_URL=https://github.com/o/r/pull/1 bash "$WORK/step.sh" 2>&1); }
+
+setup yes
+out="$(run_step)" || true
+if grep -q "ran base check_pr_evals with base \['--evals-only', 'https://github.com/o/r/pull/1'\]" <<<"$out" \
+   && grep -q "Using master's check_pr_evals.py" <<<"$out"; then
+  echo "  PASS: runs the base branch's check_pr_evals.py and list_evals_gated_files.py, not the PR's"
+else
+  echo "  FAIL: base copy"; sed 's/^/    /' <<<"$out"; fails=$((fails + 1))
+fi
+
+setup no
+out="$(run_step)" || true
+if grep -q "ran pr check_pr_evals with pr" <<<"$out" && grep -q "NOTE: master has no check_pr_evals.py yet" <<<"$out"; then
+  echo "  PASS: while the base has no check_pr_evals.py, runs the PR's copy and says so"
+else
+  echo "  FAIL: fallback"; sed 's/^/    /' <<<"$out"; fails=$((fails + 1))
+fi
+
+[ "$fails" -eq 0 ] || exit 1

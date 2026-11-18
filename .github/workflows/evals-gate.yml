@@ -1,0 +1,39 @@
+# The required check `evals-gate` (PMAT-312): GitHub merges a PR into master only when this job passes.
+# It runs on every PR, in seconds, and runs no eval itself:
+#   - a PR that changes no agent file (list_evals_gated_files.py) passes at once;
+#   - an agent PR passes when `mesh run-evals` (on the dev box: it needs the model key, the free quota and about
+#     75 min) has posted the commit status `evals` = success on its head, or on an older commit with no agent file
+#     changed since. Otherwise it fails and names the command to run. `mesh run-evals` re-runs this job when it posts.
+# The filter is inside the job, not a `paths:` filter: a workflow skipped by `paths:` never reports, and a required
+# check that never reports blocks the merge. The check runs the base branch's copy of its scripts, so a PR cannot
+# loosen the check that judges it (the PR's copy only while the base has none: the PR that adds them).
+# See agents/review-pull-request/eval/README.md, "The regression gate".
+name: evals-gate
+on:
+  pull_request:
+    branches: [master]
+permissions:
+  contents: read
+  pull-requests: read
+  statuses: read
+jobs:
+  evals-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Evals passed, or not needed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          scripts=agents/review-pull-request/eval/scripts
+          git fetch -q --depth 1 origin "$BASE_REF"
+          if git cat-file -e "FETCH_HEAD:$scripts/check_pr_evals.py" 2>/dev/null; then
+            git checkout -q FETCH_HEAD -- "$scripts/check_pr_evals.py" "$scripts/list_evals_gated_files.py"
+            echo "Using $BASE_REF's check_pr_evals.py and list_evals_gated_files.py."
+          else
+            echo "NOTE: $BASE_REF has no check_pr_evals.py yet; using this PR's copy."
+          fi
+          python3 "$scripts/check_pr_evals.py" --evals-only "$PR_URL"

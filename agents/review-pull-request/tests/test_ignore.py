@@ -62,9 +62,9 @@ def test_load_config_merges_ignore_file_with_toml_exclusions(tmp_path, monkeypat
     toml_file.write_text('[exclusions]\npatterns = ["*.lock"]\n')
     monkeypatch.setattr(config_module, "IGNORE_FILE", ignore)
     monkeypatch.setattr(config_module, "ENV_FILE", _empty_env(tmp_path))  # never read a real .env
-    for var, val in [("CODE_REVIEW_URL", "http://x"), ("CODE_REVIEW_TOKEN", "t"), ("CODE_REVIEW_MODEL", "m")]:
+    for var, val in [("CODE_REVIEW_URL", "http://x"), ("CODE_REVIEW_TOKEN", "t")]:
         monkeypatch.setenv(var, val)
-    args = SimpleNamespace(config=str(toml_file), model=None, base=None, repo_path=None,
+    args = SimpleNamespace(config=str(toml_file), model="m", base=None, repo_path=None,
                            dry_run=False, verbose=False, hide_pr_comment=False)
 
     cfg = load_config(args)
@@ -114,9 +114,9 @@ def test_load_config_warns_when_the_ignore_file_is_not_in_an_alpha_mesh_checkout
     toml_file.write_text("")
     monkeypatch.setattr(config_module, "IGNORE_FILE", tmp_path / ".pr-review-ignore")  # no bin/mesh next to it
     monkeypatch.setattr(config_module, "ENV_FILE", _empty_env(tmp_path))
-    for var, val in [("CODE_REVIEW_URL", "http://x"), ("CODE_REVIEW_TOKEN", "t"), ("CODE_REVIEW_MODEL", "m")]:
+    for var, val in [("CODE_REVIEW_URL", "http://x"), ("CODE_REVIEW_TOKEN", "t")]:
         monkeypatch.setenv(var, val)
-    args = SimpleNamespace(config=str(toml_file), model=None, base=None, repo_path=None,
+    args = SimpleNamespace(config=str(toml_file), model="m", base=None, repo_path=None,
                            dry_run=False, verbose=False, hide_pr_comment=False)
 
     load_config(args)
@@ -129,9 +129,9 @@ def test_token_bearing_paths_are_excluded_even_if_the_ignore_file_is_missing(tmp
     toml_file.write_text("")
     monkeypatch.setattr(config_module, "IGNORE_FILE", tmp_path / "nowhere" / ".pr-review-ignore")
     monkeypatch.setattr(config_module, "ENV_FILE", _empty_env(tmp_path))
-    for var, val in [("CODE_REVIEW_URL", "http://x"), ("CODE_REVIEW_TOKEN", "t"), ("CODE_REVIEW_MODEL", "m")]:
+    for var, val in [("CODE_REVIEW_URL", "http://x"), ("CODE_REVIEW_TOKEN", "t")]:
         monkeypatch.setenv(var, val)
-    args = SimpleNamespace(config=str(toml_file), model=None, base=None, repo_path=None,
+    args = SimpleNamespace(config=str(toml_file), model="m", base=None, repo_path=None,
                            dry_run=False, verbose=False, hide_pr_comment=False)
 
     cfg = load_config(args)
@@ -200,9 +200,9 @@ def test_toml_exclusions_get_the_same_gitignore_semantics_as_the_ignore_file(tmp
     toml_file.write_text('[exclusions]\npatterns = ["secrets/", "/private", "credentials/**/*.json"]\n')
     monkeypatch.setattr(config_module, "IGNORE_FILE", tmp_path / "missing")
     monkeypatch.setattr(config_module, "ENV_FILE", _empty_env(tmp_path))
-    for var, val in [("CODE_REVIEW_URL", "http://x"), ("CODE_REVIEW_TOKEN", "t"), ("CODE_REVIEW_MODEL", "m")]:
+    for var, val in [("CODE_REVIEW_URL", "http://x"), ("CODE_REVIEW_TOKEN", "t")]:
         monkeypatch.setenv(var, val)
-    args = SimpleNamespace(config=str(toml_file), model=None, base=None, repo_path=None,
+    args = SimpleNamespace(config=str(toml_file), model="m", base=None, repo_path=None,
                            dry_run=False, verbose=False, hide_pr_comment=False)
 
     patterns = load_config(args).exclusions
@@ -222,9 +222,9 @@ def test_a_double_star_in_the_middle_also_matches_zero_directories(tmp_path):
 
 def test_an_explicit_config_path_that_does_not_exist_aborts(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(config_module, "ENV_FILE", _empty_env(tmp_path))
-    for var, val in [("CODE_REVIEW_URL", "http://x"), ("CODE_REVIEW_TOKEN", "t"), ("CODE_REVIEW_MODEL", "m")]:
+    for var, val in [("CODE_REVIEW_URL", "http://x"), ("CODE_REVIEW_TOKEN", "t")]:
         monkeypatch.setenv(var, val)
-    args = SimpleNamespace(config=str(tmp_path / "typo.toml"), model=None, base=None, repo_path=None,
+    args = SimpleNamespace(config=str(tmp_path / "typo.toml"), model="m", base=None, repo_path=None,
                            dry_run=False, verbose=False, hide_pr_comment=False)
 
     with pytest.raises(SystemExit) as exc:
@@ -252,7 +252,7 @@ def test_active_config_is_excluded_at_any_depth():
 
 
 def _args_for(toml_file):
-    return SimpleNamespace(config=str(toml_file), model=None, base=None, repo_path=None,
+    return SimpleNamespace(config=str(toml_file), model="m", base=None, repo_path=None,
                            dry_run=False, verbose=False, hide_pr_comment=False)
 
 
@@ -262,7 +262,7 @@ def test_toml_exclusion_patterns_that_are_not_a_list_of_strings_abort(tmp_path, 
     toml_file.write_text(f"[exclusions]\npatterns = {value}\n")
     monkeypatch.setattr(config_module, "IGNORE_FILE", tmp_path / "missing")
     monkeypatch.setattr(config_module, "ENV_FILE", _empty_env(tmp_path))
-    for var, val in [("CODE_REVIEW_URL", "http://x"), ("CODE_REVIEW_TOKEN", "t"), ("CODE_REVIEW_MODEL", "m")]:
+    for var, val in [("CODE_REVIEW_URL", "http://x"), ("CODE_REVIEW_TOKEN", "t")]:
         monkeypatch.setenv(var, val)
 
     with pytest.raises(SystemExit) as exc:

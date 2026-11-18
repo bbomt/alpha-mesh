@@ -1,3 +1,9 @@
+# The agent's model (PMAT-312). Here, not in .env, so a model change is a commit and the eval gate sees it. One
+# model for both: mesh review-pull-request uses it, and the evals and the gate measure it (eval/baseline.json must be
+# on it). The URL and token stay in .env (CODE_REVIEW_URL, CODE_REVIEW_TOKEN).
+[model]
+review = "nvidia/nemotron-3.5-super-vl:free"  # --model overrides it for one review or eval run
+
 [limits]
 max_tool_calls = 20
 max_file_lines = 8000

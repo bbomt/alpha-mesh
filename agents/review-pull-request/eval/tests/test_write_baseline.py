@@ -10,7 +10,7 @@ import subprocess
 import jsonschema
 import pytest
 
-import baseline
+import write_baseline as baseline
 import case_rules
 import compare_baseline
 

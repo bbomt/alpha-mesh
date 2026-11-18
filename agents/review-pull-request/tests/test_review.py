@@ -117,7 +117,7 @@ def test_llm_error_message_names_status_model_host_and_hint(capsys):
     assert "404" in out.err
     assert "bad/model" in out.err
     assert "llm.example.com" in out.err
-    assert "CODE_REVIEW_MODEL" in out.err
+    assert "[model] review in review_config.toml" in out.err
     assert "CODE_REVIEW_URL" in out.err
 
 

@@ -401,22 +401,24 @@ def test_the_shared_context_comes_first_and_the_case_last_so_a_review_s_cases_sh
     assert second.startswith(shared), "two cases on one review differ only after the shared context and findings"
 
 
-def test_the_family_warning_checks_the_runs_model_and_the_env_model(capsys, monkeypatch, tmp_path):
+def test_the_family_warning_checks_the_runs_model_and_the_review_model(capsys, monkeypatch, tmp_path):
     monkeypatch.setattr(llm_rubric.config_module, "ENV_FILE", tmp_path / "no.env")
+    review_model = {"model": "nvidia/m"}
+    monkeypatch.setattr(llm_rubric.config_module, "configured_model", lambda role: review_model["model"])
     for var, value in {"EVAL_JUDGE_MODEL": "z-ai/glm", "EVAL_JUDGE_URL": "u", "EVAL_JUDGE_TOKEN": "t",
-                       "EVAL_MODEL": "nvidia/n", "CODE_REVIEW_MODEL": "nvidia/m"}.items():
+                       "EVAL_MODEL": "nvidia/n"}.items():
         monkeypatch.setenv(var, value)
     llm_rubric.startup_check()
     err = capsys.readouterr().err
     assert "Judge model: z-ai/glm" in err and "WARNING" not in err
 
-    monkeypatch.setenv("CODE_REVIEW_MODEL", "z-ai/other")
+    review_model["model"] = "z-ai/other"
     llm_rubric.startup_check()
-    assert ("WARNING: EVAL_JUDGE_MODEL z-ai/glm and CODE_REVIEW_MODEL z-ai/other share a family"
+    assert ("WARNING: EVAL_JUDGE_MODEL z-ai/glm and [model] review z-ai/other share a family"
             in capsys.readouterr().err)
 
     monkeypatch.setenv("EVAL_MODEL", "z-ai/third")
-    monkeypatch.setenv("CODE_REVIEW_MODEL", "nvidia/m")
+    review_model["model"] = "nvidia/m"
     llm_rubric.startup_check()
     assert "WARNING: EVAL_JUDGE_MODEL z-ai/glm and the run's model z-ai/third share a family" in capsys.readouterr().err
 

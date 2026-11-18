@@ -75,7 +75,7 @@ def startup_check() -> None:
     host = f", host {pin['provider']['order'][0]} only" if pin else ""
     print(f"Judge model: {judge} (rubric {RUBRIC_VERSION}{host})", file=sys.stderr)
     for label, model in (("the run's model", os.environ.get("EVAL_MODEL")),
-                         ("CODE_REVIEW_MODEL", os.environ.get("CODE_REVIEW_MODEL"))):
+                         ("[model] review", config_module.configured_model("review"))):
         if model and _family(model) == _family(judge):
             print(f"WARNING: EVAL_JUDGE_MODEL {judge} and {label} {model} share a family: a model may favour its own "
                   "output. Scores for reviews by that family are not comparable.", file=sys.stderr)
