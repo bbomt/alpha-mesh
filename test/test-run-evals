@@ -169,4 +169,19 @@ else
   echo "  FAIL: --quick (exit $code)"; sed 's/^/    log: /' "$WORK/log"; fails=$((fails + 1))
 fi
 
+# The help: --help prints it and exits 0; no arguments print it to stderr and exit 2. Both name every mode.
+set +e
+help_out="$("$MESH_DIR/bin/mesh" run-evals --help 2>/dev/null)"; help_code=$?
+noargs_err="$("$MESH_DIR/bin/mesh" run-evals 2>&1 >/dev/null)"; noargs_code=$?
+set -e
+ok=1
+for want in "mesh run-evals <PR url>" "--quick <PR url>" "--force-success <PR url> --reason" "gh pr checks"; do
+  grep -qF -- "$want" <<<"$help_out" && grep -qF -- "$want" <<<"$noargs_err" || ok=0
+done
+if [ "$ok" -eq 1 ] && [ "$help_code" -eq 0 ] && [ "$noargs_code" -eq 2 ]; then
+  echo "  PASS: --help prints the help (exit 0); no arguments print it to stderr (exit 2)"
+else
+  echo "  FAIL: help (--help exit $help_code, no args exit $noargs_code)"; fails=$((fails + 1))
+fi
+
 [ "$fails" -eq 0 ] || exit 1

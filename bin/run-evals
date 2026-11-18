@@ -19,8 +19,35 @@ mesh_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 agent_rel="agents/review-pull-request"
 pr_re='^https://github\.com/([^/]+/[^/]+)/pull/([0-9]+)$'
 
-usage() {
-  sed -n '5,7p' "${BASH_SOURCE[0]}" | sed 's/^# */usage: /' >&2
+help_text() {
+  cat <<'EOF'
+mesh run-evals: run the review-pull-request evals on a PR and post the result.
+
+Usage:
+  mesh run-evals <PR url>
+      The full evals on the PR's head: the development cases, k=3, every repeat judged, scored against master's
+      baseline and tolerance. Posts the commit status `evals` and a PR comment with the score table.
+      Takes about 75 min and about a day's free-model quota. Run it again on the same head to resume.
+  mesh run-evals --quick <PR url>
+      An early warning only (k=1, a third of the quota): a PR comment, no `evals` status, so it never lets a PR
+      merge. Run it before marking an agent PR AWAITING-MERGE.
+  mesh run-evals --force-success <PR url> --reason "<why>"
+      Sets `evals` = success by hand ("forced: <why>") and records the reason on the PR, for a merge you have
+      decided on despite the evals.
+  mesh run-evals --help
+      Shows this help.
+
+Which PRs need it: those that change the review-pull-request agent's src/, eval/promptfoo/ or eval/cases/, or its
+review_config.toml, pyproject.toml, uv.lock, eval/promptfooconfig.yaml or eval/holdout.json. Other PRs pass the
+required check `evals-gate` without it.
+
+See the result: gh pr checks <PR url> (the `evals-gate` check reads `evals`). `mesh merge-pr <PR url>` offers to
+run the evals when they are all that blocks the merge.
+More: agents/review-pull-request/eval/README.md, "The regression gate".
+EOF
+}
+usage() {  # wrong or missing arguments: the help, on stderr
+  help_text >&2
   exit 2
 }
 
@@ -117,6 +144,8 @@ remove_worktree() {
 }
 
 case "${1:-}" in
+  -h|--help) help_text; exit 0 ;;
+
   --force-success)
     [ $# -eq 4 ] && [[ "$2" =~ $pr_re ]] && [ "$3" = --reason ] && [ -n "$4" ] || usage
     url="$2" repo="${BASH_REMATCH[1]}" reason="$4"
