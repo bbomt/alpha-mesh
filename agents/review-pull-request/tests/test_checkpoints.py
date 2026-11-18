@@ -7,6 +7,7 @@ import pytest
 from review_pull_request.checkpoints import (
     CheckpointStoreError,
     ThreadBusy,
+    aws_region,
     lock_thread,
     make_checkpointer,
     policy_hash,
@@ -55,6 +56,53 @@ def test_lock_files_live_under_mesh_locks(tmp_path, monkeypatch):
     lock_thread("t1").close()
     [lock] = (tmp_path / ".mesh" / "locks").iterdir()
     assert lock.name.startswith("review-pull-request-") and lock.suffix == ".lock"
+
+
+@pytest.fixture(autouse=True)
+def _region(monkeypatch):
+    """A made-up region, so no test reads the owner's AWS profile (PMAT-347: none is committed)."""
+    monkeypatch.setenv("AWS_REGION", "zz-test-1")
+
+
+def _no_region_in_env(monkeypatch, tmp_path, profile_region=None):
+    """No region in the environment; an AWS config file that gives `profile_region` (or none)."""
+    monkeypatch.delenv("AWS_REGION")
+    monkeypatch.delenv("AWS_DEFAULT_REGION", raising=False)
+    config = tmp_path / "aws-config"
+    config.write_text("[profile zz]\n" + (f"region = {profile_region}\n" if profile_region else ""))
+    monkeypatch.setenv("AWS_CONFIG_FILE", str(config))
+    monkeypatch.setenv("AWS_PROFILE", "zz")
+
+
+def test_the_region_comes_from_aws_region_first(monkeypatch, tmp_path):
+    _no_region_in_env(monkeypatch, tmp_path, profile_region="zz-profile-2")
+    monkeypatch.setenv("AWS_DEFAULT_REGION", "zz-default-3")
+    monkeypatch.setenv("AWS_REGION", "zz-test-1")
+    assert aws_region() == "zz-test-1"
+
+
+def test_without_aws_region_the_region_comes_from_the_aws_profile(monkeypatch, tmp_path):
+    _no_region_in_env(monkeypatch, tmp_path, profile_region="zz-profile-2")
+    assert aws_region() == "zz-profile-2"
+
+
+def test_with_no_region_anywhere_the_checkpointer_stops_with_a_clear_error(monkeypatch, tmp_path):
+    _no_region_in_env(monkeypatch, tmp_path)
+    monkeypatch.setattr("review_pull_request.checkpoints._ssm_client", lambda region: 1 / 0)
+    with pytest.raises(CheckpointStoreError, match="no AWS region: set AWS_REGION, or the region of your AWS profile"):
+        make_checkpointer()
+
+
+def test_the_checkpointer_uses_the_region_it_finds(monkeypatch):
+    regions = []
+    monkeypatch.setattr("review_pull_request.checkpoints._ssm_client",
+                        lambda region: regions.append(region) or _FakeSSM({}))
+    monkeypatch.setattr("review_pull_request.checkpoints.DynamoDBSaver", lambda **kw: kw)
+    monkeypatch.setenv("ALPHA_MESH_REVIEW_PULL_REQ_CHECKPOINT_TABLE", "t")
+    monkeypatch.setenv("ALPHA_MESH_REVIEW_PULL_REQ_CHECKPOINT_BUCKET", "b")
+    monkeypatch.setattr(_FakeSSM, "get_parameter", lambda self, Name: {"Parameter": {"Value": "1"}})
+    kw = make_checkpointer()
+    assert regions == ["zz-test-1"] and kw["region_name"] == "zz-test-1"
 
 
 class _FakeSSM:

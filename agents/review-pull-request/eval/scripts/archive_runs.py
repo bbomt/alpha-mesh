@@ -30,7 +30,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 sys.path[:0] = [str(Path(__file__).resolve().parent), str(Path(__file__).resolve().parent.parent / "promptfoo")]
 import case_rules  # noqa: E402
 
-from review_pull_request.checkpoints import DEFAULT_REGION  # noqa: E402
+from review_pull_request.checkpoints import CheckpointStoreError, aws_region  # noqa: E402
 
 PREFIX = "eval-runs/"
 SUFFIX = ".tar.gz"
@@ -160,7 +160,10 @@ def prune(s3, bucket: str, yes: bool) -> list[str]:
 
 
 def _region() -> str:
-    return os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION") or DEFAULT_REGION
+    try:
+        return aws_region()
+    except CheckpointStoreError as e:
+        raise ArchiveError(str(e)) from e
 
 
 def client():

@@ -17,7 +17,6 @@ from botocore.exceptions import BotoCoreError, ClientError
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph_checkpoint_aws import DynamoDBSaver
 
-DEFAULT_REGION = "eu-west-1"
 TABLE_ENV = "ALPHA_MESH_REVIEW_PULL_REQ_CHECKPOINT_TABLE"
 BUCKET_ENV = "ALPHA_MESH_REVIEW_PULL_REQ_CHECKPOINT_BUCKET"
 
@@ -70,6 +69,17 @@ def lock_thread(thread: str):
     return f
 
 
+def aws_region() -> str:
+    """AWS_REGION, else boto3's own lookup (AWS_DEFAULT_REGION, then the AWS profile's region). No region is
+    committed (PMAT-347), so with none set this stops rather than guess one."""
+    region = os.environ.get("AWS_REGION") or boto3.session.Session().region_name
+    if not region:
+        raise CheckpointStoreError(
+            "no AWS region: set AWS_REGION, or the region of your AWS profile (aws configure set region <region>)"
+        )
+    return region
+
+
 def _ssm_client(region: str):
     return boto3.client("ssm", region_name=region)
 
@@ -79,7 +89,7 @@ def make_checkpointer(dry_run: bool = False):
     if dry_run:
         return InMemorySaver()
     env = os.environ.get("DEPLOY_ENV", "dev")
-    region = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION") or DEFAULT_REGION
+    region = aws_region()
     prefix = f"/pmat/{env}/alpha-mesh/review-pull-request"
     ssm = _ssm_client(region)
 

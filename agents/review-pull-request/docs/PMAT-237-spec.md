@@ -499,7 +499,7 @@ findings in the ticket's changes; up to 10 passes) → DONE with a Jira comment.
 
 ## 8. Prerequisites
 
-- AWS credentials on the EC2 instance for account 609382076869, eu-west-1 (CDK deploy and runs).
+- AWS credentials on the EC2 instance for your AWS account and region (CDK deploy and runs).
 - `pnpm` (v11) and Node for CDK; `uv` and Python 3.12 for the agent.
 - `gh auth login` as today.
 

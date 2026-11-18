@@ -2,6 +2,7 @@
 
 from datetime import datetime, timedelta, timezone
 
+import json
 import pytest
 
 from orchestrator import loop, status
@@ -267,3 +268,42 @@ def test_a_lost_closing_warning_does_not_start_the_grace_period(running):
     running.clock += timedelta(minutes=10)
     loop.tick(["PMAT-1"], DONE, running.ops())
     assert running.killed == [] and len(running.sent) == 2  # typed again, never closed
+
+
+def test_start_gives_the_worker_settings_with_the_aws_region_filled_in():
+    # PMAT-347: the committed template names no region; the worker's sandbox gets the one from the environment.
+    fake = Fake()
+    loop.start("PMAT-1", "/repo", fake.ops())
+    path = loop.settings_path()
+    assert f"--settings {path} " in fake.opened[0][2]
+    text = path.read_text()
+    assert "${AWS_REGION}" not in text and "$HOME/environment/pmat/alpha-mesh/agents/orchestrator" in text
+    hosts = json.loads(text)["sandbox"]["network"]["allowedDomains"]
+    assert "ssm.zz-test-1.amazonaws.com" in hosts and "*.s3.zz-test-1.amazonaws.com" in hosts
+
+
+def test_without_aws_region_set_the_region_comes_from_the_aws_profile(monkeypatch):
+    monkeypatch.delenv("AWS_REGION")
+    monkeypatch.delenv("AWS_DEFAULT_REGION", raising=False)
+    calls = []
+
+    class Done:
+        stdout = "zz-profile-2\n"
+
+    monkeypatch.setattr(loop.subprocess, "run", lambda argv, **k: calls.append(argv) or Done)
+    assert loop.aws_region() == "zz-profile-2"
+    assert calls == [["aws", "configure", "get", "region"]]
+
+
+def test_with_no_aws_region_anywhere_no_worker_starts(monkeypatch):
+    monkeypatch.delenv("AWS_REGION")
+    monkeypatch.delenv("AWS_DEFAULT_REGION", raising=False)
+
+    class Done:
+        stdout = ""
+
+    monkeypatch.setattr(loop.subprocess, "run", lambda argv, **k: Done)
+    fake = Fake()
+    with pytest.raises(RuntimeError, match="set AWS_REGION, or the region of your AWS profile"):
+        loop.start("PMAT-1", "/repo", fake.ops())
+    assert fake.opened == []
