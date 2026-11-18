@@ -85,13 +85,13 @@ run_gate() {
   local eval_args=(--judge-repeats all) check_args=()
   [ "$mode" = quick ] && eval_args=(--k 1 --judge-repeats first) check_args=(--quick)
   baseline_json="$(git -C "$mesh_dir" show "$ref:$agent_rel/eval/baseline.json")"
-  local gate_src tolerance_note=""
+  local gate_src msg
   if ! gate_src="$(git -C "$mesh_dir" show "$ref:$agent_rel/eval/scripts/score_eval_run.py" 2>/dev/null)"; then
-    # Only for the PR that installs the gate: <base ref> has no score_eval_run.py yet, so no tolerance of its own.
-    git -C "$mesh_dir" rev-parse -q --verify "$ref^{commit}" >/dev/null || { echo "ERROR: no $ref" >&2; exit 1; }
-    gate_src="$(git -C "$mesh_dir" show "$head:$agent_rel/eval/scripts/score_eval_run.py")"
-    tolerance_note="The gate is not on $ref yet (this PR installs it), so the tolerance comes from this head."
-    echo "NOTE: $tolerance_note" >&2
+    # A PR is judged by <base ref>'s rule only: with none there (a rename or a deletion), fail, never use the head's.
+    msg="$ref has no score_eval_run.py, so no tolerance to judge by"
+    [ -z "$context" ] || post_status "$repo" "$head" "$context" error "$msg"
+    echo "ERROR: $msg" >&2
+    exit 1
   fi
   tolerance="$(sed -n 's/^TOLERANCE = \([0-9][0-9]*\).*/\1/p' <<<"$gate_src")"
   if [ -z "$tolerance" ]; then
@@ -119,8 +119,8 @@ run_gate() {
   gate=0
   rm -f "$run_dir/gate.md"  # a report left by an earlier gate run on this head must never be posted as this one's
   # Score with <base ref>'s rule, not the PR's: its score_eval_run.py and the write_baseline.py it counts passes with
-  # replace the head's in this throwaway worktree, so a PR cannot change how its own run is scored (only the PR that
-  # installs the gate, before <base ref> has them, scores with its own). Restored after, so a resume starts clean.
+  # replace the head's in this throwaway worktree, so a PR cannot change how its own run is scored. Restored after,
+  # so a resume starts clean.
   local scorer=(eval/scripts/score_eval_run.py eval/scripts/write_baseline.py) f src
   for f in "${scorer[@]}"; do
     if src="$(git -C "$mesh_dir" show "$ref:$agent_rel/$f" 2>/dev/null)"; then printf '%s\n' "$src" > "$agent/$f"; fi
@@ -134,7 +134,6 @@ run_gate() {
     exit 1
   fi
   summary="$(grep -m1 '^runs passed' "$run_dir/gate.md")"
-  [ -z "$tolerance_note" ] || printf '%s\n\n%s\n' "$(cat "$run_dir/gate.md")" "_${tolerance_note}_" > "$run_dir/gate.md"
 }
 
 remove_worktree() {

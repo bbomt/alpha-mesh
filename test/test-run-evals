@@ -42,7 +42,7 @@ case "$1" in
   show)
     case "$2" in
       *baseline.json) [ -z "${STUB_NO_BASELINE:-}" ] || exit 128; echo '{"model": "master-baseline"}' ;;
-      origin/master:*score_eval_run.py)  # STUB_NO_GATE: master predates the gate (the PR that installs it)
+      origin/master:*score_eval_run.py)  # STUB_NO_GATE: the base has no gate (renamed or deleted)
         [ -z "${STUB_NO_GATE:-}" ] || exit 128; printf '"""doc"""\nTOLERANCE = 7  # runs\n' ;;
       *score_eval_run.py) printf '"""doc"""\nTOLERANCE = 9  # runs\n' ;;
       origin/master:*write_baseline.py) [ -z "${STUB_NO_GATE:-}" ] || exit 128; echo '# master write_baseline' ;;
@@ -129,10 +129,13 @@ fi
 run "a failing run posts failure and comments the report" 0 fail 1 "pending,failure" yes || true
 run "a run the gate cannot score posts error, no comment" 0 crash 1 "pending,error" no || true
 STUB_NO_BASELINE=1 run "a run that stops before a verdict posts error, never leaves pending" 0 pass 128 "pending,error" no || true
-if STUB_NO_GATE=1 run "before the gate is on master, it scores with the head's tolerance" 0 pass 0 "pending,success" yes; then
-  grep -q -- "--tolerance 9 " "$WORK/log" || { echo "  FAIL: not scored with the head's tolerance"; fails=$((fails + 1)); }
-  grep -q "not on origin/master yet" "$WORK/comment" \
-    || { echo "  FAIL: the comment does not say the tolerance came from the head"; fails=$((fails + 1)); }
+if STUB_NO_GATE=1 run "a base without score_eval_run.py posts error and never uses the head's tolerance" \
+     0 pass 1 "pending,error" no; then
+  grep -q "state=error -f context=evals -f description=origin/master has no score_eval_run.py" "$WORK/log" \
+    || { echo "  FAIL: the error status does not name the missing score_eval_run.py"; fails=$((fails + 1)); }
+  if grep -q "run_eval\|--tolerance" "$WORK/log"; then
+    echo "  FAIL: ran or scored the eval without the base's tolerance"; fails=$((fails + 1))
+  fi
 fi
 
 
