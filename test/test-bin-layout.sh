@@ -20,7 +20,7 @@ done < <(git ls-files)
 if [[ -z "$bad" ]]; then echo "  PASS"; else echo "  FAIL: no .sh extension:$bad"; FAILED=1; fi
 
 echo "[2/3] every mesh <command> reaches its script..."
-commands=$(bin/mesh --help 2>&1 | sed -n 's/^Commands: //p' | tr -d '|')
+commands=$(bin/mesh --help 2>&1 | sed -n 's/^Commands: //p' | tr -d '|') || true
 [[ -n "$commands" ]] || { echo "  FAIL: no command list in mesh --help"; FAILED=1; }
 for cmd in $commands; do
   if [[ "$cmd" == test ]]; then   # mesh test runs this whole suite: check its target instead
