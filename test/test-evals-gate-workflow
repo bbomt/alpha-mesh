@@ -2,7 +2,7 @@
 # alpha-mesh/test/test-evals-gate-workflow
 # Runs the `evals-gate` job's step (.github/workflows/evals-gate.yml) in a scratch repo and checks that it runs the
 # base branch's check_pr_evals.py and list_evals_gated_files.py, not the PR's, so a PR cannot loosen the check
-# that judges it; and the PR's copy, with a note, while the base has none (PMAT-312).
+# that judges it; and that the job fails, never running the PR's copy, when the base has none (PMAT-312, PMAT-349).
 
 set -euo pipefail
 
@@ -54,11 +54,12 @@ else
 fi
 
 setup no
-out="$(run_step)" || true
-if grep -q "ran pr check_pr_evals with pr" <<<"$out" && grep -q "NOTE: master has no check_pr_evals.py yet" <<<"$out"; then
-  echo "  PASS: while the base has no check_pr_evals.py, runs the PR's copy and says so"
+code=0; out="$(run_step)" || code=$?
+if [ "$code" -ne 0 ] && ! grep -q "ran pr check_pr_evals" <<<"$out" \
+   && grep -q "ERROR: master has no $S/check_pr_evals.py" <<<"$out"; then
+  echo "  PASS: when the base has no check_pr_evals.py, the job fails and never runs the PR's copy"
 else
-  echo "  FAIL: fallback"; sed 's/^/    /' <<<"$out"; fails=$((fails + 1))
+  echo "  FAIL: no base copy (exit $code)"; sed 's/^/    /' <<<"$out"; fails=$((fails + 1))
 fi
 
 [ "$fails" -eq 0 ] || exit 1

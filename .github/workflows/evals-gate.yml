@@ -6,7 +6,7 @@
 #     changed since. Otherwise it fails and names the command to run. `mesh run-evals` re-runs this job when it posts.
 # The filter is inside the job, not a `paths:` filter: a workflow skipped by `paths:` never reports, and a required
 # check that never reports blocks the merge. The check runs the base branch's copy of its scripts, so a PR cannot
-# loosen the check that judges it (the PR's copy only while the base has none: the PR that adds them).
+# loosen the check that judges it; a base without them fails the check, never running the PR's copy.
 # See agents/review-pull-request/eval/README.md, "The regression gate".
 name: evals-gate
 on:
@@ -30,10 +30,10 @@ jobs:
         run: |
           scripts=agents/review-pull-request/eval/scripts
           git fetch -q --depth 1 origin "$BASE_REF"
-          if git cat-file -e "FETCH_HEAD:$scripts/check_pr_evals.py" 2>/dev/null; then
-            git checkout -q FETCH_HEAD -- "$scripts/check_pr_evals.py" "$scripts/list_evals_gated_files.py"
-            echo "Using $BASE_REF's check_pr_evals.py and list_evals_gated_files.py."
-          else
-            echo "NOTE: $BASE_REF has no check_pr_evals.py yet; using this PR's copy."
+          if ! git cat-file -e "FETCH_HEAD:$scripts/check_pr_evals.py" 2>/dev/null; then
+            echo "ERROR: $BASE_REF has no $scripts/check_pr_evals.py; a PR is judged only by the base branch's copy." >&2
+            exit 1
           fi
+          git checkout -q FETCH_HEAD -- "$scripts/check_pr_evals.py" "$scripts/list_evals_gated_files.py"
+          echo "Using $BASE_REF's check_pr_evals.py and list_evals_gated_files.py."
           python3 "$scripts/check_pr_evals.py" --evals-only "$PR_URL"
