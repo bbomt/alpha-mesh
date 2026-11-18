@@ -10,6 +10,11 @@ rule would fail at random.
 It also fails, whatever the count, on a harness error, a missing case, or a run on another model or k than the
 baseline's: those runs measure something else, and a model change needs a new baseline.
 
+The judge is a second gate (PMAT-340): it fails when the judge's mean correctness or coverage drops more than
+JUDGE_TOLERANCE below the baseline's, on the same cases. A judge error is never a score; more than
+MAX_JUDGE_ERROR_RATE of the runs failing to be judged fails the run as a harness error, and so does a run judged by
+another judge model or rubric than the baseline's, or with repeats not judged.
+
 Reported, never gating yet (the owner switches them on): security misses, failing style_only runs, and the judge's
 means against PMAT-311's provisional proposal. Exits 1 when the gate fails.
 
@@ -31,6 +36,9 @@ import judge_report  # noqa: E402
 # Runs the count may drop below the baseline's before the gate fails. Provisional: three runs of the same code
 # (base6, aa1, aa2) passed 140, 142 and 146 of 195; 10 is about 5 points. Tighten it as same-code runs come in.
 TOLERANCE = 10
+# The drop in the judge's mean (1 to 5) the gate allows, per dimension. Provisional: TODO(PMAT-340) from the noise test.
+JUDGE_TOLERANCE = {"correctness": 0.0, "coverage": 0.0}
+MAX_JUDGE_ERROR_RATE = 0.0  # TODO(PMAT-340)
 REBASELINE_NEW_CASES = 5  # suggest a rebaseline once this many cases are new since the baseline (not gated)
 
 
@@ -41,13 +49,45 @@ def quick_tolerance(tolerance: int, baseline_k: int) -> int:
     return round(tolerance / math.sqrt(baseline_k))
 
 
+def judge_gate(base: dict | None, run: dict, tolerance: dict[str, float]) -> tuple[list[str], list[dict]]:
+    """The judge's rule: the failure reasons, and one row per gated dimension for the report."""
+    if base is None:
+        return ["the baseline has no judge means: rebaseline (write_baseline.py) before gating"], []
+    reasons, rows = [], []
+    if (run["model"], run["rubric"]) != (base["model"], base["rubric"]) and run["judged"]:
+        reasons.append(f"judge changed: the run was judged by {run['model']} (rubric {run['rubric']}), the baseline "
+                       f"by {base['model']} (rubric {base['rubric']}); rebaseline with the new judge before gating")
+    if run["not_judged"]:
+        reasons.append(f"{run['not_judged']} of {run['runs']} runs not judged: the gate needs every repeat judged "
+                       "(run_eval.sh --judge-repeats all)")
+    if run["runs"] and run["judge_errors"] / run["runs"] > MAX_JUDGE_ERROR_RATE:
+        reasons.append(f"harness error: the judge failed on {run['judge_errors']} of {run['runs']} runs, more than "
+                       f"{MAX_JUDGE_ERROR_RATE:.0%}; run the judge again (run_eval.sh --stored)")
+    for d, tol in tolerance.items():
+        b, r = base["mean"][d], run["mean"][d]
+        if b is None or r is None:
+            reasons.append(f"no judge mean {d} to compare (baseline {b}, run {r})")
+            continue
+        needed = round(b - tol, 2)
+        rows.append({"dimension": d, "run": r, "baseline": b, "needed": needed, "tolerance": tol})
+        if round(r, 2) < needed:
+            reasons.append(f"judge mean {d} {r:.2f}, below the {needed:.2f} needed "
+                           f"(the baseline's {b:.2f} minus the tolerance {tol:.2f})")
+    return reasons, rows
+
+
+def quick_judge_tolerance(tolerance: float, baseline_k: int) -> float:
+    """The judge tolerance for a k=1 run: a mean over a third of the runs is about sqrt(3) times as noisy."""
+    return round(tolerance * math.sqrt(baseline_k), 2)
+
+
 def gate_cases() -> list[dict]:
     """The cases the gate runs on: the development cases, never the hold-out."""
     return case_rules.development_cases()
 
 
 def gate(baseline: dict, results: dict, run: dict, cases: list[dict], tolerance: int = TOLERANCE,
-         quick: bool = False) -> dict:
+         quick: bool = False, judge_tolerance: dict[str, float] | None = None) -> dict:
     held = case_rules.holdout_ids()
     if found := sorted({r["vars"]["case_id"] for r in results["results"]["results"]} & held):
         raise ValueError(f"{', '.join(found)}: hold-out cases; the gate reads development results only")
@@ -99,13 +139,23 @@ def gate(baseline: dict, results: dict, run: dict, cases: list[dict], tolerance:
     def failing(pred):
         return sum(x["result"] == "fail" for c in gated if pred(by_id[c]) for x in runs[c])
 
+    collected = judge_report.collect(results, cases)
+    judge_tolerance = dict(judge_tolerance or JUDGE_TOLERANCE)
+    if quick:
+        judge_tolerance = {d: quick_judge_tolerance(t, baseline["k"]) for d, t in judge_tolerance.items()}
+    judge_reasons, judge_rows = judge_gate(baseline.get("judge"),
+                                           judge_report.gate_means([e for e in collected
+                                                                    if e["case"]["case_id"] in gated]),
+                                           judge_tolerance)
+    reasons += judge_reasons
+
     return {
         "passed": not reasons, "reasons": reasons, "count": count, "tolerance": tolerance,
         "baseline_passed": baseline_passed, "run_passed": run_passed, "runs": total, "drop": drop,
         "rows": {f"{g}|{a}": r for (g, a), r in sorted(rows.items())}, "not_gated": not_gated,
         "security_misses": failing(lambda c: c["category"] == "security" and c["expected"]["action"] == "raise_true_bug"),
         "style_only_failures": failing(lambda c: c["category"] == "style_only"),
-        "judge": judge_report.summarise(judge_report.collect(results, cases)),
+        "judge": judge_report.summarise(collected), "judge_rows": judge_rows,
         "model": run["model"], "k": run["k"], "quick": quick,
         "rebaseline": [] if quick else rebaseline_hints(drop, tolerance, not_gated),
     }
@@ -137,6 +187,10 @@ def render(out: dict) -> str:
     for key, r in out["rows"].items():
         group, action = key.split("|")
         lines.append(f"| {group} | `{action}` | {r['cases']} | {r['baseline']}/{r['runs']} | {r['run']}/{r['runs']} |")
+    if out["judge_rows"]:
+        lines += ["", "| Judge mean (1-5) | Baseline | Run | Needs at least | Tolerance |", "| :-- | --: | --: | --: | --: |"]
+        lines += [f"| {r['dimension']} | {r['baseline']:.2f} | {r['run']:.2f} | {r['needed']:.2f} | {r['tolerance']:.2f} |"
+                  for r in out["judge_rows"]]
     if out["rebaseline"]:
         lines += ["", "**Rebaseline suggested:**", ""] + [f"- {h}" for h in out["rebaseline"]]
     if out["not_gated"]:
@@ -147,7 +201,8 @@ def render(out: dict) -> str:
               f"- failing style_only runs: {out['style_only_failures']} (proposal 0)"]
     for d in judge_report.DIMENSIONS:
         goal = f" (proposal >= {judge_report.PROPOSAL[d]})" if d in judge_report.PROPOSAL else ""
-        lines.append(f"- judge mean {d}: {fmt(j['mean'][d])}{goal}")
+        gated = " (gated against the baseline above)" if d in {r["dimension"] for r in out["judge_rows"]} else ""
+        lines.append(f"- judge mean {d}: {fmt(j['mean'][d])}{goal}{gated}")
     lines.append(f"- judged runs: {j['runs'] - j['not_judged'] - j['judge_errors']} of {j['runs']}, "
                  f"judge errors {j['judge_errors']}")
     return "\n".join(lines) + "\n"

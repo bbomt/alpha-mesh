@@ -8,6 +8,12 @@ written by run_eval.sh. Each stored review is re-scored against the case files a
 counts without reviewing again. Every failing case needs an entry in eval/error_analysis.json
 ({case_id: {failure_class, reason}}) before the baseline is written; harness errors are classed
 automatically. Label changes since the run are listed as label_errors_fixed.
+
+It also records the judge's means (PMAT-340), which the gate compares with. They need every repeat judged: a run
+made with --judge-repeats all, or a judge run of its stored reviews passed as --judge-results:
+
+    eval/scripts/run_eval.sh --stored eval/runs/<run> --judge-repeats all --run judge-<run>
+    uv run python eval/scripts/write_baseline.py eval/runs/<run> --judge-results eval/runs/judge-<run>/results.json
 """
 
 import argparse
@@ -18,8 +24,9 @@ from pathlib import Path
 
 import jsonschema
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "promptfoo"))
+sys.path[:0] = [str(Path(__file__).resolve().parent), str(Path(__file__).resolve().parent.parent / "promptfoo")]
 import case_rules  # noqa: E402
+import judge_report  # noqa: E402
 
 EVAL = case_rules.EVAL
 REPO_ROOT = EVAL.parents[2]
@@ -30,6 +37,35 @@ SCHEMA = json.loads((EVAL / "schema" / "baseline.schema.json").read_text())
 
 class NotAnalysed(Exception):
     """Some failing cases have no failure class and reason yet."""
+
+
+class NotJudged(Exception):
+    """Some runs have no judgment and no judge error: the judge's means would not cover the whole run."""
+
+
+def judge_means(results: dict, cases: list[dict]) -> dict:
+    """The judge's means over the development cases' rows (judge_report.gate_means), refused unless every row was
+    judged or failed with a judge error."""
+    ids = {c["case_id"] for c in cases}
+    rows = [r for r in results["results"]["results"] if r["vars"]["case_id"] in ids]
+    out = judge_report.gate_means(judge_report.collect({"results": {"results": rows}}, cases))
+    if out["not_judged"]:
+        raise NotJudged(f"{out['not_judged']} of {out['runs']} runs were not judged: the baseline needs every repeat "
+                        "judged (run_eval.sh --judge-repeats all, or --stored <run> --judge-repeats all and "
+                        "--judge-results)")
+    return out
+
+
+def same_reviews(results: dict, judged: dict) -> None:
+    """--judge-results must judge this run's own reviews (a --stored run replays them): every (case, repeat) holds
+    the same review in both."""
+    def reviews(res):
+        return {(r["vars"]["case_id"], r.get("repeatIndex") or 0): (r.get("response") or {}).get("output")
+                for r in res["results"]["results"]}
+    run, other = reviews(results), reviews(judged)
+    if differ := sorted(f"{c} repeat {i}" for c, i in run.keys() | other.keys() if run.get((c, i)) != other.get((c, i))):
+        raise NotJudged(f"--judge-results judged other reviews than this run's ({len(differ)} differ, first "
+                        f"{differ[0]}): judge this run's stored reviews (run_eval.sh --stored <run>)")
 
 
 def runs(results: dict, cases: list[dict], window: int = case_rules.WINDOW) -> dict[str, list[dict]]:
@@ -118,7 +154,8 @@ def pass_rates(entries: dict, by_id: dict, group) -> dict:
     return out
 
 
-def build(results: dict, cases: list[dict], meta: dict, *, analysis: dict, label_changes: list[dict]) -> dict:
+def build(results: dict, cases: list[dict], meta: dict, *, analysis: dict, label_changes: list[dict],
+          judge: dict) -> dict:
     by_id = {c["case_id"]: c for c in cases}
     entries, missing = {}, []
     for case_id, case_runs in sorted(runs(results, cases, meta["window"]).items()):
@@ -159,6 +196,7 @@ def build(results: dict, cases: list[dict], meta: dict, *, analysis: dict, label
             "by_severity": pass_rates(entries, by_id, lambda c: (c.get("finding") or {}).get("severity") or "none"),
         },
         "label_errors_fixed": fixed,
+        "judge": judge,
         "cases": entries,
     }
 
@@ -166,6 +204,9 @@ def build(results: dict, cases: list[dict], meta: dict, *, analysis: dict, label
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Build eval/baseline.json from one eval run.")
     parser.add_argument("run_dir", type=Path, help="eval/runs/<run>, with results.json and run.json")
+    parser.add_argument("--judge-results", type=Path,
+                        help="results.json of run_eval.sh --stored <run> --judge-repeats all, when the run itself "
+                             "did not judge every repeat")
     args = parser.parse_args(argv)
 
     meta = json.loads((args.run_dir / "run.json").read_text())
@@ -187,14 +228,18 @@ def main(argv=None) -> int:
     analysis = json.loads(ANALYSIS.read_text()) if ANALYSIS.exists() else {}
     held = case_rules.holdout_ids()
     changes = [c for c in label_changes(meta["commit"], case_rules.CASES_DIR, REPO_ROOT) if c["case_id"] not in held]
+    judged = json.loads(args.judge_results.read_text()) if args.judge_results else results
     try:
+        if args.judge_results:
+            same_reviews(results, judged)
+        judge = judge_means(judged, case_rules.development_cases())
         # run: the run folder's real name (eval/runs/<run> may link to ~/.mesh/eval-runs/<run>), which
         # archive_runs.py keeps in S3 while this baseline names it (PMAT-336)
         baseline = build(results, case_rules.development_cases(),
                          {"run": args.run_dir.resolve().name, **meta, "cases_commit": git("rev-parse", "HEAD")},
-                         analysis=analysis, label_changes=changes)
+                         analysis=analysis, label_changes=changes, judge=judge)
         jsonschema.validate(baseline, SCHEMA)
-    except NotAnalysed as e:
+    except (NotAnalysed, NotJudged) as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 1
     except jsonschema.ValidationError as e:

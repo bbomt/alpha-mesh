@@ -73,6 +73,19 @@ def summarise(collected: list[dict]) -> dict:
     }
 
 
+def gate_means(collected: list[dict]) -> dict:
+    """What the gate compares (PMAT-340): the judge's means, and how many runs it judged, failed on, or never scored.
+    A judge error is never a score: it counts in judge_errors only. A row with no judgment and no error was never
+    judged (the judge scored repeat 0 only, or the run had no judge)."""
+    s = summarise(collected)
+    judged = [e for e in collected if e["judgment"]]
+    return {"model": ", ".join(sorted({e["judgment"]["model_requested"] for e in judged})) or None,
+            "rubric": ", ".join(sorted({e["judgment"]["rubric"] for e in judged})) or None,
+            "runs": s["runs"], "judged": len(judged), "judge_errors": s["judge_errors"],
+            "not_judged": sum(not e["judgment"] and not e["error"] for e in collected),
+            "mean": {d: None if s["mean"][d] is None else round(s["mean"][d], 4) for d in DIMENSIONS}}
+
+
 def print_summary(s: dict) -> None:
     fmt = lambda v: "n/a" if v is None else f"{v:.2f}"  # noqa: E731
     print(f"Judge: {dict(s['models'])}; providers {dict(s['providers'])}")
