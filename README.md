@@ -81,7 +81,9 @@ mesh dream --repo ~/environment/pmat/PMATFE-mfe-profile  # process only specific
 
 ## Token Setup
 
-Tokens are stored in `alpha-mesh/.env` (gitignored). Copy from the example:
+Tokens are stored only in `alpha-mesh/.env` (gitignored), never in `config/` — `mesh model` stops
+with an error naming the missing variable, and `test/test-config-no-keys` fails if a key reaches `config/`.
+Copy from the example:
 
 ```bash
 cp .env.example .env
@@ -102,7 +104,9 @@ The `model` and `dream` scripts load `.env` automatically on each run.
 
 ## Model Profiles
 
-Edit `config/models.json` to add/change model profiles (non-sensitive config only).
+Edit `config/models.json` to add/change model profiles (non-sensitive config only: no keys).
+A profile's key is read from `ALPHA_MESH_<PROVIDER>_TOKEN`; `"auth": "api_key"` writes it as
+`ANTHROPIC_API_KEY` (Anthropic direct), the default `"auth_token"` as `ANTHROPIC_AUTH_TOKEN`.
 The `model` script writes the active profile to `~/.claude/settings.json`.
 Never edit `~/.claude/settings.json` directly anymore.
 
