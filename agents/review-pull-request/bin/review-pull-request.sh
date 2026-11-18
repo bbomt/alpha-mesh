@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# agents/review-pull-request/bin/review-pull-request
+# agents/review-pull-request/bin/review-pull-request.sh
 # Actual bash runner — resolves REPO_PATH, tees logs, calls Python (which loads all config).
 
 set -euo pipefail

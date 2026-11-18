@@ -110,7 +110,7 @@ mesh orchestrate                     # after a reboot: reopen and resume the wor
 Options: `--repo-dir DIR` (required with tickets), `--max-workers N` (default 3: tickets beyond it wait in
 the Queue box), `--interval SECONDS` (default 30).
 
-`bin/orchestrate` runs `uv sync` once, then the venv's Python directly rather than `uv run`, which would hold
+`bin/orchestrate.sh` runs `uv sync` once, then the venv's Python directly rather than `uv run`, which would hold
 uv's lock as long as the orchestrator runs (so `uv sync` and `uv cache prune` elsewhere would wait on it).
 
 Tickets from several repos: a running ticket keeps the folder it started in (its PRs are looked up there), so
@@ -254,14 +254,14 @@ a worker by answering in its tab and telling it not to post to Jira.
 - `status-hook.sh <state>`: the hook. It reads the hook input on stdin and writes the session's state to
   `~/environment/logs/orchestrator/$ORCH_TICKET.json` (state, session ID, worktree, transcript, notification
   type, history; the full `SessionStart` input as `session_start_input`), under the same lock as the
-  orchestrator. Tested by `test/test-orchestrator-status-hook`.
+  orchestrator. Tested by `test/test-orchestrator-status-hook.sh`.
 - `jira-access.sh lost|ok`: sets or clears `jira_lost` in the same status file, under the same lock. `lost` is run
-  by the worker, `ok` by the `PostToolUse` hook. Tested by `test/test-orchestrator-status-hook` too.
-- Tests: `tests/`, run by `test/test-orchestrator`.
+  by the worker, `ok` by the `PostToolUse` hook. Tested by `test/test-orchestrator-status-hook.sh` too.
+- Tests: `tests/`, run by `test/test-orchestrator.sh`.
   - Unit tests: the decisions, the screen and the CLI, with fake tmux, gh and Jira.
   - `test_e2e.py`: the real `mesh orchestrate` loop, one check at a time (each check is also a restart), against
     real tmux on its own server (`-f /dev/null`, so the owner's tabs and config are untouched) and
-    `tests/claude-stub`, a stand-in `claude` that runs the real status hook and logs what is typed into it.
+    `tests/claude-stub.sh`, a stand-in `claude` that runs the real status hook and logs what is typed into it.
     Jira and gh are faked. It covers start, passing on a comment, resume after the tab is killed, and
     warn-then-close.
 

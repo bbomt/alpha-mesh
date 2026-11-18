@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# agents/orchestrator/bin/orchestrate
+# agents/orchestrator/bin/orchestrate.sh
 # Runs the orchestrator from the caller's folder (the repo the workers start in).
 
 set -euo pipefail

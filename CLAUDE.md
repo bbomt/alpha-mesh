@@ -16,20 +16,20 @@ alpha-mesh is the memory and orchestration layer for the PMAT agent system. It p
 alpha-mesh/
 ├── bin/                     # Executable bash scripts; mesh is the unified dispatcher
 │   ├── mesh                 # Entry point: mesh <command>
-│   ├── model                # Model switching (local/global scope)
-│   ├── dream                # End-of-session memory consolidation (delegates to agents/dream/)
+│   ├── model.sh             # Model switching (local/global scope)
+│   ├── dream.sh             # End-of-session memory consolidation (delegates to agents/dream/)
 │   ├── bootstrap-memory     # Extract memory from existing Claude Code logs
 │   ├── lib/                  # Shared library
-│   │   └── repo              # find_repo_root, get_active_model_from_settings
-│   └── install              # One-time setup (run after clone)
+│   │   └── repo.sh           # find_repo_root, get_active_model_from_settings
+│   └── install.sh           # One-time setup (run after clone)
 ├── agents/
 │   ├── dream/               # Dream agent
 │   │   ├── dream/           # Python package with dream logic
 │   │   └── tests/           # Dream tests
 │   └── review-pull-request/ # PR review agent — LLM-powered, two-stage review
 ├── test/
-│   ├── run-all              # Runs all test suites
-│   └── test-*               # Individual test suites
+│   ├── run-all.sh           # Runs all test suites
+│   └── test-*.sh            # Individual test suites
 ├── config/
 │   └── models.json          # Model profiles (provider, URL, default model)
 └── memory/
@@ -42,7 +42,7 @@ alpha-mesh/
 
 ```bash
 # Install (run once)
-./bin/install
+./bin/install.sh
 
 # Model management
 mesh model use minimax           # switch model, prompt for scope
@@ -58,7 +58,7 @@ mesh bootstrap-memory          # seed memory from existing Claude Code logs
 mesh bootstrap-memory --dry-run
 
 # Validation
-mesh test-alpha-mesh  # broken into test/test/run-all
+mesh test-alpha-mesh  # broken into test/test/run-all.sh
 ```
 ## Jira Items
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# alpha-mesh/test/test-orchestrator
+# alpha-mesh/test/test-orchestrator.sh
 # Runs the orchestrator pytest suite (fake tmux, gh and Jira) and checks the mesh entry point.
 
 set -euo pipefail

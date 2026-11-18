@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# alpha-mesh/bin/dream
+# alpha-mesh/bin/dream.sh
 # DEPRECATED: This file is kept for backward compatibility.
-# The dream agent has been moved to agents/dream/dream/bin/dream
+# The dream agent has been moved to agents/dream/dream/bin/dream.sh
 
 set -euo pipefail
 
 SCRIPT_REALPATH="$(readlink -f "${BASH_SOURCE[0]}")"
 MESH_DIR="$(cd "$(dirname "$SCRIPT_REALPATH")/.." && pwd)"
 
-exec "$MESH_DIR/agents/dream/dream/bin/dream" "$@"
+exec "$MESH_DIR/agents/dream/dream/bin/dream.sh" "$@"

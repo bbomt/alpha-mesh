@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# alpha-mesh/test/test-model
-# Tests for bin/model script
+# alpha-mesh/test/test-model.sh
+# Tests for bin/model.sh script
 
 set -euo pipefail
 
@@ -48,12 +48,12 @@ echo ""
 # ─── helpers ───────────────────────────────────────────────────────────────────
 jq_ok() { jq '.' "$1" >/dev/null 2>&1; }
 
-# ─── test: bin/model exists and is executable ──────────────────────────────────
-echo "[1/7] bin/model exists and is executable..."
-if [[ -x "$MESH_DIR/bin/model" ]]; then
+# ─── test: bin/model.sh exists and is executable ──────────────────────────────────
+echo "[1/7] bin/model.sh exists and is executable..."
+if [[ -x "$MESH_DIR/bin/model.sh" ]]; then
   echo "  PASS"
 else
-  echo "  FAIL: bin/model not found or not executable"
+  echo "  FAIL: bin/model.sh not found or not executable"
   FAILED=1
 fi
 
@@ -79,7 +79,7 @@ done
 
 # ─── test: model list outputs table ─────────────────────────────────────────────
 echo "[4/7] model list outputs profiles..."
-output=$(model list 2>&1)
+output=$(mesh model list 2>&1)
 if echo "$output" | grep -q "minimax"; then
   echo "  PASS: model list shows minimax"
 else
@@ -95,7 +95,7 @@ fi
 
 # ─── test: model status works ───────────────────────────────────────────────────
 echo "[5/7] model status works..."
-if model status >/dev/null 2>&1; then
+if mesh model status >/dev/null 2>&1; then
   echo "  PASS"
 else
   echo "  FAIL: model status returned error"
@@ -111,7 +111,7 @@ backup_file="$global_settings.pre-alpha-mesh.bak"
 mkdir -p "$(dirname "$global_settings")"
 echo '{"env": {"ANTHROPIC_MODEL": "old-model"}}' > "$global_settings"
 
-HOME="$FAKE_HOME" model use -g minimax >/dev/null 2>&1
+HOME="$FAKE_HOME" mesh model use -g minimax >/dev/null 2>&1
 if [[ -f "$global_settings" ]]; then
   echo "  PASS: global settings file created"
 else
@@ -150,7 +150,7 @@ mkdir "$tmp_dir/.git"
 cd "$tmp_dir"
 local_settings="$tmp_dir/.claude/settings.json"
 
-echo "y" | model use -l minimax >/dev/null 2>&1
+echo "y" | mesh model use -l minimax >/dev/null 2>&1
 if [[ -f "$local_settings" ]]; then
   echo "  PASS: local settings file created at $local_settings"
 else

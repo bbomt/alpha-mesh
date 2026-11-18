@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# alpha-mesh/bin/sync-main
+# alpha-mesh/bin/sync-main.sh
 # mesh sync-main --repo-dir DIR: fast-forwards a main checkout to origin's default branch, then verifies that the
 # branch equals origin's and the tree is clean. Fails loudly otherwise: inside the Claude Code sandbox git cannot
 # write settings.json, and a fast-forward then writes every other file but leaves the branch and index behind.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# alpha-mesh/test/test-orchestrator-status-hook
+# alpha-mesh/test/test-orchestrator-status-hook.sh
 # Tests for agents/orchestrator/status-hook.sh
 
 set -euo pipefail

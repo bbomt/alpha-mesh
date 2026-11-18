@@ -18,14 +18,14 @@ if [[ -z "$cmd" ]]; then
 fi
 
 case "$cmd" in
-  model|model_use)       shift; exec "$SCRIPTS_DIR/model" "$@" ;;
-  dream)                 shift; exec "$SCRIPTS_DIR/dream" "$@" ;;
-  review-pull-request) shift; exec "$SCRIPTS_DIR/review-pull-request" "$@" ;;
-  run-evals)             shift; exec "$SCRIPTS_DIR/run-evals" "$@" ;;
-  merge-pr)              shift; exec "$SCRIPTS_DIR/merge-pr" "$@" ;;
-  sync-main)             shift; exec "$SCRIPTS_DIR/sync-main" "$@" ;;
-  orchestrate)           shift; exec "$SCRIPTS_DIR/orchestrate" "$@" ;;
-  test)                  shift; exec "$SCRIPTS_DIR/../test/run-all" "$@" ;;
+  model|model_use)       shift; exec "$SCRIPTS_DIR/model.sh" "$@" ;;
+  dream)                 shift; exec "$SCRIPTS_DIR/dream.sh" "$@" ;;
+  review-pull-request) shift; exec "$SCRIPTS_DIR/review-pull-request.sh" "$@" ;;
+  run-evals)             shift; exec "$SCRIPTS_DIR/run-evals.sh" "$@" ;;
+  merge-pr)              shift; exec "$SCRIPTS_DIR/merge-pr.sh" "$@" ;;
+  sync-main)             shift; exec "$SCRIPTS_DIR/sync-main.sh" "$@" ;;
+  orchestrate)           shift; exec "$SCRIPTS_DIR/orchestrate.sh" "$@" ;;
+  test)                  shift; exec "$SCRIPTS_DIR/../test/run-all.sh" "$@" ;;
   help|--help|-h)        echo "Usage: mesh <command> [args]" >&2
                          echo "Commands: model | dream | review-pull-request | run-evals | merge-pr | sync-main | orchestrate | test" >&2
                          exit 0 ;;
