@@ -80,6 +80,6 @@ def test_dry_run_without_a_file_uses_placeholders(env_file):
 
 
 def test_bash_wrapper_does_not_touch_env_file():
-    wrapper = (AGENT_DIR / "bin" / "review-pull-request").read_text(encoding="utf-8")
+    wrapper = (AGENT_DIR / "bin" / "review-pull-request.sh").read_text(encoding="utf-8")
 
     assert ".env" not in wrapper

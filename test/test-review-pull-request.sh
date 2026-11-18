@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# alpha-mesh/test/test-review-pull-request
+# alpha-mesh/test/test-review-pull-request.sh
 # Runs the review-pull-request pytest suite and checks the mesh entry point.
 
 set -euo pipefail
@@ -40,9 +40,9 @@ fi
 # The wrapper tees into a per-day log; it must append, or any run (including a
 # --help smoke test) would wipe the day's earlier review log.
 echo "[4/4] wrapper appends to the daily log instead of truncating it..."
-ALPHA_MESH_LOG_DIR="$TEST_LOG_DIR" "$AGENT_DIR/bin/review-pull-request" --help >/dev/null 2>&1 || true
+ALPHA_MESH_LOG_DIR="$TEST_LOG_DIR" "$AGENT_DIR/bin/review-pull-request.sh" --help >/dev/null 2>&1 || true
 size_after_first="$( (cat "$TEST_LOG_DIR"/*.log 2>/dev/null || true) | wc -c)"
-ALPHA_MESH_LOG_DIR="$TEST_LOG_DIR" "$AGENT_DIR/bin/review-pull-request" --help >/dev/null 2>&1 || true
+ALPHA_MESH_LOG_DIR="$TEST_LOG_DIR" "$AGENT_DIR/bin/review-pull-request.sh" --help >/dev/null 2>&1 || true
 size_after_second="$( (cat "$TEST_LOG_DIR"/*.log 2>/dev/null || true) | wc -c)"
 if [[ "$size_after_first" -gt 0 && "$size_after_second" -gt "$size_after_first" ]]; then
   echo "  PASS"

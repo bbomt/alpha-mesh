@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# alpha-mesh/test/test-merge-pr
+# alpha-mesh/test/test-merge-pr.sh
 # Runs `mesh merge-pr` against a stand-in `gh` and checks it merges only a PR that is open and has the latest
 # base commit, and then with --match-head-commit. A PR that changes a file the review-pull-request eval gate covers
 # also needs an `evals` status of success on its head commit (PMAT-312).

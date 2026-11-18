@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# alpha-mesh/agents/dream/dream/bin/dream
+# alpha-mesh/agents/dream/dream/bin/dream.sh
 # Entry point for the dream agent.
 # Usage: dream [options]
 #   or: mesh dream [options]

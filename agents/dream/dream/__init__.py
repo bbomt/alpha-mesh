@@ -2,9 +2,9 @@
 Dream core logic - end-of-session memory consolidation.
 
 This module provides the internal Python implementation for the dream feature.
-The bin/dream shell script acts as a thin wrapper, calling into this module.
+The bin/dream.sh shell script acts as a thin wrapper, calling into this module.
 
-Usage (from bin/dream):
+Usage (from bin/dream.sh):
     python3 -m dream [command] [options]
 """
 
