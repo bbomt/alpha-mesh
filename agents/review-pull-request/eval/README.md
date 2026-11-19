@@ -823,8 +823,9 @@ findings are on the ticket.
 - **The PR description is today's**, fetched at run time; it may have been edited since `raised_sha`.
 - **Mined cases leave out large commits** (`--max-files 22`): 3 real and 19 false findings on 7 commits.
 - **Long reviews can time out in Promptfoo.** The time a case waits on its lock counts towards the provider's
-  2-hour timeout: a case queued behind a large review of the same commit in the same repeat (19–20 files:
-  75–110 minutes) can pass it and become a `harness_error` (PMAT-330). Rerunning the same `--run` finishes it
+  4-hour timeout. A case waits behind at most one review (the same commit in the same repeat), so the timeout is
+  set to one wait plus one review of the largest commit seen (19–20 files: up to 110 minutes; PMAT-330). A review
+  slower than 2 hours could still pass it and become a `harness_error`. Rerunning the same `--run` finishes it
   from the checkpoints.
 - **The free models' daily quota** (OpenRouter `429 free-models-per-day`) does not cover a k=3 baseline in
   one day: rerun the same `--run` after it resets (00:00 UTC).

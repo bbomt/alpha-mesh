@@ -15,7 +15,10 @@ providers:
   - id: file://promptfoo/agent_provider.py
     label: review-pull-request
     config:
-      timeout: 7200000  # ms: one review of a large commit on a throttled free model takes many minutes
+      # ms, 4 h. The limit counts the time a case waits on the review lock. A case waits behind at most one review
+      # (the same commit in the same repeat, PMAT-328), so it needs one wait plus one review: 2 x the largest observed
+      # review on the paid model (110 min, a 19-20 file commit). eval/tests/test_harness.py checks this.
+      timeout: 14400000
 tests: file://promptfoo/load_cases.py:create_tests
 defaultTest:
   assert:
