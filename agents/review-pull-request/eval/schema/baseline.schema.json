@@ -31,7 +31,7 @@
     },
     "judge": {
       "type": "object",
-      "description": "the judge's means over every repeat (PMAT-340), which the gate compares with (judge_report.gate_means)",
+      "description": "what the judge gate compares with (PMAT-340, judge_report.gate_means). mean.<dimension> is an average: the judge gives each review (one case x one repeat) a 1-5 score per dimension (eval/judge/rubric.v1.md), and the mean is the average of those scores over every repeat of the run. A judge error is left out (counted in judge_errors, never as a low score), and so is a null score (a review with no findings has no correctness or actionability score), so each dimension may average over a slightly different number of reviews.",
       "required": ["model", "rubric", "runs", "judged", "judge_errors", "not_judged", "mean"],
       "properties": {
         "run": {"type": "string", "minLength": 1, "description": "the run the means come from"},
