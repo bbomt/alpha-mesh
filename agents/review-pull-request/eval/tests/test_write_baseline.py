@@ -47,6 +47,24 @@ def results(*rows):
     return {"results": {"results": list(rows)}}
 
 
+JUDGE = "judge/model"
+
+
+def judged(r, correctness=3, coverage=4, actionability=5, error=None, model=JUDGE, rubric="v1"):
+    """The row with the llm_rubric assert's result, as llm_rubric.judge_results returns it: a judgment, or a judge
+    error (never a score)."""
+    meta = {"judge_error": error} if error else {"judgment": {
+        "correctness": {"score": correctness}, "coverage": {"score": coverage},
+        "actionability": {"score": actionability}, "rubric": rubric, "model_requested": model}}
+    return r | {"gradingResult": {"componentResults": [
+        {"assertion": {"value": "file://promptfoo/llm_rubric.py:judge_results"}, "metadata": meta}]}}
+
+
+def judge_block(correctness=3.0, coverage=4.0, actionability=5.0, runs=6, errors=0):
+    return {"model": JUDGE, "rubric": "v1", "runs": runs, "judged": runs - errors, "judge_errors": errors,
+            "not_judged": 0, "mean": {"correctness": correctness, "coverage": coverage, "actionability": actionability}}
+
+
 # (c) ────────────────────────────────────────────────────────────────────────────────────────────
 
 def git(root, *args):
@@ -117,6 +135,7 @@ def valid_baseline():
             "summary": {"cases": 2, "scored_cases": 2, "pass_rate": 0.75, "pass_k": 0.5, "file_level_pass_rate": 0.5,
                         "by_class": {"model_failure": 1, "label_error": 1, "harness_error": 0}},
             "label_errors_fixed": [{"case_id": "B", "reason": "src/a.py:40 calls it when --force is set."}],
+            "judge": judge_block(),
             "cases": {"A": {"runs": ["pass", "pass"], "file_level_runs": ["pass", "fail"], "status": "pass",
                             "failure_class": None, "reason": None, "category": "logic", "action": "skip_false_bug"},
                       "B": {"runs": ["pass", "fail"], "file_level_runs": ["fail", "fail"], "status": "flaky",
@@ -148,9 +167,13 @@ def test_the_committed_baseline_covers_exactly_the_current_development_cases():
     lambda b: b["cases"]["B"].update(failure_class="measurement_error"),
     lambda b: b["cases"]["B"].update(reason=7),
     lambda b: b["cases"]["A"].update(file_level_runs=["maybe"]),
+    lambda b: b.pop("judge"),
+    lambda b: b["judge"].update(not_judged=2),
+    lambda b: b["judge"]["mean"].update(correctness=7),
 ], ids=["label error without a reason", "label error with an empty reason", "label error without a case ID",
         "failing case without a class", "failing case without a reason", "unknown class",
-        "reason not text", "unknown file-level result"])
+        "reason not text", "unknown file-level result", "no judge means", "repeats not judged",
+        "judge mean out of range"])
 def test_the_baseline_guard_rejects_an_unjustified_entry(broken):
     bad = valid_baseline()
     broken(bad)
@@ -166,7 +189,8 @@ def build(analysis=None, label_changes=()):
             row("B", 0, review()), row("B", 1, review(12)),
             row("E", 0, error="ReviewFailed: the review left no result"), row("E", 1, review(10))]
     meta = {"run": "base1", "commit": SHA, "cases_commit": SHA, "model": "m", "date": "2026-10-30", "k": 2, "window": 3}
-    return baseline.build(results(*rows), cases, meta, analysis=analysis or {}, label_changes=list(label_changes))
+    return baseline.build(results(*rows), cases, meta, analysis=analysis or {}, label_changes=list(label_changes),
+                          judge=judge_block())
 
 
 def test_the_baseline_records_runs_stability_and_classes():
@@ -193,7 +217,8 @@ def test_the_baseline_records_pass_rates_per_category_and_severity():
     meta = {"commit": SHA, "cases_commit": SHA, "model": "m", "date": "2026-11-05", "k": 2, "window": 3}
     analysis = {"P": {"failure_class": "model_failure", "reason": "Misses the bug in repeat 1."}}
 
-    s = baseline.build(results(*rows), [high, clean], meta, analysis=analysis, label_changes=[])["summary"]
+    s = baseline.build(results(*rows), [high, clean], meta, analysis=analysis, label_changes=[],
+                       judge=judge_block())["summary"]
 
     assert s["by_category"] == {
         "public/raise_true_bug": {"cases": 1, "runs_passed": 1, "runs": 2, "passed_all": 0},
@@ -255,3 +280,66 @@ def test_a_failing_git_stops_the_baseline_instead_of_reading_as_clean(tmp_path, 
 
     with pytest.raises(RuntimeError, match="git status"):
         baseline.main([str(run)])
+
+
+# The judge's means (PMAT-340) ──────────────────────────────────────────────────────────────────────────
+
+def test_the_baseline_records_the_judges_means_over_every_repeat_and_a_judge_error_is_not_a_score():
+    cases = [case("A"), case("B")]
+    rows = [judged(row("A", 0, review()), 2, 4, 5), judged(row("A", 1, review()), 4, 2, 3),
+            judged(row("B", 0, review()), error="the judge's reply had no score"), judged(row("B", 1, review()), 3, 3, 4)]
+
+    out = baseline.judge_means(results(*rows), cases)
+
+    assert out == {"model": JUDGE, "rubric": "v1", "runs": 4, "judged": 3, "judge_errors": 1, "not_judged": 0,
+                   "mean": {"correctness": 3.0, "coverage": 3.0, "actionability": 4.0}}
+
+
+def test_the_baseline_is_refused_when_a_repeat_was_not_judged():
+    """A run with --judge-repeats first (or none) leaves rows with no judgment: their means miss part of the run."""
+    rows = [judged(row("A", 0, review())), row("A", 1, review())]
+    with pytest.raises(baseline.NotJudged, match="1 of 2 runs were not judged"):
+        baseline.judge_means(results(*rows), [case("A")])
+
+
+def write_run(tmp_path, res):
+    run = tmp_path / "run"
+    run.mkdir()
+    (run / "run.json").write_text(json.dumps({"commit": SHA, "model": "m", "date": "2026-11-18", "k": 2,
+                                              "window": 3, "dirty": False}))
+    (run / "results.json").write_text(json.dumps(res))
+    return run
+
+
+@pytest.fixture
+def clean_repo(tmp_path, monkeypatch):
+    monkeypatch.setattr(baseline, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(baseline, "label_changes", lambda *a: [])
+    monkeypatch.setattr(case_rules, "development_cases", lambda: [case("A")])
+    monkeypatch.setattr(baseline.subprocess, "run",
+                        lambda *a, **k: type("Done", (), {"returncode": 0, "stdout": SHA if "rev-parse" in a[0] else "",
+                                                          "stderr": ""})())
+
+
+def test_judge_results_from_a_stored_run_of_the_same_reviews_fill_the_baseline(tmp_path, clean_repo):
+    plain = [row("A", 0, review()), row("A", 1, review())]
+    run = write_run(tmp_path, results(*plain))
+    judge_file = tmp_path / "judge-results.json"
+    replayed = [r | {"response": {"output": r["response"]["output"] | {"repeat": r["repeatIndex"]}}} for r in plain]
+    judge_file.write_text(json.dumps(results(*(judged(r, 2, 4, 5) for r in replayed))))  # --stored adds `repeat`
+
+    assert baseline.main([str(run)]) == 1  # the run's own rows hold no judgment
+    assert baseline.main([str(run), "--judge-results", str(judge_file)]) == 0
+
+    written = json.loads(baseline.BASELINE.read_text())
+    assert written["judge"]["mean"] == {"correctness": 2.0, "coverage": 4.0, "actionability": 5.0}
+    assert written["judge"]["run"] == tmp_path.name  # the folder holding the judge results
+
+
+def test_judge_results_of_other_reviews_are_refused(tmp_path, clean_repo, capsys):
+    run = write_run(tmp_path, results(row("A", 0, review()), row("A", 1, review())))
+    judge_file = tmp_path / "judge-results.json"
+    judge_file.write_text(json.dumps(results(judged(row("A", 0, review())), judged(row("A", 1, review(10))))))
+
+    assert baseline.main([str(run), "--judge-results", str(judge_file)]) == 1
+    assert "other reviews" in capsys.readouterr().err and not baseline.BASELINE.exists()

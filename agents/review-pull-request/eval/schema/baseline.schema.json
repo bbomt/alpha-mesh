@@ -4,7 +4,7 @@
   "title": "review-pull-request eval baseline",
   "description": "eval/baseline.json (eval/README.md). The guard against labelling to the test: every failing case has a class and a reason, and every label error fixed names its case and its evidence.",
   "type": "object",
-  "required": ["run", "commit", "cases_commit", "model", "date", "k", "window", "summary", "label_errors_fixed", "cases"],
+  "required": ["run", "commit", "cases_commit", "model", "date", "k", "window", "summary", "label_errors_fixed", "judge", "cases"],
   "properties": {
     "run": {"type": "string", "minLength": 1, "description": "the run folder it was built from, kept in S3 while named here (archive_runs.py)"},
     "commit": {"type": "string", "minLength": 7, "description": "the agent version the runs were made with"},
@@ -26,6 +26,25 @@
             "label_error": {"type": "integer"},
             "harness_error": {"type": "integer"}
           }
+        }
+      }
+    },
+    "judge": {
+      "type": "object",
+      "description": "what the judge gate compares with (PMAT-340, judge_report.gate_means). mean.<dimension> is an average: the judge gives each review (one case x one repeat) a 1-5 score per dimension (eval/judge/rubric.v1.md), and the mean is the average of those scores over every repeat of the run. A judge error is left out (counted in judge_errors, never as a low score), and so is a null score (a review with no findings has no correctness or actionability score), so each dimension may average over a slightly different number of reviews.",
+      "required": ["model", "rubric", "runs", "judged", "judge_errors", "not_judged", "mean"],
+      "properties": {
+        "run": {"type": "string", "minLength": 1, "description": "the run the means come from"},
+        "model": {"type": ["string", "null"]},
+        "rubric": {"type": ["string", "null"]},
+        "runs": {"type": "integer", "minimum": 0},
+        "judged": {"type": "integer", "minimum": 0},
+        "judge_errors": {"type": "integer", "minimum": 0},
+        "not_judged": {"const": 0, "$comment": "every repeat judged, or the means miss part of the run"},
+        "mean": {
+          "type": "object",
+          "required": ["correctness", "coverage", "actionability"],
+          "additionalProperties": {"type": ["number", "null"], "minimum": 1, "maximum": 5}
         }
       }
     },

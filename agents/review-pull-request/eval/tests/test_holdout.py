@@ -12,6 +12,7 @@ import pytest
 
 import write_baseline as baseline
 import case_rules
+from test_write_baseline import judged
 import compare_baseline
 import holdout_report
 import load_cases
@@ -209,7 +210,7 @@ def small_repo(tmp_path, monkeypatch):
                                               "k": 1, "window": 3, "dirty": False}))
     empty = {"head_sha": SHA, "model": "m", "files": [], "incomplete": [], "excluded": [], "findings": []}
     (run / "results.json").write_text(json.dumps({"results": {"results": [
-        {"vars": {"case_id": c}, "repeatIndex": 0, "failureReason": 0, "response": {"output": empty}}
+        judged({"vars": {"case_id": c}, "repeatIndex": 0, "failureReason": 0, "response": {"output": empty}})
         for c in ("DEV", "HELD")]}}))
     monkeypatch.setattr(case_rules, "CASES_DIR", root / "cases")
     monkeypatch.setattr(case_rules, "HOLDOUT", root / "holdout.json")

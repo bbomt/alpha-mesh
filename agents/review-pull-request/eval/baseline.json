@@ -5,7 +5,7 @@
   "date": "2026-11-11",
   "k": 3,
   "window": 3,
-  "cases_commit": "96426d6babdde91619a373467ae0bf0227832871",
+  "cases_commit": "8c97464785f17474917be2dc32174b00f993d0b2",
   "summary": {
     "cases": 65,
     "scored_cases": 65,
@@ -143,6 +143,20 @@
     }
   },
   "label_errors_fixed": [],
+  "judge": {
+    "run": "PMAT-340-judge-base6-nemotron",
+    "model": "minimax/minimax-m3.1-flash",
+    "rubric": "v1",
+    "runs": 195,
+    "judged": 193,
+    "judge_errors": 2,
+    "not_judged": 0,
+    "mean": {
+      "correctness": 3.0127,
+      "coverage": 3.772,
+      "actionability": 4.8481
+    }
+  },
   "cases": {
     "R36-812f904-001": {
       "runs": [
