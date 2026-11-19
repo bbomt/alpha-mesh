@@ -14,6 +14,7 @@ from unittest.mock import patch
 import httpx
 import jsonschema
 import pytest
+import yaml
 
 import agent_provider
 import asserts
@@ -173,7 +174,17 @@ def test_cases_on_one_commit_at_the_same_time_in_one_repeat_still_share_one_revi
     assert first["output"]["findings"] == second["output"]["findings"]
 
 
-# (b) ────────────────────────────────────────────────────────────────────────────────────────────
+LARGEST_OBSERVED_REVIEW_MIN = 110  # a 19-20 file commit on the paid model (PMAT-325 base4, 2026-11-10)
+
+
+def test_a_case_timeout_covers_one_wait_for_the_same_commits_review_plus_its_own_review():
+    """PMAT-330: the timeout counts the wait on the lock, so a case queued behind one long review must not time out."""
+    config = yaml.safe_load((case_rules.EVAL / "promptfooconfig.yaml").read_text())
+    timeout_ms = config["providers"][0]["config"]["timeout"]
+    assert timeout_ms >= 2 * LARGEST_OBSERVED_REVIEW_MIN * 60_000
+
+
+# (b)────────────────────────────────────────────────────────────────────────────────────────────
 
 def issue(line, severity="medium", comment="Index can go out of range.", file="src/cart.py"):
     return {"file": file, "line": line, "severity": severity, "comment": comment, "suggestion": None}
