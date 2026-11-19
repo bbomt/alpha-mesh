@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# alpha-mesh/test/test-config-no-keys
+# alpha-mesh/test/test-config-no-keys.sh
 # Guard (PMAT-350): no key reaches a file under config/. Keys live only in .env (gitignored).
 # Fails if any file under config/ has a field whose name ends in TOKEN or KEY, or a value
 # that looks like a key (sk-..., or a long random-looking string).

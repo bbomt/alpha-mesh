@@ -6,24 +6,24 @@ The memory and orchestration layer for the PMAT agent system.
 
 ```
 alpha-mesh/
-├── bin/                     # Executable scripts (symlinked to ~/bin)
+├── bin/                     # Bash scripts (install.sh symlinks only mesh into ~/bin)
 │   ├── mesh                 # Unified CLI entry point (wraps all commands)
-│   ├── model                # Switch/check model config
-│   ├── dream                # End-of-session memory consolidation (delegates to agents/dream/)
-│   ├── review-pull-request # PR review agent (delegates to agents/review-pull-request/)
-│   ├── run-evals            # Runs the review-pull-request evals on a PR (or --quick, --force-success); posts `evals`
-│   ├── merge-pr             # The owner's merge: refuses a stale PR branch, or an agent PR without passing evals
-│   ├── sync-main            # Fast-forwards a main checkout and verifies it, or fails loudly
-│   ├── orchestrate          # One Claude worker per Jira ticket in tmux tabs (delegates to agents/orchestrator/)
+│   ├── model.sh             # Switch/check model config
+│   ├── dream.sh             # End-of-session memory consolidation (delegates to agents/dream/)
+│   ├── review-pull-request.sh # PR review agent (delegates to agents/review-pull-request/)
+│   ├── run-evals.sh         # Runs the review-pull-request evals on a PR (or --quick, --force-success); posts `evals`
+│   ├── merge-pr.sh          # The owner's merge: refuses a stale PR branch, or an agent PR without passing evals
+│   ├── sync-main.sh         # Fast-forwards a main checkout and verifies it, or fails loudly
+│   ├── orchestrate.sh       # One Claude worker per Jira ticket in tmux tabs (delegates to agents/orchestrator/)
 │   ├── bootstrap-memory     # One-time: extract from existing Claude Code logs
-│   ├── install              # One-time setup
-│   └── lib/repo             # Shared bash functions: find_repo_root, get_active_model
+│   ├── install.sh           # One-time setup
+│   └── lib/repo.sh          # Shared bash functions: find_repo_root, get_active_model
 ├── agents/
 │   ├── dream/               # Dream agent
 │   │   ├── dream/           # Python package
 │   │   │   ├── __init__.py  # All dream logic: session extraction, LLM calls, memory synthesis
 │   │   │   ├── __main__.py  # Entry point for: python3 -m dream
-│   │   │   └── bin/dream    # Shell entry point
+│   │   │   └── bin/dream.sh # Shell entry point
 │   │   └── tests/
 │   │       └── test_dream_core.py  # Python tests for dream module
 │   ├── orchestrator/        # mesh orchestrate — the mesh orchestrator for per-ticket Claude workers (PMAT-281)
@@ -35,10 +35,10 @@ alpha-mesh/
 │   ├── learnings/           # Historical learnings (legacy — no longer written)
 │   └── skills/              # Extracted workflow skills (reusable prompts/procedures)
 ├── test/
-│   ├── run-all              # Runs all test suites
-│   ├── test-dream           # Tests for bin/dream
-│   ├── test-model           # Tests for bin/model
-│   └── test-install         # Tests for bin/install
+│   ├── run-all.sh           # Runs all test suites
+│   ├── test-dream.sh        # Tests for bin/dream.sh
+│   ├── test-model.sh        # Tests for bin/model.sh
+│   └── test-install.sh      # Tests for bin/install.sh
 ├── pyproject.toml           # Python project definition (uv)
 ├── uv.lock                  # Locked dependencies
 ├── .python-version          # Python version pin
@@ -54,9 +54,11 @@ Cross-repo learnings go to `~/.mesh/MEMORY.md`.
 # Install (run once)
 cd ~/environment/pmat
 git clone <this-repo> alpha-mesh
-cd alpha-mesh && ./bin/install
+cd alpha-mesh && ./bin/install.sh
 
-# The `mesh` CLI is now available globally — prefix for all commands:
+# The `mesh` CLI is now available globally — prefix for all commands. install.sh links only
+# `mesh` into ~/bin (and removes the per-command links older installs made): run `mesh model`, not `model`.
+# Every script under bin/ ends in .sh except bin/mesh, the one command.
 # Switch model (prompts for scope — L: local .claude/settings.json, G: global ~/.claude/settings.json)
 # Local scope walks up from CWD to find the repo root (.git), writes .claude/settings.json there
 mesh model use minimax
@@ -82,7 +84,7 @@ mesh dream --repo ~/environment/pmat/PMATFE-mfe-profile  # process only specific
 ## Token Setup
 
 Tokens are stored only in `alpha-mesh/.env` (gitignored), never in `config/` — `mesh model` stops
-with an error naming the missing variable, and `test/test-config-no-keys` fails if a key reaches `config/`.
+with an error naming the missing variable, and `test/test-config-no-keys.sh` fails if a key reaches `config/`.
 Copy from the example:
 
 ```bash

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# alpha-mesh/bin/model
+# alpha-mesh/bin/model.sh
 # Replaces manual settings.json swapping.
 # Tokens: only in .env as ALPHA_MESH_<PROVIDER>_TOKEN (gitignored); config/models.json holds no keys
 #
@@ -35,8 +35,8 @@ ENV_FILE="$MESH_DIR/.env"
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
 
 # Load shared library
-# shellcheck source=bin/lib/repo
-source "$LIB_DIR/repo"
+# shellcheck source=bin/lib/repo.sh
+source "$LIB_DIR/repo.sh"
 
 # Requires jq
 if ! command -v jq &>/dev/null; then
