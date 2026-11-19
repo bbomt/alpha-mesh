@@ -325,13 +325,15 @@ def test_judge_results_from_a_stored_run_of_the_same_reviews_fill_the_baseline(t
     plain = [row("A", 0, review()), row("A", 1, review())]
     run = write_run(tmp_path, results(*plain))
     judge_file = tmp_path / "judge-results.json"
-    judge_file.write_text(json.dumps(results(*(judged(r, 2, 4, 5) for r in plain))))
+    replayed = [r | {"response": {"output": r["response"]["output"] | {"repeat": r["repeatIndex"]}}} for r in plain]
+    judge_file.write_text(json.dumps(results(*(judged(r, 2, 4, 5) for r in replayed))))  # --stored adds `repeat`
 
     assert baseline.main([str(run)]) == 1  # the run's own rows hold no judgment
     assert baseline.main([str(run), "--judge-results", str(judge_file)]) == 0
 
     written = json.loads(baseline.BASELINE.read_text())
     assert written["judge"]["mean"] == {"correctness": 2.0, "coverage": 4.0, "actionability": 5.0}
+    assert written["judge"]["run"] == tmp_path.name  # the folder holding the judge results
 
 
 def test_judge_results_of_other_reviews_are_refused(tmp_path, clean_repo, capsys):

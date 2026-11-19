@@ -58,10 +58,14 @@ def judge_means(results: dict, cases: list[dict]) -> dict:
 
 def same_reviews(results: dict, judged: dict) -> None:
     """--judge-results must judge this run's own reviews (a --stored run replays them): every (case, repeat) holds
-    the same review in both."""
+    the same review in both, apart from the `repeat` the replay adds (llm_rubric skips repeats by it)."""
+    def review(row):
+        output = (row.get("response") or {}).get("output")
+        output = json.loads(output) if isinstance(output, str) else output
+        return {k: v for k, v in output.items() if k != "repeat"} if isinstance(output, dict) else output
+
     def reviews(res):
-        return {(r["vars"]["case_id"], r.get("repeatIndex") or 0): (r.get("response") or {}).get("output")
-                for r in res["results"]["results"]}
+        return {(r["vars"]["case_id"], r.get("repeatIndex") or 0): review(r) for r in res["results"]["results"]}
     run, other = reviews(results), reviews(judged)
     if differ := sorted(f"{c} repeat {i}" for c, i in run.keys() | other.keys() if run.get((c, i)) != other.get((c, i))):
         raise NotJudged(f"--judge-results judged other reviews than this run's ({len(differ)} differ, first "
@@ -232,7 +236,9 @@ def main(argv=None) -> int:
     try:
         if args.judge_results:
             same_reviews(results, judged)
-        judge = judge_means(judged, case_rules.development_cases())
+        # run: the run the means come from (the judge run's folder with --judge-results), for provenance
+        judge = {"run": (args.judge_results.resolve().parent if args.judge_results else args.run_dir.resolve()).name,
+                 **judge_means(judged, case_rules.development_cases())}
         # run: the run folder's real name (eval/runs/<run> may link to ~/.mesh/eval-runs/<run>), which
         # archive_runs.py keeps in S3 while this baseline names it (PMAT-336)
         baseline = build(results, case_rules.development_cases(),

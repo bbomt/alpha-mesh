@@ -36,9 +36,14 @@ import judge_report  # noqa: E402
 # Runs the count may drop below the baseline's before the gate fails. Provisional: three runs of the same code
 # (base6, aa1, aa2) passed 140, 142 and 146 of 195; 10 is about 5 points. Tighten it as same-code runs come in.
 TOLERANCE = 10
-# The drop in the judge's mean (1 to 5) the gate allows, per dimension. Provisional: TODO(PMAT-340) from the noise test.
-JUDGE_TOLERANCE = {"correctness": 0.0, "coverage": 0.0}
-MAX_JUDGE_ERROR_RATE = 0.0  # TODO(PMAT-340)
+# The drop in the judge's mean (1 to 5) the gate allows, per dimension (PMAT-340's noise test). Every repeat of the
+# three same-code runs judged: correctness 3.01, 2.96, 2.87 and coverage 3.77, 3.80, 3.77. One repeat's mean has a
+# standard deviation of 0.145 (correctness) and 0.072 (coverage), so two k=3 means differ by about 0.12 and 0.06 at one
+# standard deviation; each tolerance is about two. Provisional: tighten them as same-code runs come in.
+JUDGE_TOLERANCE = {"correctness": 0.25, "coverage": 0.12}
+# More judge errors than this share of the runs fail the run as a harness error: the means would miss too much of it.
+# The noise test had 2 of 195 (1%) in each run; base6's first judging, which refetched files from GitHub, had 10 (5%).
+MAX_JUDGE_ERROR_RATE = 0.05
 REBASELINE_NEW_CASES = 5  # suggest a rebaseline once this many cases are new since the baseline (not gated)
 
 

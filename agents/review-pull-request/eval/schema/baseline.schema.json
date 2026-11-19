@@ -34,6 +34,7 @@
       "description": "the judge's means over every repeat (PMAT-340), which the gate compares with (judge_report.gate_means)",
       "required": ["model", "rubric", "runs", "judged", "judge_errors", "not_judged", "mean"],
       "properties": {
+        "run": {"type": "string", "minLength": 1, "description": "the run the means come from"},
         "model": {"type": ["string", "null"]},
         "rubric": {"type": ["string", "null"]},
         "runs": {"type": "integer", "minimum": 0},

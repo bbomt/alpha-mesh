@@ -538,7 +538,7 @@ eval/scripts/run_eval.sh --run base1                                            
 eval/scripts/run_eval.sh --k 1 --run smoke --filter-pattern '^R37-1fbb920-001$'       # one case (.env model)
 eval/scripts/run_eval.sh --run base1 --max-concurrency 4                              # fewer workers (default 8)
 uv run python eval/scripts/compare_baseline.py eval/runs/base1/results.json           # vs baseline.json
-uv run python eval/scripts/write_baseline.py eval/runs/base1                                # write a new baseline
+uv run python eval/scripts/write_baseline.py eval/runs/base1                                # write a new baseline (needs --judge-repeats all, or --judge-results)
 uv run python eval/scripts/archive_runs.py push eval/runs/base1                       # then archive its run
 uv run python eval/scripts/archive_runs.py prune --yes                                # and drop the run it replaced
 PROMPTFOO_CONFIG_DIR=eval/runs/base1/.promptfoo promptfoo view                        # browse (Node 24)
@@ -659,11 +659,24 @@ uv run python eval/scripts/score_eval_run.py eval/runs/<run>   # the gate rule o
 - **It also fails, whatever the count,** on a harness error (a run stopped by the model's quota never passes), a
   missing case or repeat, or a run on another model or k than the baseline's: a model change needs a new baseline
   first.
+- **The judge is a second gate (PMAT-340).** It fails when the judge's mean **correctness** or **coverage** drops
+  more than `JUDGE_TOLERANCE` below the baseline's (`baseline.json`'s `judge`): 0.25 and 0.12 on the 1-5 scale. Like
+  the count, it is "no worse than today", never PMAT-311's absolute thresholds (the owner's decision of 2026-11-04).
+  Actionability is reported only. A judge error is never a low score: it leaves the row out of the means. More judge
+  errors than `MAX_JUDGE_ERROR_RATE` (5%) of the runs fail the run as a harness error, and so does a repeat not
+  judged, or a run judged by another judge model or rubric than the baseline's (rebaseline with the new judge first).
+  **The noise test:** every repeat of the three same-code runs judged (`run_eval.sh --stored <run> --judge-repeats
+  all`, about $1 each; `PMAT-340-judge-base6-nemotron`, `-aa1`, `-aa2`): correctness 3.01, 2.96, 2.87; coverage 3.77,
+  3.80, 3.77; 2 judge errors of 195 in each. One repeat's mean varies more (standard deviation 0.145 correctness,
+  0.072 coverage), so two k=3 runs differ by about 0.12 and 0.06 at one standard deviation, and each tolerance is
+  about two. Both are provisional, like `TOLERANCE`.
 - **Reported, not gating yet** (the owner switches them on): security misses, failing `style_only` runs, and the
   judge's means against PMAT-311's provisional proposal.
 - **The quick check (`mesh run-evals --quick`)** runs each case once (k=1, 65 reviews, only the judge's first
   repeat) and compares it with the baseline's first repeat, with the tolerance scaled down to 6 (`quick_tolerance`: the
-  noise grows with the square root of the runs). A single repeat is noisy: across the 9 repeats of the three noise-test
+  noise grows with the square root of the runs), and the judge's tolerances scaled up by √3 (0.43 and 0.21,
+  `quick_judge_tolerance`: a mean over a third of the runs is noisier) against the baseline's means. Each of the 9
+  noise-test repeats passes the judge rule. A single repeat is noisy: across the 9 repeats of the three noise-test
   runs it passed 43 to 54 of 65, so on unchanged code about 1 quick check in 10 warns for nothing. It catches a large
   drop early and cheaply, and posts only a PR comment: it can never let a PR merge.
 - **Cost:** the agent is free; the judge is about $0.005 per judged run, so about $1 per gate run. **Time:** about
@@ -695,6 +708,10 @@ runs passed 142/195 · baseline 140/195 · needs at least 130/195 (tolerance 10)
 | Category | Expected action | Cases | Baseline runs passed | Run runs passed |
 | security | `raise_true_bug` | 6 | 18/18 | 18/18 |
 | public   | `raise_true_bug` | 8 | 19/24 | 14/24 |
+
+| Judge mean (1-5) | Baseline | Run | Needs at least | Tolerance |
+| correctness | 3.01 | 2.96 | 2.76 | 0.25 |
+| coverage | 3.77 | 3.80 | 3.65 | 0.12 |
 ```
 
 - **The first line is the verdict.** 195 runs = 65 development cases × 3 repeats; each run passes when the review
@@ -702,10 +719,11 @@ runs passed 142/195 · baseline 140/195 · needs at least 130/195 (tolerance 10)
   140 (72%): that is the agent **today**, not a target. "Needs at least 130/195" is the baseline minus the tolerance:
   the gate fails at 129 or below. "Change +2" is this run against the baseline (2 more runs passed). The gate asks
   only "no worse than today, beyond the noise".
+- **The judge table is the second verdict:** a mean below "needs at least" fails the gate, whatever the count.
 - **The rows say where a drop comes from.** They are noisy on their own (a row of 24 runs moved by 5 between two runs
   of the same code), so read a row's change as a lead for error analysis, not a verdict.
 - **"Reported, not gating yet"** is how good the agent is in absolute terms (PMAT-311's provisional proposal, for
-  example judge correctness >= 4.0 where the agent scores about 2.8). They become gates when the owner switches them on.
+  example judge correctness >= 4.0 where the agent scores about 3.0). They become gates when the owner switches them on.
 
 #### The tolerance T
 
@@ -714,13 +732,15 @@ fails any drop at all, which the noise alone would trip often. `mesh run-evals` 
 cannot loosen its own gate, and there is no flag for it: retrying a failed gate with a larger T until it passes would
 make the gate meaningless. Change T in its own reviewed PR, from how far runs of the same, unchanged code differ (a
 noise test). To see a finished run under
-another T, without running anything again: `score_eval_run.py eval/runs/<run> --tolerance 5`.
+another T, without running anything again: `score_eval_run.py eval/runs/<run> --tolerance 5`. The judge's tolerances
+(`JUDGE_TOLERANCE`, `MAX_JUDGE_ERROR_RATE`, same file) follow the same rules, with no flag.
 
 #### Rebaselining, and new cases
 
 Rebaselines are made by hand, never automatically. **When:**
 
-- **Always, for a model change.** The gate refuses to compare runs of two different models.
+- **Always, for a model change** of the agent or the judge (`EVAL_JUDGE_MODEL`), or a new rubric. The gate refuses to
+  compare runs of two different models.
 - **When a change is meant to improve the score and does:** the run passes at least the tolerance more runs than the
   baseline. The gate report then says "Rebaseline suggested", so the bar moves up and the gain can't be lost quietly.
 - **When cases change:** 5 or more cases new since the baseline (the report suggests it too), or a fixed label.
@@ -731,7 +751,14 @@ Rebaselines are made by hand, never automatically. **When:**
 1. The gate runs on the PR as usual. A **model** change always fails it (the run's model is not the baseline's): the
    owner reads the new run's report and uses `mesh run-evals --force-success <PR url> --reason "new model: rebaselined"`.
 2. `uv run python eval/scripts/write_baseline.py eval/runs/gate-pr<n>-<sha7>` writes `baseline.json` from that gate run. It
-   first asks for an entry in `error_analysis.json` for every failing case ([Error analysis](#error-analysis)).
+   first asks for an entry in `error_analysis.json` for every failing case ([Error analysis](#error-analysis)), and
+   records the judge's means (`judge`), which need every repeat judged: a gate run has them. For a run that judged
+   only repeat 0, judge its stored reviews first and pass the result:
+   `run_eval.sh --stored eval/runs/<run> --judge-repeats all --run judge-<run>`, then `write_baseline.py eval/runs/<run>
+   --judge-results eval/runs/judge-<run>/results.json` (refused unless it holds that run's own reviews). `judge.run` names the run the
+   means come from. The current baseline was built that way, from base6 and `PMAT-340-judge-base6-nemotron`
+   (2026-11-18). A judge run has no `run.json`, so `archive_runs.py` doesn't archive it: the means the gate needs are in
+   `baseline.json` itself.
 3. Commit `baseline.json` and `error_analysis.json` in the same PR. Neither is a gated file, so the passing status
    carries over; the owner approves the new baseline in review.
 
