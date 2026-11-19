@@ -81,6 +81,7 @@ def not_found_reason(config) -> str | None:
 def make_chat_model(config, model: str):
     """The chat model for CODE_REVIEW_URL: ChatOpenAI for every OpenAI-compatible endpoint.
 
+    It sends config.temperature, [model] temperature in review_config.toml (PMAT-338), on every call.
     Names are `{provider}/{modelname}`: openrouter.ai gets the full name, other hosts get it
     without the `provider/` prefix. Key and URL come from config, never a provider env var.
     The reply is streamed so a hung call can be told from a slow one (PMAT-236): the watchdog
@@ -91,7 +92,7 @@ def make_chat_model(config, model: str):
     model, base_url = _sent(config, model)
     client = httpx.Client(transport=WatchdogTransport(http_transport(base_url)),
                           timeout=httpx.Timeout(llm.IDLE_TIMEOUT, connect=30))
-    return ChatOpenAI(model=model, api_key=config.api_token, base_url=base_url, temperature=0.2,
+    return ChatOpenAI(model=model, api_key=config.api_token, base_url=base_url, temperature=config.temperature,
                       streaming=True, max_retries=0, http_client=client)
 
 

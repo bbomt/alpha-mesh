@@ -57,7 +57,7 @@ def _tool_call_body(arguments: str):
         "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "read_file", "arguments": arguments}}]}}]}
 
 
-def _llm(monkeypatch, responses, model="openai/gpt-oss-120b", url="https://openrouter.ai/api"):
+def _llm(monkeypatch, responses, model="openai/gpt-oss-120b", url="https://openrouter.ai/api", temperature=None):
     """The session's review model, its HTTP answered in order by `responses`
     [(status, body)] or [(status, body, headers)]. A 200 is streamed as SSE."""
     sent = []
@@ -75,7 +75,7 @@ def _llm(monkeypatch, responses, model="openai/gpt-oss-120b", url="https://openr
         return httpx.Response(status, content=content, headers={"content-type": kind, **(headers[0] if headers else {})})
 
     monkeypatch.setattr("review_pull_request.session.http_transport", lambda url: httpx.MockTransport(handler))
-    config = Config(model=model, api_url=url, api_token="t" * 12)
+    config = Config(model=model, api_url=url, api_token="t" * 12, temperature=temperature)
     return ReviewSession.create(config, inner_reader=StubReader()).review_llm, sent
 
 
@@ -176,7 +176,7 @@ def test_a_throttled_call_is_retried(monkeypatch):
 
 
 def test_tool_calls_come_back_as_tool_calls_and_messages_go_out_in_openai_format(monkeypatch):
-    llm, sent = _llm(monkeypatch, [(200, _tool_call_body('{"path": "a.py", "reason": "r"}'))])
+    llm, sent = _llm(monkeypatch, [(200, _tool_call_body('{"path": "a.py", "reason": "r"}'))], temperature=0.7)
     history = [
         {"role": "user", "content": "review"},
         {"role": "assistant", "content": None, "tool_calls": [
@@ -190,7 +190,7 @@ def test_tool_calls_come_back_as_tool_calls_and_messages_go_out_in_openai_format
         [("c1", "read_file", {"path": "a.py", "reason": "r"})]
     body = sent[0]
     assert body["model"] == "openai/gpt-oss-120b"
-    assert body["temperature"] == 0.2
+    assert body["temperature"] == 0.7  # config.temperature, [model] temperature (PMAT-338)
     assert body["tool_choice"] == "auto"
     assert [m["role"] for m in body["messages"]] == ["user", "assistant", "tool"]
     assert body["messages"][1]["tool_calls"][0]["id"] == "c0"

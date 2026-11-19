@@ -28,7 +28,9 @@ mesh review-pull-request https://github.com/org/repo/pull/123 --force-rerun
 
 - `gh` CLI installed and authenticated (`gh auth login`), or a `GITHUB_TOKEN` environment variable
 - `.env` file populated with `CODE_REVIEW_URL`, `CODE_REVIEW_TOKEN`. The model is `[model] review` in
-  `review_config.toml`, committed, so a model change is a PR the eval gate sees (PMAT-312)
+  `review_config.toml`, committed, so a model change is a PR the eval gate sees (PMAT-312). Next to it,
+  `[model] temperature` (0) is sent on every model call; a config without it, or with a non-number, stops the run
+  (PMAT-338)
 - AWS credentials for the checkpoint store (DynamoDB + S3, see [Checkpoint infrastructure](#checkpoint-infrastructure-aws-cdk)):
   on the dev EC2 the SSO `dev-EC2` permission set (`aws sso login` when the session expires). Without
   them the run stops before reviewing anything. `--dry-run` needs no AWS.

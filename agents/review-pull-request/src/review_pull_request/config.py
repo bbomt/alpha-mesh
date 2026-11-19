@@ -112,6 +112,17 @@ def configured_model(role: str, config_path: str | None = None) -> str:
     return model
 
 
+def configured_temperature(config_path: str | None = None) -> float:
+    """[model] temperature in review_config.toml: the one temperature every model call sends (PMAT-338). Exits naming
+    the setting when it is missing or not a number."""
+    temperature = _load_toml(config_path).get("model", {}).get("temperature")
+    if isinstance(temperature, bool) or not isinstance(temperature, (int, float)):
+        print(f"ERROR: [model] temperature must be a number in review_config.toml, got {temperature!r}. Set it "
+              "there: every model call sends it (PMAT-338).", file=sys.stderr)
+        sys.exit(1)
+    return float(temperature)
+
+
 @dataclass
 class Config:
     model: str
@@ -123,6 +134,7 @@ class Config:
     exclusions: list[str] = field(default_factory=list)
     output_file: str = "review_output.md"
     github_repo: str = ""
+    temperature: float | None = None  # [model] temperature; load_config always sets it, None sends none
 
     # Runtime
     repo_root: str = ""
@@ -165,6 +177,7 @@ def load_config(args) -> Config:
         print("WARNING: CODE_REVIEW_MODEL in .env is no longer read: the model is [model] review in "
               "agents/review-pull-request/review_config.toml (PMAT-312). Remove it from .env.", file=sys.stderr)
     model = args.model or configured_model("review", args.config)
+    temperature = configured_temperature(args.config)
     api_url = os.environ.get("CODE_REVIEW_URL", "")
     api_token = os.environ.get("CODE_REVIEW_TOKEN", "")
 
@@ -213,6 +226,7 @@ def load_config(args) -> Config:
         exclusions=exclusions,
         output_file=output_file,
         github_repo=github_repo,
+        temperature=temperature,
         repo_root=repo_root,
         verbose=getattr(args, "verbose", False),
         hide_pr_comment=getattr(args, "hide_pr_comment", False),

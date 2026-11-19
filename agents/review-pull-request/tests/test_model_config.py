@@ -28,7 +28,7 @@ def setup(tmp_path, monkeypatch):
     env.write_text("CODE_REVIEW_URL=http://x\nCODE_REVIEW_TOKEN=t\n")
     monkeypatch.setattr(config_module, "ENV_FILE", env)
     toml = tmp_path / "review_config.toml"
-    toml.write_text('[model]\nreview = "free/review-model"\n')
+    toml.write_text('[model]\nreview = "free/review-model"\ntemperature = 0.3\n')
     return env, toml
 
 
@@ -58,6 +58,27 @@ def test_a_config_without_the_review_model_exits_naming_the_setting(setup, capsy
     assert "[model] review" in capsys.readouterr().err
 
 
+def test_the_temperature_comes_from_review_config_toml(setup):
+    """PMAT-338: one place sets the temperature every model call sends."""
+    _, toml = setup
+    assert load_config(_args(toml)).temperature == 0.3
+
+
+@pytest.mark.parametrize("line", ["", 'temperature = "low"\n', "temperature = true\n"])
+def test_a_config_without_a_number_temperature_exits_naming_the_setting(setup, capsys, line):
+    _, toml = setup
+    toml.write_text('[model]\nreview = "free/review-model"\n' + line)
+    with pytest.raises(SystemExit):
+        load_config(_args(toml))
+    assert "[model] temperature" in capsys.readouterr().err
+
+
+def test_the_committed_temperature_is_0():
+    """PMAT-338: the lowest temperature, so repeats of a review differ as little as the model allows."""
+    import toml
+    assert toml.load(str(AGENT_DIR / "review_config.toml"))["model"]["temperature"] == 0
+
+
 def test_run_eval_sh_defaults_to_the_review_model():
     """The eval measures the model the reviews use. run_eval.sh reads it with this exact call; run it the same way."""
     script = (AGENT_DIR / "eval" / "scripts" / "run_eval.sh").read_text()
@@ -73,4 +94,4 @@ def test_the_committed_baseline_is_on_the_reviews_own_model():
     baseline = json.loads((AGENT_DIR / "eval" / "baseline.json").read_text())
     assert baseline["model"] == configured_model("review")
     import toml
-    assert set(toml.load(str(AGENT_DIR / "review_config.toml"))["model"]) == {"review"}
+    assert set(toml.load(str(AGENT_DIR / "review_config.toml"))["model"]) == {"review", "temperature"}

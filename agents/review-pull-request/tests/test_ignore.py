@@ -10,6 +10,10 @@ from review_pull_request.chunker import build_chunks
 from review_pull_request.config import IGNORE_FILE, load_config, load_ignore_patterns
 
 
+# load_config requires [model] temperature (PMAT-338); these tests pass --model and are about exclusions.
+TEMPERATURE = "[model]\ntemperature = 0\n"
+
+
 def _diff(*paths):
     return "".join(
         f"diff --git a/{p} b/{p}\n--- a/{p}\n+++ b/{p}\n@@ -1 +1 @@\n+x\n" for p in paths
@@ -59,7 +63,7 @@ def test_load_config_merges_ignore_file_with_toml_exclusions(tmp_path, monkeypat
     ignore = tmp_path / ".pr-review-ignore"
     ignore.write_text("CLAUDE.md\n")
     toml_file = tmp_path / "review_config.toml"
-    toml_file.write_text('[exclusions]\npatterns = ["*.lock"]\n')
+    toml_file.write_text(TEMPERATURE + '[exclusions]\npatterns = ["*.lock"]\n')
     monkeypatch.setattr(config_module, "IGNORE_FILE", ignore)
     monkeypatch.setattr(config_module, "ENV_FILE", _empty_env(tmp_path))  # never read a real .env
     for var, val in [("CODE_REVIEW_URL", "http://x"), ("CODE_REVIEW_TOKEN", "t")]:
@@ -111,7 +115,7 @@ def test_shipped_ignore_file_keeps_secret_bearing_paths_away_from_the_llm():
 
 def test_load_config_warns_when_the_ignore_file_is_not_in_an_alpha_mesh_checkout(tmp_path, monkeypatch, capsys):
     toml_file = tmp_path / "review_config.toml"
-    toml_file.write_text("")
+    toml_file.write_text(TEMPERATURE)
     monkeypatch.setattr(config_module, "IGNORE_FILE", tmp_path / ".pr-review-ignore")  # no bin/mesh next to it
     monkeypatch.setattr(config_module, "ENV_FILE", _empty_env(tmp_path))
     for var, val in [("CODE_REVIEW_URL", "http://x"), ("CODE_REVIEW_TOKEN", "t")]:
@@ -126,7 +130,7 @@ def test_load_config_warns_when_the_ignore_file_is_not_in_an_alpha_mesh_checkout
 
 def test_token_bearing_paths_are_excluded_even_if_the_ignore_file_is_missing(tmp_path, monkeypatch):
     toml_file = tmp_path / "review_config.toml"
-    toml_file.write_text("")
+    toml_file.write_text(TEMPERATURE)
     monkeypatch.setattr(config_module, "IGNORE_FILE", tmp_path / "nowhere" / ".pr-review-ignore")
     monkeypatch.setattr(config_module, "ENV_FILE", _empty_env(tmp_path))
     for var, val in [("CODE_REVIEW_URL", "http://x"), ("CODE_REVIEW_TOKEN", "t")]:
@@ -197,7 +201,7 @@ def test_direnv_files_are_treated_as_sensitive():
 
 def test_toml_exclusions_get_the_same_gitignore_semantics_as_the_ignore_file(tmp_path, monkeypatch):
     toml_file = tmp_path / "review_config.toml"
-    toml_file.write_text('[exclusions]\npatterns = ["secrets/", "/private", "credentials/**/*.json"]\n')
+    toml_file.write_text(TEMPERATURE + '[exclusions]\npatterns = ["secrets/", "/private", "credentials/**/*.json"]\n')
     monkeypatch.setattr(config_module, "IGNORE_FILE", tmp_path / "missing")
     monkeypatch.setattr(config_module, "ENV_FILE", _empty_env(tmp_path))
     for var, val in [("CODE_REVIEW_URL", "http://x"), ("CODE_REVIEW_TOKEN", "t")]:
@@ -259,7 +263,7 @@ def _args_for(toml_file):
 @pytest.mark.parametrize("value", ['"secrets"', '[1, 2]', '{ a = "b" }'])
 def test_toml_exclusion_patterns_that_are_not_a_list_of_strings_abort(tmp_path, monkeypatch, capsys, value):
     toml_file = tmp_path / "review_config.toml"
-    toml_file.write_text(f"[exclusions]\npatterns = {value}\n")
+    toml_file.write_text(TEMPERATURE + f"[exclusions]\npatterns = {value}\n")
     monkeypatch.setattr(config_module, "IGNORE_FILE", tmp_path / "missing")
     monkeypatch.setattr(config_module, "ENV_FILE", _empty_env(tmp_path))
     for var, val in [("CODE_REVIEW_URL", "http://x"), ("CODE_REVIEW_TOKEN", "t")]:

@@ -39,4 +39,3 @@ def test_key_comes_from_config_not_provider_env_vars_and_retries_are_ours(monkey
     assert model.openai_api_key.get_secret_value() == "secret-token-1"
     assert model.max_retries == 0  # LangChainLLM retries (PMAT-236), the SDK never does
     assert model.streaming is True  # the idle limit needs reply data as it is generated
-    assert model.temperature == 0.2

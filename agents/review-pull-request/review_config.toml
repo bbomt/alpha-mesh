@@ -3,6 +3,10 @@
 # on it). The URL and token stay in .env (CODE_REVIEW_URL, CODE_REVIEW_TOKEN).
 [model]
 review = "nvidia/nemotron-3.5-super-vl:free"  # --model overrides it for one review or eval run
+# Sent on every model call (PMAT-338): the lowest, so repeats of a review differ as little as the model allows. It was a
+# hardcoded 0.2 before. With a new model, check it accepts one ("temperature" in its supported_parameters on
+# OpenRouter's /api/v1/models).
+temperature = 0
 
 [limits]
 max_tool_calls = 20
