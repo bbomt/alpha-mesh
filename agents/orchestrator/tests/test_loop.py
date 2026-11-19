@@ -307,3 +307,27 @@ def test_with_no_aws_region_anywhere_no_worker_starts(monkeypatch):
     with pytest.raises(RuntimeError, match="set AWS_REGION, or the region of your AWS profile"):
         loop.start("PMAT-1", "/repo", fake.ops())
     assert fake.opened == []
+
+
+def test_a_crafted_region_cannot_widen_the_workers_sandbox(monkeypatch):
+    # The region is pasted into the settings JSON: a value that breaks out of its string could add a host, e.g. "*".
+    monkeypatch.setenv("AWS_REGION", 'zz-test-1.amazonaws.com", "*", "x')
+    fake = Fake()
+    with pytest.raises(RuntimeError, match="no AWS region for the workers' sandbox"):
+        loop.start("PMAT-1", "/repo", fake.ops())
+    assert fake.opened == [] and not loop.settings_path().exists()
+
+
+def test_a_hung_aws_cli_does_not_stall_the_orchestrator(monkeypatch):
+    monkeypatch.delenv("AWS_REGION")
+    monkeypatch.delenv("AWS_DEFAULT_REGION", raising=False)
+    seen = {}
+
+    def hang(argv, **k):
+        seen.update(k)
+        raise loop.subprocess.TimeoutExpired(argv, k["timeout"])
+
+    monkeypatch.setattr(loop.subprocess, "run", hang)
+    with pytest.raises(RuntimeError, match="no AWS region"):
+        loop.aws_region()
+    assert seen["timeout"] <= 30

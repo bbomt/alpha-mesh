@@ -68,8 +68,10 @@ def aws_region() -> str:
     region = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION")
     if not region:
         try:
-            region = subprocess.run(["aws", "configure", "get", "region"], capture_output=True, text=True).stdout.strip()
-        except FileNotFoundError:
+            # A list (no shell); a timeout, so a hung CLI cannot stall every ticket's tick.
+            region = subprocess.run(["aws", "configure", "get", "region"], capture_output=True, text=True,
+                                    timeout=10).stdout.strip()
+        except (FileNotFoundError, subprocess.TimeoutExpired):
             region = ""
     if not REGION.fullmatch(region or ""):
         raise RuntimeError(f"no AWS region for the workers' sandbox (got {region!r}): set AWS_REGION, or the region "
