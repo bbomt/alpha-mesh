@@ -44,36 +44,28 @@ mkdir -p "$MESH_DIR/config"
 echo "  ✓ done"
 echo ""
 
-# ─── Write .gitignore ───────────────────────────────────────────────────────
-cat > "$MESH_DIR/.gitignore" <<'EOF'
-# secrets — never commit
-config/active.json
-
-# legacy task-log data (feature removed): keep any leftover local DB out of git
-tasks/*.db
-
-# Python bytecode
-__pycache__/
-*.pyc
-*.pyo
-
-# Python project
-venv/
-agents/*/*.egg-info/
-agents/*/.venv/
-agents/*/uv.lock
-uv.lock
-
-# editor
-.DS_Store
-*.swp
-.env
-
-# Claude Code and alpha-mesh runtime dirs (settings.json can hold tokens; MEMORY.md holds session text)
-.claude/
-.mesh/
-EOF
-echo "  ✓ .gitignore written"
+# ─── Ensure .gitignore has the entries install needs ────────────────────────
+# Append only missing entries: never rewrite the committed .gitignore (PMAT-352).
+GITIGNORE_ENTRIES=(
+  config/active.json            # secrets — never commit
+  'tasks/*.db'                  # legacy task-log data (feature removed)
+  __pycache__/ '*.pyc' '*.pyo'  # Python bytecode
+  venv/ 'agents/*/*.egg-info/' 'agents/*/.venv/' 'agents/*/uv.lock' uv.lock
+  .DS_Store '*.swp' .env
+  .claude/ .mesh/               # runtime dirs: settings.json can hold tokens; MEMORY.md holds session text
+)
+added=0
+for entry in "${GITIGNORE_ENTRIES[@]}"; do
+  if ! grep -qxF -- "$entry" "$MESH_DIR/.gitignore" 2>/dev/null; then
+    # start on a new line if the file does not end with one
+    if [[ -s "$MESH_DIR/.gitignore" && -n "$(tail -c 1 "$MESH_DIR/.gitignore")" ]]; then
+      echo >> "$MESH_DIR/.gitignore"
+    fi
+    echo "$entry" >> "$MESH_DIR/.gitignore"
+    added=$((added + 1))
+  fi
+done
+echo "  ✓ .gitignore checked ($added entries added)"
 echo ""
 
 # ─── Add scripts to PATH via shell profile ──────────────────────────────────
