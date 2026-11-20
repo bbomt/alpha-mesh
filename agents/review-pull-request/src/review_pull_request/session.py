@@ -27,7 +27,7 @@ from review_pull_request.llm import DRY_RUN_MODEL, DryRunChatModel, LangChainLLM
 from review_pull_request.policy import PathPolicy, normalise
 from review_pull_request.readers import PolicyFileReader
 from review_pull_request.safe_diff import SafeDiff
-from review_pull_request.trace import Trace, TracingLLM
+from review_pull_request.trace import RecordingTransport, Trace, TracingLLM
 from review_pull_request.watchdog import WatchdogTransport
 
 
@@ -90,7 +90,7 @@ def make_chat_model(config, model: str):
     if model == DRY_RUN_MODEL:
         return DryRunChatModel()
     model, base_url = _sent(config, model)
-    client = httpx.Client(transport=WatchdogTransport(http_transport(base_url)),
+    client = httpx.Client(transport=WatchdogTransport(RecordingTransport(http_transport(base_url))),
                           timeout=httpx.Timeout(llm.IDLE_TIMEOUT, connect=30))
     return ChatOpenAI(model=model, api_key=config.api_token, base_url=base_url, temperature=config.temperature,
                       streaming=True, max_retries=0, http_client=client)

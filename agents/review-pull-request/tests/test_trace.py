@@ -183,3 +183,81 @@ def test_mesh_review_pull_request_writes_a_trace_under_mesh_review_traces(tmp_pa
     traces = list((tmp_path / ".mesh" / "review-traces").glob("*.jsonl"))  # conftest sets HOME to tmp_path
     assert len(traces) == 1
     assert len(_tools(traces[0])) == 5
+
+
+# 6. Model calls (PMAT-338) ───────────────────────────────────────────────────────────────────────
+# Each HTTP request to the model leaves a "generation" record in its file's span: the request
+# parameters as sent on the wire (never the messages, tools or headers) and the model and provider
+# the reply named. The real chat model runs; only the network transport is scripted.
+
+ANSWER = '{"summary": "ok", "issues": []}'
+
+
+def _wire_review(tmp_path, monkeypatch, replies=None, token="t" * 12):
+    """A review through make_chat_model, its HTTP answered by `replies` [(status, body bytes) or None]; None,
+    and every call after them, gets an answer from provider "Chutes". The first call is the overview pass."""
+    import httpx
+
+    def answer(provider="Chutes"):
+        chunk = {"id": "1", "object": "chat.completion.chunk", "created": 1, "model": "nvidia/served-model",
+                 "provider": provider,
+                 "choices": [{"index": 0, "delta": {"role": "assistant", "content": ANSWER}, "finish_reason": "stop"}]}
+        return 200, f"data: {json.dumps(chunk)}\n\ndata: [DONE]\n\n".encode()
+
+    queue = iter(replies or [])
+    sent = []
+
+    def handler(request):
+        sent.append(request)
+        status, content = next(queue, None) or answer()
+        kind = "text/event-stream" if status == 200 else "application/json"
+        # A stream, as from the network: a reply built from bytes is read already and skips the wrappers.
+        return httpx.Response(status, stream=httpx.ByteStream(content), headers={"content-type": kind})
+
+    monkeypatch.setattr("review_pull_request.session.http_transport", lambda url: httpx.MockTransport(handler))
+    monkeypatch.setattr("review_pull_request.llm._sleep", lambda s: None)
+    cfg = Config(model="nvidia/m:free", api_url="https://openrouter.ai/api", api_token=token,
+                 exclusions=list(SENSITIVE_PATTERNS), temperature=0.0)
+    path = tmp_path / "trace.jsonl"
+    with patch("review_pull_request.review.GitHubFileReader", lambda *a, **k: StubReader(dict(FILES))), \
+            patch("review_pull_request.review.get_diff", return_value=_diff(["src/a.py"])):
+        code = run_review_agent("o", "r", "b" * 40, "c" * 40, "Adds a.", config=cfg, token="tok",
+                                publish=lambda report: None, all_excluded=lambda paths: 0, trace_path=path)
+    return code, path, sent
+
+
+def _generations(path):
+    return [r for r in _records(path) if r["type"] == "generation"]
+
+
+def test_each_model_call_records_the_temperature_sent_and_the_provider_that_answered(tmp_path, monkeypatch):
+    code, path, sent = _wire_review(tmp_path, monkeypatch)
+
+    assert code == 0
+    [span] = [r for r in _records(path) if r["type"] == "span"]
+    [generation] = _generations(path)
+    assert generation["parent_observation_id"] == span["id"] and generation["trace_id"] == span["trace_id"]
+    assert generation["model"] == "nvidia/m:free"
+    assert generation["model_parameters"]["temperature"] == 0  # as on the wire, not as configured
+    assert json.loads(sent[-1].content)["temperature"] == 0
+    assert generation["output"] == {"status": 200, "model": "nvidia/served-model", "provider": "Chutes"}
+    assert generation["start_time"]
+
+
+def test_a_retried_call_records_every_attempt(tmp_path, monkeypatch):
+    code, path, _ = _wire_review(tmp_path, monkeypatch, replies=[None, (429, b'{"error": {"message": "rate limited"}}')])
+
+    assert code == 0
+    assert [g["output"]["status"] for g in _generations(path)] == [429, 200]
+    assert "provider" not in _generations(path)[0]["output"]
+
+
+def test_a_generation_record_holds_no_message_tool_or_token(tmp_path, monkeypatch):
+    token = "canary-token-9f3a"
+    _, path, sent = _wire_review(tmp_path, monkeypatch, token=token)
+
+    assert token in sent[0].headers["authorization"]  # the canary was on the wire
+    [generation] = _generations(path)
+    assert set(generation["model_parameters"]) & {"messages", "tools"} == set()
+    assert token not in path.read_text()
+    assert "a = 1" not in json.dumps(generation)  # the file's content went in the messages only

@@ -8,6 +8,14 @@ replace the file later (PMAT-262):
                       "output": {"files_read", "incomplete", "tool_calls_made"}, "start_time", "end_time"}
     {"type": "tool",  "id", "trace_id", "parent_observation_id", "name", "input": <arguments>,
                       "output": <the tool message's content as sent>, "start_time"}
+    {"type": "generation", "id", "trace_id", "parent_observation_id", "name": "chat", "model",
+                      "model_parameters": {temperature, stream, ...}, "output": {status, model, provider},
+                      "start_time"}
+
+A generation is one HTTP request to the model (a retry is another one), recorded by RecordingTransport
+(PMAT-338): its parameters as sent on the wire, so a trace shows the temperature the run really sent,
+and the model and provider the reply named. Only the body's top-level scalars: never the messages,
+the tools or the headers (the token). The overview pass has no span, so its calls are not recorded.
 
 TracingLLM records at the model boundary, inside GuardedLLM: it sees the messages after the
 PolicyFileReader (an excluded file is already a refusal) and after the redactor. A file review's
@@ -15,12 +23,15 @@ records are held in memory and written when its span ends, so a review stopped p
 partial span. The trace is never part of the graph state, so it never reaches the checkpoint store.
 """
 
+import contextvars
 import json
 import os
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+
+import httpx
 
 
 def _now() -> str:
@@ -34,6 +45,7 @@ class Span:
         self.file = file
         self.start_time = _now()
         self.tools: list[dict] = []
+        self.generations: list[dict] = []
         self.output: dict = {}
         self.seen = 0  # messages of this review already recorded
 
@@ -56,11 +68,19 @@ class Span:
                                "input": arguments, "output": message.get("content"), "start_time": now})
         self.seen = len(messages)
 
+    def record_calls(self, calls: list[dict]) -> None:
+        for call in calls:
+            parameters = dict(call["parameters"])
+            self.generations.append({"type": "generation", "id": uuid.uuid4().hex, "trace_id": self.trace_id,
+                                     "parent_observation_id": self.id, "name": "chat",
+                                     "model": parameters.pop("model", None), "model_parameters": parameters,
+                                     "output": call["output"], "start_time": call["start_time"]})
+
     def records(self) -> list[dict]:
         span = {"type": "span", "id": self.id, "trace_id": self.trace_id, "name": "file_review",
                 "input": {"file": self.file}, "output": self.output,
                 "start_time": self.start_time, "end_time": _now()}
-        return [span, *self.tools]
+        return [span, *self.tools, *self.generations]
 
 
 class Trace:
@@ -103,6 +123,10 @@ class Trace:
         if self._span is not None and self.path is not None:  # the overview pass has no span
             self._span.record_sent(messages)
 
+    def record_calls(self, calls: list[dict]) -> None:
+        if self._span is not None and self.path is not None:
+            self._span.record_calls(calls)
+
     def _write(self, records: list[dict]) -> None:
         with self.path.open("a") as f:
             f.write("".join(json.dumps(r) + "\n" for r in records))
@@ -119,7 +143,83 @@ class TracingLLM:
 
     def chat(self, messages: list[dict], tools=None):
         self._trace.record_sent(messages)
-        return self._inner.chat(messages, tools)
+        calls: list[dict] = []
+        token = _calls.set(calls)
+        try:
+            return self._inner.chat(messages, tools)
+        finally:
+            _calls.reset(token)
+            self._trace.record_calls(calls)
+
+
+# The HTTP requests made inside one TracingLLM.chat() (its retries included), or None outside one.
+_calls: contextvars.ContextVar[list[dict] | None] = contextvars.ContextVar("model_calls", default=None)
+
+
+def _parameters(request: httpx.Request) -> dict:
+    """The request body's top-level scalars: model, temperature, stream... never messages or tools."""
+    try:
+        body = json.loads(request.content)
+    except (httpx.RequestNotRead, ValueError):
+        return {}
+    if not isinstance(body, dict):
+        return {}
+    return {k: v for k, v in body.items()
+            if k not in ("messages", "tools") and (v is None or isinstance(v, (str, int, float, bool)))}
+
+
+class _NamedStream(httpx.SyncByteStream):
+    """Passes the reply through; notes the first "model" and "provider" its SSE data events name."""
+
+    def __init__(self, inner, output: dict) -> None:
+        self._inner = inner
+        self._output = output
+        self._tail = b""
+
+    def __iter__(self):
+        for chunk in self._inner:
+            self._read(chunk)
+            yield chunk
+
+    def _read(self, chunk: bytes) -> None:
+        if "model" in self._output and "provider" in self._output:
+            return
+        *lines, self._tail = (self._tail + chunk).split(b"\n")
+        for line in lines:
+            if not line.startswith(b"data:"):
+                continue
+            try:
+                event = json.loads(line[5:])
+            except ValueError:  # "[DONE]", or not JSON
+                continue
+            if isinstance(event, dict):
+                for key in ("model", "provider"):
+                    if isinstance(event.get(key), str):
+                        self._output.setdefault(key, event[key])
+
+    def close(self) -> None:
+        self._inner.close()
+
+
+class RecordingTransport(httpx.BaseTransport):
+    """Wraps the model's transport; a request made inside TracingLLM.chat() is noted for its span."""
+
+    def __init__(self, inner: httpx.BaseTransport) -> None:
+        self._inner = inner
+
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        calls = _calls.get()
+        if calls is None:
+            return self._inner.handle_request(request)
+        call = {"parameters": _parameters(request), "output": {}, "start_time": _now()}
+        calls.append(call)
+        response = self._inner.handle_request(request)
+        call["output"]["status"] = response.status_code
+        response.stream = _NamedStream(response.stream, call["output"])
+        return response
+
+    def close(self) -> None:
+        self._inner.close()
 
 
 def _read(path: Path) -> list[dict]:

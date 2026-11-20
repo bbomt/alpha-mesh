@@ -103,6 +103,13 @@ file review. It is recorded inside the redactor, so excluded files appear only a
 the job's HOME); the evals write it to their run folder. A resumed review appends to the same file, and
 `--force-rerun` starts it again. The trace never goes into the checkpoint store.
 
+Each file review's span also holds one `generation` record per HTTP request to the model, retries included
+(PMAT-338). It records the request's parameters as sent on the wire (`model`, `model_parameters` such as
+`temperature`) and the reply's `status`, plus the `model` and `provider` it named. So a trace shows the
+temperature a run really sent and which provider answered. It can't show whether the provider honoured
+that temperature. It holds only the body's top-level scalars, never the messages, the tools or the headers.
+The overview pass is not recorded.
+
 ### Report
 
 A Markdown report is printed to stdout and (unless `--no-post-comment`) posted as a GitHub PR comment. The comment header is:
