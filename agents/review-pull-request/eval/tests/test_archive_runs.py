@@ -327,3 +327,14 @@ def test_live_base6_round_trip(tmp_path, monkeypatch):
         sheets[label] = (tmp_path / f"sheet-{label}.md").read_text()
     assert sheets["original"] == sheets["pulled"]
     shutil.rmtree(tmp_path / "elsewhere")
+
+
+def test_with_no_aws_region_anywhere_the_archive_stops_with_a_clear_error(monkeypatch, tmp_path, capsys):
+    # PMAT-347: no region is committed, so none is guessed.
+    monkeypatch.delenv("AWS_REGION", raising=False)
+    monkeypatch.delenv("AWS_DEFAULT_REGION", raising=False)
+    (tmp_path / "aws-config").write_text("[profile zz]\n")
+    monkeypatch.setenv("AWS_CONFIG_FILE", str(tmp_path / "aws-config"))
+    monkeypatch.setenv("AWS_PROFILE", "zz")
+    assert archive_runs.main(["prune"]) == 1
+    assert "no AWS region: set AWS_REGION" in capsys.readouterr().err

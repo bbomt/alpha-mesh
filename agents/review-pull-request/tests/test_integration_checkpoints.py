@@ -15,7 +15,7 @@ import uuid
 import boto3
 import pytest
 
-from review_pull_request.checkpoints import DEFAULT_REGION, make_checkpointer, thread_id
+from review_pull_request.checkpoints import aws_region, make_checkpointer, thread_id
 from review_pull_request.config import SENSITIVE_PATTERNS
 from tests.test_resume import FILES, Review, assert_each_file_once, file_calls
 
@@ -49,7 +49,7 @@ def test_i1_kill_and_resume_against_the_deployed_store(tmp_path, monkeypatch):
     assert saver.get_tuple(config) is None
 
     # The saver's own S3 lifecycle rule expires objects after checkpointTtlDays (spec 3.10).
-    region = os.environ.get("AWS_REGION") or DEFAULT_REGION
+    region = aws_region()
     prefix = f"/pmat/{os.environ.get('DEPLOY_ENV', 'dev')}/alpha-mesh/review-pull-request"
     ssm = boto3.client("ssm", region_name=region)
     ttl_days = int(ssm.get_parameter(Name=f"{prefix}/checkpoint-ttl-days")["Parameter"]["Value"])
