@@ -13,15 +13,15 @@ GATED = "agents/review-pull-request/src/review_pull_request/stage2.py"
 
 
 def fake(*, files=(GATED,), head_evals=None, behind=0, commits=(OLD, HEAD),
-         old_evals=None, since_old=("README.md",)):
+         old_evals=None, since_old=("README.md",), context="evals"):
     def status(state, context):
         desc = "runs passed 142/195 · needs at least 130/195" if state == "success" else ""
         return {"statuses": [{"context": context, "state": state, "description": desc}] if state else []}
     answers = {
         ("pr", "view"): {"state": "OPEN", "headRefOid": HEAD, "baseRefName": "master"},
         ("api", "repos/o/r/compare/master..." + HEAD): {"behind_by": behind},
-        ("api", f"repos/o/r/commits/{HEAD}/status"): status(head_evals, "evals"),
-        ("api", f"repos/o/r/commits/{OLD}/status"): status(old_evals, "evals"),
+        ("api", f"repos/o/r/commits/{HEAD}/status"): status(head_evals, context),
+        ("api", f"repos/o/r/commits/{OLD}/status"): status(old_evals, context),
         ("api", "repos/o/r/pulls/7/commits?per_page=100"): [{"sha": c} for c in commits],
         ("api", f"repos/o/r/compare/{OLD}...{HEAD}"): {"files": [{"filename": f} for f in since_old]},
     }
@@ -36,9 +36,9 @@ def fake(*, files=(GATED,), head_evals=None, behind=0, commits=(OLD, HEAD),
     return gh
 
 
-def check(evals_only=False, **kw):
+def check(evals_only=False, smoke=False, **kw):
     gh = fake(**kw)
-    return check_pr_evals.check(URL, gh=gh, evals_only=evals_only), gh
+    return check_pr_evals.check(URL, gh=gh, evals_only=evals_only, smoke=smoke), gh
 
 
 def test_an_agent_pr_with_evals_on_its_head_may_merge():
@@ -98,3 +98,23 @@ def test_evals_only_is_the_jobs_report_without_the_items_github_checks_itself():
     assert not any(a[1].startswith("repos/o/r/compare/master...") for a in gh.calls if a[0] == "api")
     result, _ = check(evals_only=True)
     assert not result.ok and f"Next: mesh run-evals {URL}" in result.text
+
+
+# --smoke (PMAT-358): what `mesh merge-pr` needs before an agent PR goes into the queue eval-rc-q/current ─────────
+
+def test_smoke_needs_evals_smoke_and_names_the_smoke_command():
+    result, _ = check(evals_only=True, smoke=True, head_evals="success", context="evals-smoke")
+    assert result.ok and "  OK       evals-smoke passed on head hhhhhhh" in result.text
+    result, _ = check(evals_only=True, smoke=True, head_evals="success", context="evals")  # the full status is not it
+    assert not result.ok and "  BLOCKED  evals-smoke have not run on head hhhhhhh" in result.text
+    assert result.text.endswith(f"\n\nNext: mesh run-evals --smoke {URL}")
+
+
+def test_smoke_carries_over_from_an_older_commit_like_evals():
+    result, _ = check(evals_only=True, smoke=True, old_evals="success", context="evals-smoke")
+    assert result.ok and "evals-smoke passed on ooooooo, an older commit" in result.text
+
+
+def test_smoke_is_not_needed_for_a_pr_that_changes_no_agent_file():
+    result, _ = check(evals_only=True, smoke=True, files=("README.md",))
+    assert result.ok and "it changes no agent file, so it needs no smoke evals" in result.text

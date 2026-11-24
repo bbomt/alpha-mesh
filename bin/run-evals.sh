@@ -3,7 +3,7 @@
 # Run the review-pull-request evals on a PR and post the verdict (PMAT-312).
 #
 #   mesh run-evals <PR url>                              run the evals on the PR's head; post `evals` and the score table
-#   mesh run-evals --quick <PR url>                      a k=1 early warning (a third of the quota): a PR comment, no status
+#   mesh run-evals --smoke <PR url>                      k=1 on eval/smoke.json's cases: posts `evals-smoke` (PMAT-358)
 #   mesh run-evals --force-success <PR url> --reason R   post `evals` = success by hand ("forced: R"), recorded on the PR
 #
 # GitHub's required check `evals-gate` (.github/workflows/evals-gate.yml) reads the `evals` status these post; each
@@ -12,6 +12,10 @@
 # An evals run is the full eval (the development cases, k=3, every repeat judged) in a clean worktree, compared with
 # master's baseline, tolerance and scoring rule (score_eval_run.py, write_baseline.py), so a PR cannot loosen its own gate. About 75 min and about
 # a day's free-model quota. Run it again on the same head to resume: a run stopped by the quota continues.
+#
+# One eval run at a time on this machine (a lock), and only when the free-model requests left today cover it
+# (OpenRouter's /api/v1/key; the quota resets each UTC day). Both are checked before any status is posted; a run
+# not started for either exits 75. The quota is logged before and after each run in ~/.mesh/quota.log (PMAT-358).
 
 set -euo pipefail
 
@@ -28,14 +32,19 @@ Usage:
       The full evals on the PR's head: the development cases, k=3, every repeat judged, scored against master's
       baseline and tolerance. Posts the commit status `evals` and a PR comment with the score table.
       Takes about 75 min and about a day's free-model quota. Run it again on the same head to resume.
-  mesh run-evals --quick <PR url>
-      An early warning only (k=1, a third of the quota): a PR comment, no `evals` status, so it never lets a PR
-      merge. Run it before marking an agent PR AWAITING-MERGE.
+      On alpha-mesh, the queue's gate (mesh eval-rc-q gate) runs it on the promotion PR; see EVAL-RC-Q.md.
+  mesh run-evals --smoke <PR url>
+      The smoke evals: k=1 on the cases in master's eval/smoke.json, scored against the baseline's first repeat.
+      Posts the commit status `evals-smoke` and a PR comment. Run it before marking an agent PR AWAITING-MERGE:
+      mesh merge-pr needs evals-smoke = success to merge an agent PR into the queue.
   mesh run-evals --force-success <PR url> --reason "<why>"
       Sets `evals` = success by hand ("forced: <why>") and records the reason on the PR, for a merge you have
       decided on despite the evals.
   mesh run-evals --help
       Shows this help.
+
+Every run waits for no other: while another mesh run-evals runs, it exits (75). It starts only when the free-model
+requests left today cover it (400 for a full run, 50 for smoke), and logs them in ~/.mesh/quota.log.
 
 Which PRs need it: those that change the review-pull-request agent's src/, eval/promptfoo/ or eval/cases/, or its
 review_config.toml, pyproject.toml, uv.lock, eval/promptfooconfig.yaml or eval/holdout.json. Other PRs pass the
@@ -49,6 +58,54 @@ EOF
 usage() {  # wrong or missing arguments: the help, on stderr
   help_text >&2
   exit 2
+}
+
+# The free-model requests a run needs left today before it starts (PMAT-358). Full: owner's starting threshold
+# (2026-11-24: a full gate is about 330 file-review calls, plus 20%), until ~/.mesh/quota.log measures one gate.
+# Smoke: provisional (19 cases at k=1 is about a tenth of a full run, plus margin).
+MIN_FREE_FULL=400
+MIN_FREE_SMOKE=50
+lock_file="${MESH_RUN_EVALS_LOCK:-$HOME/.mesh/run-evals.lock}"
+quota_log="$HOME/.mesh/quota.log"
+
+# free_remaining: the free-model requests left today, from OpenRouter's /api/v1/key. The token goes on stdin, never
+# on the command line or in the output.
+free_remaining() {
+  local token="${ALPHA_MESH_OPENROUTER_TOKEN:-}"
+  [ -n "$token" ] || token="$(sed -n 's/^ALPHA_MESH_OPENROUTER_TOKEN=//p' "$mesh_dir/.env" 2>/dev/null | tr -d "\"'")"
+  curl -sf --max-time 30 -H @- "${MESH_OPENROUTER_KEY_URL:-https://openrouter.ai/api/v1/key}" \
+    <<<"Authorization: Bearer $token" | jq -r '.data.free_model_daily_requests.remaining // empty'
+}
+
+# start_run <mode full|smoke> <run name>: take the lock and check the quota, or exit 75 having started nothing.
+# The lock is held until this script exits.
+start_run() {
+  local min=$MIN_FREE_FULL
+  [ "$1" = smoke ] && min=$MIN_FREE_SMOKE
+  mkdir -p "$(dirname "$lock_file")" "$(dirname "$quota_log")"
+  exec 9>"$lock_file"
+  if ! flock -n 9; then
+    echo "Not run: another mesh run-evals is running (lock $lock_file). One eval runs at a time: run this again when it ends." >&2
+    exit 75
+  fi
+  quota_before="$(free_remaining || true)"
+  if ! [[ "$quota_before" =~ ^[0-9]+$ ]]; then
+    echo "Not run: could not read the free-model quota left (OpenRouter /api/v1/key). Check the token in .env and the network." >&2
+    exit 75
+  fi
+  echo "$(date -u +%FT%TZ) run=$2 mode=$1 before=$quota_before" >> "$quota_log"
+  if [ "$quota_before" -lt "$min" ]; then
+    echo "Not run: $quota_before free-model requests left today, below the $min a $1 run needs. The quota resets each UTC day: run it after 00:00 UTC." >&2
+    exit 75
+  fi
+  echo "Free-model requests left today: $quota_before (a $1 run needs $min)." >&2
+}
+log_quota_after() {  # log_quota_after <mode> <run name>
+  local after
+  after="$(free_remaining || true)"
+  [[ "$after" =~ ^[0-9]+$ ]] || after=unknown
+  echo "$(date -u +%FT%TZ) run=$2 mode=$1 after=$after used=$([ "$after" = unknown ] && echo unknown || echo $((quota_before - after)))" >> "$quota_log"
+  echo "Free-model requests left after the run: $after." >&2
 }
 
 pending_repo="" pending_sha="" pending_context=""
@@ -77,14 +134,24 @@ on_exit() {
 }
 trap on_exit EXIT
 
-# run_gate <head> <run name> <base ref> [quick]: run the eval at <head> and score it against <base ref>'s baseline
+# run_gate <head> <run name> <base ref> [smoke]: run the eval at <head> and score it against <base ref>'s baseline
 # and tolerance. Leaves the report in $run_dir/gate.md and the verdict in $gate (0 pass, else fail); exits on a run
-# the gate could not score, after posting $context = error on <head> (unless $context is empty: the quick check).
+# the gate could not score, after posting $context = error on <head>. Smoke runs only the cases in <base ref>'s
+# eval/smoke.json, so a PR cannot shrink its own smoke set.
 run_gate() {
-  local head="$1" run="$2" ref="$3" mode="${4:-}" baseline_json tolerance
+  local head="$1" run="$2" ref="$3" mode="${4:-full}" baseline_json tolerance smoke_json=""
   local eval_args=(--judge-repeats all) check_args=()
-  [ "$mode" = quick ] && eval_args=(--k 1 --judge-repeats first) check_args=(--quick)
   baseline_json="$(git -C "$mesh_dir" show "$ref:$agent_rel/eval/baseline.json")"
+  if [ "$mode" = smoke ]; then
+    if ! smoke_json="$(git -C "$mesh_dir" show "$ref:$agent_rel/eval/smoke.json" 2>/dev/null)"; then
+      post_status "$repo" "$head" "$context" error "$ref has no eval/smoke.json"
+      echo "ERROR: $ref has no $agent_rel/eval/smoke.json" >&2
+      exit 1
+    fi
+    local pattern
+    pattern="^($(jq -r '.cases | join("|")' <<<"$smoke_json"))\$"
+    eval_args=(--k 1 --judge-repeats first --filter-pattern "$pattern")
+  fi
   local gate_src msg
   if ! gate_src="$(git -C "$mesh_dir" show "$ref:$agent_rel/eval/scripts/score_eval_run.py" 2>/dev/null)"; then
     # A PR is judged by <base ref>'s rule only: with none there (a rename or a deletion), fail, never use the head's.
@@ -105,17 +172,22 @@ run_gate() {
     exit 1
   fi
   agent="$wt/$agent_rel"
-  [ -e "$wt/.env" ] || ln -s "$mesh_dir/.env" "$wt/.env"
+  [ -e "$wt/.env" ] || [ -L "$wt/.env" ] || ln -s "$mesh_dir/.env" "$wt/.env"  # -L: a dangling link is there too
   mkdir -p "$HOME/.mesh/eval-runs"
   [ -e "$agent/eval/runs" ] || ln -s "$HOME/.mesh/eval-runs" "$agent/eval/runs"
   (cd "$agent" && uv sync -q)
   run_dir="$agent/eval/runs/$run"
   mkdir -p "$run_dir"
   printf '%s\n' "$baseline_json" > "$run_dir/baseline-${ref##*/}.json"
-  echo "Eval gate: ${head:0:7}, run $run, tolerance $tolerance (worktree $wt)" >&2
+  if [ -n "$smoke_json" ]; then
+    printf '%s\n' "$smoke_json" > "$run_dir/smoke-${ref##*/}.json"
+    check_args=(--quick --cases "$run_dir/smoke-${ref##*/}.json")
+  fi
+  echo "Eval gate: ${head:0:7}, run $run, $mode, tolerance $tolerance (worktree $wt)" >&2
 
   # The eval's own exit code says only whether every case passed; the gate decides.
   "$agent/eval/scripts/run_eval.sh" --run "$run" "${eval_args[@]}" || true
+  log_quota_after "$mode" "$run"
   gate=0
   rm -f "$run_dir/gate.md"  # a report left by an earlier gate run on this head must never be posted as this one's
   # Score with <base ref>'s rule, not the PR's: its score_eval_run.py and the write_baseline.py it counts passes with
@@ -155,17 +227,25 @@ case "${1:-}" in
     echo "evals = success (forced) on $head." >&2
     exit 0 ;;
 
-  --quick)
+  --smoke)
     [ $# -eq 2 ] && [[ "$2" =~ $pr_re ]] || usage
     url="$2" repo="${BASH_REMATCH[1]}" number="${BASH_REMATCH[2]}"
     read -r state head base < <(gh pr view "$url" --json state,headRefOid,baseRefName \
       | jq -r '"\(.state) \(.headRefOid) \(.baseRefName)"')
     [ "$state" = OPEN ] || { echo "Not run: the PR is not open (it is $state)." >&2; exit 1; }
+    run="smoke-pr$number-${head:0:7}"
+    start_run smoke "$run"
     git -C "$mesh_dir" fetch -q origin "$base" "pull/$number/head"
-    context=""  # an early warning only: it never posts evals, so it can never let a PR merge
-    run_gate "$head" "quick-pr$number-${head:0:7}" "origin/$base" quick
-    { echo "**mesh run-evals --quick** on \`${head:0:7}\`: an early warning (k=1), **not the gate**. It catches only a"
-      echo "large drop; the full gate runs at merge (\`mesh merge-pr\` offers it)."; echo; cat "$run_dir/gate.md"
+    context=evals-smoke  # never `evals`: the full gate runs on the queue (mesh eval-rc-q gate)
+    post_status "$repo" "$head" evals-smoke pending "mesh run-evals --smoke is running on ${head:0:7}"
+    run_gate "$head" "$run" "origin/$base" smoke
+    if [ "$gate" -eq 0 ]; then
+      post_status "$repo" "$head" evals-smoke success "$summary"
+    else
+      post_status "$repo" "$head" evals-smoke failure "$summary"
+    fi
+    { echo "**mesh run-evals --smoke** on \`${head:0:7}\` (run \`$run\`): the smoke evals, **not the full gate**,"
+      echo "which runs on the queue eval-rc-q/current (EVAL-RC-Q.md)."; echo; cat "$run_dir/gate.md"
     } > "$run_dir/gate-comment.md"
     gh pr comment "$url" --body-file "$run_dir/gate-comment.md" >/dev/null
     cat "$run_dir/gate.md"
@@ -193,6 +273,7 @@ if [ "$behind" != "0" ]; then
   exit 1
 fi
 
+start_run full "gate-pr$number-${head:0:7}"
 git -C "$mesh_dir" fetch -q origin "$base" "pull/$number/head"
 context=evals
 post_status "$repo" "$head" evals pending "mesh run-evals is running on ${head:0:7}"
