@@ -97,6 +97,8 @@ def gate_cases() -> list[dict]:
 def smoke_cases(path: Path) -> list[dict]:
     """The development cases a smoke list (eval/smoke.json) names; exits on a name that is not a development case."""
     names = json.loads(path.read_text())["cases"]
+    if not names:
+        sys.exit(f"{path}: no cases")
     dev = {c["case_id"]: c for c in gate_cases()}
     if bad := sorted(set(names) - set(dev)):
         sys.exit(f"{path}: not development cases: {', '.join(bad)}")

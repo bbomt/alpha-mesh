@@ -85,11 +85,19 @@ promote() {
     exit 1
   fi
   sha="$(gh pr view "$mq_promo_url" --json headRefOid | jq -r .headRefOid)"
-  subjects="$(mq_batch_subjects "$(mq_compare "$repo")")"
-  tickets="$(grep -oE '[A-Z][A-Z0-9]+-[0-9]+' <<<"$subjects" | awk '!seen[$0]++' | paste -sd, - | sed 's/,/, /g')"
-  prs="$(grep -oE '\(#[0-9]+\)$' <<<"$subjects" | tr -d '()' | paste -sd, - | sed 's/,/, /g')"
+  local cmp
+  cmp="$(mq_compare "$repo")"
+  # The gate merged master in; if master moved since (a hotfix during the gate), the gated tree is not what master
+  # would get. Refuse before merging: gate again, which merges master in and re-runs the gate on the new head.
+  if [ "$(jq -r .behind_by <<<"$cmp")" != 0 ]; then
+    echo "Not promoted: $mq_default moved since the gate merged it in (a hotfix?). Run mesh eval-rc-q gate again." >&2
+    exit 1
+  fi
+  subjects="$(mq_batch_subjects "$cmp")"
+  tickets="$( { grep -oE '[A-Z][A-Z0-9]+-[0-9]+' <<<"$subjects" || true; } | awk '!seen[$0]++' | paste -sd, - | sed 's/,/, /g')"
+  prs="$( { grep -oE '\(#[0-9]+\)$' <<<"$subjects" || true; } | tr -d '()' | paste -sd, - | sed 's/,/, /g')"
   tag="$(next_tag)"
-  subject="chore[$tag]: promoted $tickets ($prs)"
+  subject="chore[$tag]: promoted ${tickets:-the batch}${prs:+ ($prs)}"
   gh pr ready "$mq_promo_url" >/dev/null
   gh pr checks "$mq_promo_url" --required --watch >/dev/null 2>&1 || true  # the merge below fails if one failed
   gh pr merge "$mq_promo_url" --merge --match-head-commit "$sha" --subject "$subject" \

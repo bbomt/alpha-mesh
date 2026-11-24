@@ -64,3 +64,10 @@ def test_the_cli_refuses_a_smoke_list_with_a_case_that_is_not_a_development_case
     bad.write_text(json.dumps({"cases": [sorted(case_rules.holdout_ids())[0]]}))
     with pytest.raises(SystemExit, match="not development cases"):
         score_eval_run.smoke_cases(bad)
+
+
+def test_the_cli_refuses_an_empty_smoke_list(tmp_path):
+    empty = tmp_path / "smoke.json"
+    empty.write_text(json.dumps({"cases": []}))
+    with pytest.raises(SystemExit, match="no cases"):
+        score_eval_run.smoke_cases(empty)

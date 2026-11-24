@@ -81,7 +81,11 @@ if [ -n "$mq_branch" ] && [[ "$head_ref" != hotfix/* ]]; then
     echo "Ask the worker to merge origin/$mq_branch into the branch, resolve, rerun its tests and push (EVAL-RC-Q.md)." >&2
     exit 1
   fi
-  gh pr merge "$url" --squash --match-head-commit "$head"
+  if ! gh pr merge "$url" --squash --match-head-commit "$head"; then
+    gh pr edit "$url" --base "$mq_default" >/dev/null || true
+    echo "Not merged: the squash merge into $mq_branch failed (above); the PR's base is back to $mq_default." >&2
+    exit 1
+  fi
   if [ -z "$mq_promo_url" ]; then
     mq_promo_url="$(gh pr create -R "$repo" --draft --base "$mq_default" --head "$mq_branch" --label eval-rc:filling \
       --title "eval-rc-q: promote the queued batch into $mq_default" \

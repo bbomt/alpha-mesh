@@ -45,6 +45,7 @@ case "$1 $2" in
         "$(cat "$d/state")" "$(cat "$d/head")" "$(cat "$d/base")" "$(cat "$d/headref")" "$(cat "$d/mergeable")" "$(cat "$d/title")"
     fi ;;
   "pr list")
+    [ -z "${STUB_LIST_FAIL:-}" ] || { echo "gh: HTTP 502" >&2; exit 1; }
     if [[ "$*" == *"--head eval-rc-q/current"* ]]; then
       if [ -d "$S/promo" ]; then
         printf '[{"number":90,"url":"https://github.com/q/r/pull/90","labels":[{"name":"bug"},{"name":"eval-rc:%s"}]}]\n' "$(cat "$S/promo/label")"
@@ -72,6 +73,7 @@ case "$1 $2" in
       echo "tree-$(qhead)" > "$S/master-tree"; [ -z "${STUB_TREE_MISMATCH:-}" ] || echo other > "$S/master-tree"
       rm -rf "$S/promo"
     else  # pr merge <url> --squash --match-head-commit <sha>
+      [ -z "${STUB_SQUASH_FAIL:-}" ] || { echo "gh: Head branch was modified" >&2; exit 1; }
       [ "$(cat "$S/pr/$n/base")" = eval-rc-q/current ] || [[ "$(cat "$S/pr/$n/headref")" == hotfix/* ]] || [ -n "${STUB_NO_QUEUE:-}" ] \
         || { echo "stub: merged into $(cat "$S/pr/$n/base")" >&2; exit 1; }
       if [ "$(cat "$S/pr/$n/base")" = eval-rc-q/current ]; then
@@ -262,6 +264,19 @@ check "AT5: then tags eval-rc-q-<date>-1 on the merge commit and deletes the bra
   bash -c 'grep -qx "eval-rc-q-$0-1 $(cat "$1/master")" "$1/tags" && [ ! -d "$1/queue" ] && [ ! -d "$1/promo" ]' "$TODAY" "$S"
 check "AT5: after it, master's tree equals the gated tree" bash -c '[ "$(cat "$0/master-tree")" = "tree-$1" ]' "$S" "$gated"
 
+# A promotion refuses, before merging, when master moved after the gate merged it in (R75-a56ba29-002).
+add_pr 41 README.md; mesh merge-pr "$(ticket 41)"
+echo gating > "$S/promo/label"; echo 1 > "$S/queue/behind"
+mesh eval-rc-q promote
+check "promote refuses and merges nothing when master moved since the gate" \
+  bash -c '[ "$0" -ne 0 ] && ! grep -q "gh pr merge" "$1" && grep -qi "master moved" <<<"$2" && [ -d "$3/promo" ]' "$code" "$STUB_LOG" "$out" "$S"
+echo 0 > "$S/queue/behind"
+# A batch whose subjects name no ticket or PR still promotes (R75-a56ba29-004).
+sed -i 's/.*/1|chore: tidy/' "$S/queue/commits"
+mesh eval-rc-q promote
+check "promote works when no commit subject names a ticket or a PR" \
+  bash -c '[ "$0" -eq 0 ] && grep -qF "gh pr merge https://github.com/q/r/pull/90 --merge" "$1"' "$code" "$STUB_LOG"
+
 # AT6 after a promotion, the next merge creates a fresh queue from the new master; a second promotion the same day is -2.
 add_pr 17 README.md
 mesh merge-pr "$(ticket 17)"
@@ -317,6 +332,18 @@ add_pr 23 "$AGENT_FILE" hotfix/PMAT-23-agent
 mesh merge-pr "$(ticket 23)"
 check "AT7: an agent hotfix still needs the full evals status, as today" \
   bash -c '[ "$0" -ne 0 ] && ! grep -q "gh pr merge" "$1" && grep -qF "mesh run-evals https://github.com/q/r/pull/23" <<<"$2"' "$code" "$STUB_LOG" "$out"
+
+# A gh failure reading the promotion PR is never taken for "no queue" (R75-a56ba29-006).
+fresh; add_pr 51 README.md; mesh merge-pr "$(ticket 51)"; echo gating > "$S/promo/label"
+add_pr 52 README.md
+STUB_LIST_FAIL=1 mesh merge-pr "$(ticket 52)"
+check "when gh cannot list the promotion PR, merge-pr stops and merges nothing" \
+  bash -c '[ "$0" -ne 0 ] && ! grep -q "gh pr merge\|gh pr edit\|gh pr create" "$1"' "$code" "$STUB_LOG"
+# A squash merge that fails after the base moved puts the base back (R75-a56ba29-007).
+echo filling > "$S/promo/label"
+STUB_SQUASH_FAIL=1 mesh merge-pr "$(ticket 52)"
+check "a failed squash merge into the queue moves the PR's base back to master" \
+  bash -c '[ "$0" -ne 0 ] && [ "$(cat "$1/pr/52/base")" = master ]' "$code" "$S"
 
 # A repo with no queue merges straight into its base, as before.
 printf '{"queues": {}}\n' > "$MESH_MERGE_QUEUE_CONFIG"
