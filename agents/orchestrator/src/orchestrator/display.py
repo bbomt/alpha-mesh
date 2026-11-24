@@ -34,6 +34,11 @@ def needs(s: dict, t: Ticket | None, pr: Pr | None, alive: bool, now: datetime, 
     """What the owner must do for this worker, and the colour to show it in."""
     if not alive:
         return "resuming the worker", YELLOW
+    if pausing := s.get("pausing"):  # PMAT-355
+        if not (warned := pausing.get("warned_at")):
+            return f"pause pending (busy): {pausing['reason']}", DIM
+        left = grace_minutes - int((now - datetime.fromisoformat(warned)).total_seconds() // 60)
+        return f"pausing in {max(left, 0)}m: {pausing['reason']} (type in the tab to keep it)", YELLOW
     if busy:  # working, or its background command runs: not waiting on the owner (it may be about to push)
         return "", ""
     if s.get("jira_lost"):  # set by the worker, cleared by its hook on the next working call (jira-access.sh)
@@ -85,7 +90,8 @@ def checking(elapsed: float, deadline: float) -> str:
 def render(keys: list[str], statuses: dict[str, dict], tickets: dict[str, Ticket], prs: dict[str, Pr | None],
            alive: set[str], events: list[tuple[datetime, str]], now: datetime, next_in: int | None,
            grace_minutes: int, color: bool = True, background: set[str] = frozenset(),
-           disk: float | None = None, queued: list[str] = (), checking: str = "") -> str:
+           disk: float | None = None, queued: list[str] = (), checking: str = "", cap: int | None = None,
+           priority: str | None = None, paused: set[str] = frozenset()) -> str:
     """`checking`, while a Jira check runs, replaces the countdown in the header."""
     def paint(text: str, code: str) -> str:
         return f"{code}{text}{RESET}" if color and code and text else text
@@ -104,7 +110,8 @@ def render(keys: list[str], statuses: dict[str, dict], tickets: dict[str, Ticket
               "  ".join(paint(text.ljust(w), code) for (text, code), w in zip(r, widths))) for r in rows]
     table[0] = (table[0][0], paint(table[0][0], DIM))
 
-    head = (f"{len(keys)} worker{'s' if len(keys) != 1 else ''} · checked {now.astimezone():%H:%M:%S} · "
+    workers = f"Workers {len(keys)}/{cap}" if cap else f"{len(keys)} worker{'s' if len(keys) != 1 else ''}"
+    head = (f"{workers}{f' · priority {priority}' if priority else ''} · checked {now.astimezone():%H:%M:%S} · "
             f"{checking or f'next check in {next_in}s'}")
     full = disk is not None and disk >= DISK_FULL
     if disk is not None:  # the fraction of the home disk in use; red when nearly full, before installs and tests fail
@@ -112,7 +119,10 @@ def render(keys: list[str], statuses: dict[str, dict], tickets: dict[str, Ticket
     recent = [f"{when.astimezone():%H:%M:%S}  {text[:EVENT_WIDTH]}" for when, text in reversed(events)]
     sections = [("mesh orchestrate", [(head, paint(head, RED if full else DIM))]),
                 ("Workers", table if keys else [("(none)", paint("(none)", DIM))]),
-                *([("Queue", [(line, line) for line in (f"{i}. {k}" for i, k in enumerate(queued, 1))])] if queued else []),
+                *([(f"Queue (max workers {cap})" if cap else "Queue",
+                    [(line, line) for line in (f"{i}. {k}{'  priority' if k == priority else ''}"
+                                               f"{'  paused' if k in paused else ''}"
+                                               for i, k in enumerate(queued, 1))])] if queued else []),
                 ("Recent", [(r, paint(r, RED if "failed" in r else DIM)) for r in recent] or [("(nothing yet)", paint("(nothing yet)", DIM))])]
     inner = max(len(plain) for _, lines in sections for plain, _ in lines)
     inner = max(inner, *(len(title) + 2 for title, _ in sections))

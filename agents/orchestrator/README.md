@@ -79,9 +79,11 @@ sums them up as they stood on 2026-10-23.
   (a prompt in the tab); NEEDS YOU appears only while the worker is at its prompt. The header shows disk use,
   in red from 90%.
 - **Closes Done tabs** after a 5-minute warning (typing in the tab keeps it), then runs `git worktree prune`.
-- **Caps running workers** at `--max-workers` (default 3; this machine has 3.8 GB of RAM). Further tickets wait
-  in a queue, in command-line order, and the next one starts on the check after a worker finishes (its tab
-  closed, or kept by the owner). Resumed workers count toward the cap; the queue survives a restart.
+- **Caps running workers** at `--max-workers` (default 3; this machine has 3.8 GB of RAM), kept until changed.
+  Further tickets wait in a queue, in command-line order, and the next one starts on the check after a worker
+  finishes (its tab closed, or kept by the owner). Resumed workers count toward the cap; the queue survives a
+  restart. Workers above a lowered cap are **paused** (see [Cap, pause and priority](#cap-pause-and-priority-pmat-355)).
+- **Runs one priority ticket** (`--priority`) first, pausing a worker to make room (one at its prompt first).
 - **Never writes Jira and never merges.** Ticket keys must look like `PMAT-282`. One copy runs at a time.
 
 ### Not part of the process
@@ -107,19 +109,71 @@ mesh orchestrate --repo-dir ~/environment/pmat/alpha-mesh PMAT-282 PMAT-283   # 
 mesh orchestrate                     # after a reboot: reopen and resume the workers, then keep watching
 ```
 
-Options: `--repo-dir DIR` (required with tickets), `--max-workers N` (default 3: tickets beyond it wait in
-the Queue box), `--interval SECONDS` (default 30).
+Options: `--repo-dir DIR` (required with tickets), `--max-workers N` (default 3, kept until changed: tickets
+beyond it wait in the Queue box, and workers above it are paused), `--priority TICKET` (the one ticket to run
+first), `--interval SECONDS` (default 30).
 
 `bin/orchestrate.sh` runs `uv sync` once, then the venv's Python directly rather than `uv run`, which would hold
 uv's lock as long as the orchestrator runs (so `uv sync` and `uv cache prune` elsewhere would wait on it).
 
 Tickets from several repos: a running ticket keeps the folder it started in (its PRs are looked up there), so
-to add tickets from another repo, Ctrl-C and run `mesh orchestrate --repo-dir ~/environment/pmat/<other-repo> KEY ...`.
+to add tickets from another repo, run `mesh orchestrate --repo-dir ~/environment/pmat/<other-repo> KEY ...`
+(also while one runs: they join its queue).
 Each worker first checks that its ticket belongs to the repo it was started in, and asks on Jira if not.
 
-Only one copy runs at a time (a lock in `~/environment/logs/orchestrator/`): a second `mesh orchestrate`
-says so and exits, since two would both type into the same tabs. Stopping it (Ctrl-C) and starting it again is
-safe at any time; it picks up from the status files, Jira, GitHub and tmux.
+Only one copy runs at a time (a lock in `~/environment/logs/orchestrator/`), since two would both type into the
+same tabs. A second `mesh orchestrate` with `--max-workers`, `--priority` or tickets is a **settings change**: it
+writes them to the orchestrator's files (cap, priority, queue), prints what changed and "The running orchestrator
+uses it from its next check.", and exits 0. With none of these it says the orchestrator is already running and
+exits 1. Stopping it (Ctrl-C) and starting it again is safe at any time; it picks up from the status files, Jira,
+GitHub and tmux.
+
+### Cap, pause and priority (PMAT-355)
+
+To work on one ticket alone, whatever the queue order, while the orchestrator runs:
+
+```bash
+mesh orchestrate --max-workers 1 --priority PMAT-290                     # PMAT-290 queued or running
+mesh orchestrate --priority PMAT-291 --repo-dir ~/environment/pmat/alpha-mesh   # a new ticket needs its folder
+```
+
+- **The cap** is stored in `cap.txt` and used from the next check, by a running orchestrator or after a restart.
+- **Ticket order** (`order.txt`): tickets keep the order they were added to the orchestrator in, and that
+  order never changes; only `--priority` puts one first, and pausing a ticket does not move it (owner, PMAT-355
+  comment 13928). Tickets already running when this was added join it by when they started (for older workers,
+  their first hook). For example, tickets [A, B, C] then `--priority P --max-workers 2` give
+  [P, A, B (paused), C (paused)].
+- **Which worker is paused:** at each check, while more workers run than the cap, or while the priority ticket
+  waits with every slot taken, a worker at its prompt is chosen first, as it can be warned now and frees a slot
+  soonest (owner, PMAT-355): the latest in the ticket order among those. Only if every candidate is busy is the
+  latest busy one chosen, and the choice is made again each check, so it moves to whichever reaches its prompt
+  first. For example, with B busy, [A, B, C] then `--priority P --max-workers 2` give [P, A (paused), B, C (paused)]. The priority ticket is never chosen, nor a worker whose pause the
+  owner cancelled. A worker in its pause grace, or closing as Done, counts as running until its tab closes, so a
+  check never pauses two workers for one slot. A pause not yet warned is dropped if no longer needed (the cap
+  was raised).
+- **How:** like the Done close. Once the worker is at its prompt (while all candidates are busy, NEEDS YOU says
+  `pause pending (busy)`), a warning is typed into its tab: stop any running processes, and post a `MESSAGE-FROM-WORKER` comment
+  on its ticket with its current status (paused by the orchestrator, where it stopped, its next step). The tab
+  closes 5 minutes later. If the owner types in the tab during the grace, the pause is cancelled and the worker
+  is never paused again while it runs; the next check picks another worker by the same rule. No Jira
+  comment is passed on during the grace (it would count as the owner typing). If the worker's comment isn't on
+  Jira when the tab closes, the event says so.
+- **Paused tickets** keep their status file, `launch_dir` and Claude session id, are marked `paused` (so the
+  missing-tab path leaves them alone), and wait in the queue in their own place in the ticket order (the priority
+  ticket first). When a slot frees up, the first ticket in the queue starts, or, if paused, resumes: its tab reopens with
+  `claude --resume <same id>` in its own folder, telling the worker it was paused and to read its Jira comment
+  (named by ID) first. A paused ticket is never started afresh.
+- **`--priority TICKET`:** there is one priority ticket at a time, stored in `priority.txt`. A queued or paused
+  ticket moves to the front; a new one (with `--repo-dir`) goes there; a running one is only marked. A newer
+  `--priority` takes the mark, and the old ticket is an ordinary one from then on: if every slot is taken, it may
+  be the worker paused to make room (to keep it running too, raise the cap, e.g. `--max-workers 2 --priority Y`).
+  The mark is cleared once the priority ticket has finished.
+- **Events:** `PMAT-X: pausing (cap N | room for priority PMAT-Y), closing in 5 min`, `PMAT-X: paused`,
+  `PMAT-X: pause cancelled (owner typed)`, `PMAT-X: paused without a Jira comment`, `PMAT-X: resumed after
+  pause`, `PMAT-X: priority, moved to the front of the queue`, `cap set to N`.
+- Every change to the queue and the priority holds `queue.lock`, so a second copy's change never races a start
+  or a pause.
+- Out of scope: pausing a worker by hand, or without waiting for its prompt (PMAT-360, `--force-stop`).
 
 Each tick, per ticket:
 
@@ -177,7 +231,7 @@ check each second):
 
 ```
 ┌─ mesh orchestrate ───────────────────────────────────────────────────────────────────────────────┐
-│ 2 workers · checked 16:12:28 · next check in 30s                                                 │
+│ Workers 2/3 · checked 16:12:28 · next check in 30s                                               │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
 ┌─ Workers ────────────────────────────────────────────────────────────────────────────────────────┐
 │ TICKET    WORKER   FOR  JIRA  PR                                                NEEDS YOU        │
@@ -201,8 +255,11 @@ check each second):
   workers green, idle ones dim.
 - **NEEDS YOU** (shown only while the worker is at its prompt; a working worker isn't waiting on you): `▶ answer on Jira`, `▶ merge PR #N` (then `▶ tell the worker PR #N is merged`), `▶ check the tab: <message>` (a permission prompt or any
   notification other than the 60-second idle one), `▶ Jira lost: in tab <KEY> run /mcp (may need a browser login), then type "continue"`
-  (the worker lost its Atlassian connector, see below; it goes when the worker's next Jira call works), the close countdown, or `resuming the worker`.
-- **Queue:** tickets waiting for a free worker (`--max-workers`), in the order they start; hidden when empty.
+  (the worker lost its Atlassian connector, see below; it goes when the worker's next Jira call works), the close countdown, `resuming the worker`,
+  `pause pending (busy): <reason>` (shown even while it works) or the pause countdown.
+- **Header:** `Workers <running>/<cap>`, then `priority <KEY>` while there is a priority ticket.
+- **Queue (max workers N):** tickets waiting for a free worker, in the order they start, marked `priority` and
+  `paused`; hidden when empty.
 - **Recent:** the last 10 events, newest first, each cut to 110 characters so the boxes stay one screen wide. Every event is also appended to
   `~/environment/logs/orchestrator/events.log`, and the last 10 are shown again after a restart.
 
@@ -239,7 +296,8 @@ a worker by answering in its tab and telling it not to post to Jira.
 - `src/orchestrator/jira.py`: read-only Jira through the Atlassian MCP server (`https://mcp.atlassian.com/v2/mcp`).
 - `src/orchestrator/status.py`: the per-ticket status files, `~/environment/logs/orchestrator/<KEY>.json`,
   shared with the hooks under the same lock, and the queue, `~/environment/logs/orchestrator/queue.txt`
-  (one `KEY FOLDER` line per waiting ticket).
+  (one `KEY FOLDER` line per waiting ticket), with `cap.txt`, `priority.txt` and `order.txt` beside it, all
+  changed under `queue.lock`.
 - `src/orchestrator/tmux.py`: the tabs, named by ticket key, in the tmux session the orchestrator runs in.
 - `settings.json`: the settings every worker is started with (`--settings`):
   - the status hooks (`SessionStart` → started, except that a compact or `/clear` keeps the state,
@@ -289,7 +347,12 @@ The orchestrator drives programs, not libraries: `tmux` (the tabs), `claude` (st
   status file name (`~/environment/logs/orchestrator/<KEY>.json`) and part of the `claude ...` command tmux
   runs, so `../x` or `PMAT-1;rm -rf ~` must never get through.
 - The one string a shell runs (the `claude ...` command in the new tab) quotes every value with `shlex.quote`.
-- Text typed into a tab is a fixed template plus Jira comment IDs, sent with `send-keys -l` (literally).
+- Text typed into a tab is a fixed template plus Jira comment IDs, the cap (an int) and ticket keys (checked as
+  above), sent with `send-keys -l` (literally). The resume-after-pause prompt, which names the worker's Jira
+  comment ID, is part of the `claude ...` command, so it is `shlex.quote`d like every other value there.
+- `--priority` is checked as a ticket key before it is stored. The orchestrator's own files (`cap.txt`,
+  `priority.txt`, `order.txt`, `queue.txt`) are written only by `mesh orchestrate`, as atomic replaces under
+  `queue.lock`. Worker sandboxes cannot write `~/environment/logs/` (see `settings.json`).
 
 ## Limits (v1)
 
