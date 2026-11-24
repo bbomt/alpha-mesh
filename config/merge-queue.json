@@ -1,0 +1,11 @@
+{
+  "about": "Repos whose PRs reach their default branch through a batch queue (PMAT-358, EVAL-RC-Q.md). mesh merge-pr queues a listed repo's PRs; mesh eval-rc-q gates the batch and squash-merges each passing PR. jira: the ticket that gets the queue's own notes (a gate stopped for the owner). A repo not listed merges straight into its base, as before.",
+  "queues": {
+    "bbomt/alpha-mesh": {
+      "branch": "eval-rc-q/current",
+      "default": "master",
+      "batch_size": 4,
+      "jira": "PMAT-358"
+    }
+  }
+}

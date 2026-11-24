@@ -603,31 +603,32 @@ flowchart TD
   G -- yes --> I["check passes: the merge button (or mesh merge-pr) may merge"]
 ```
 
-**The steps for an agent PR.** The full run is expensive (about a day's free quota), so it runs once, at merge time,
-after the team lead has accepted the rest of the ticket's code. Before that, the worker runs the quick check:
+**The steps for an agent PR (PMAT-358).** The full run is expensive (about a day's free quota), so it runs once per
+batch of up to 4 queued PRs, on the queue `eval-rc-q/current` ([`EVAL-RC-Q.md`](../../../EVAL-RC-Q.md)), not on each
+PR; a failing PR is dropped from the batch by a fluke check and a bisect on the cases that lost runs
+(`score_eval_run.py --regressed`, `mesh run-evals --cases`). Each agent PR runs the smoke evals first:
 
 ```bash
-mesh run-evals --quick https://github.com/bbomt/alpha-mesh/pull/<n>   # the worker, before AWAITING-MERGE: k=1, a third
-                                                                      #   of the quota; a PR comment, never a status
-gh pr checks https://github.com/bbomt/alpha-mesh/pull/<n>             # anyone: the PR's checks, evals-gate among them
-mesh merge-pr https://github.com/bbomt/alpha-mesh/pull/<n>            # the team lead: if the evals are all that is
-                                                                      #   missing, it offers to run them, then merges [y/N]
-mesh run-evals https://github.com/bbomt/alpha-mesh/pull/<n>           # the full run on its own: about 75 min; again: resumes
+mesh run-evals --smoke https://github.com/bbomt/alpha-mesh/pull/<n>   # the worker, before AWAITING-MERGE: k=1 on
+                                                                      #   eval/smoke.json; posts evals-smoke
+mesh merge-pr https://github.com/bbomt/alpha-mesh/pull/<n>            # the team lead: needs evals-smoke = success;
+                                                                      #   queues the PR (it stays open)
+mesh eval-rc-q gate                                                   # the team lead (or tonight's cron): the full
+                                                                      #   run on the batch PR, drops, then merges each PR
 ```
 
-Without a terminal (a worker), `mesh merge-pr` refuses instead and prints the same report: a verdict, then `OK` or
-`BLOCKED` per item, then the next command.
+`mesh merge-pr` refuses an agent PR without `evals-smoke` and prints the report: a verdict, then `OK` or `BLOCKED`
+per item, then the next command.
 
 ```
+Not queued:
 Merge status for PR #<n> (head 1a2b3c4): BLOCKED by 1 item
 
-  OK       the PR is open
-  OK       it is up to date with master
-  OK       it changes 1 agent file(s), so it needs a passing evals status
+  OK       it changes 1 agent file(s), so it needs a passing evals-smoke status
            agents/review-pull-request/src/review_pull_request/prompts/per_file.md
-  BLOCKED  evals have not run on head 1a2b3c4
+  BLOCKED  evals-smoke have not run on head 1a2b3c4
 
-Next: mesh run-evals https://github.com/bbomt/alpha-mesh/pull/<n>
+Next: mesh run-evals --smoke https://github.com/bbomt/alpha-mesh/pull/<n>
 ```
 
 Also:
@@ -672,17 +673,22 @@ uv run python eval/scripts/score_eval_run.py eval/runs/<run>   # the gate rule o
   about two. Both are provisional, like `TOLERANCE`.
 - **Reported, not gating yet** (the owner switches them on): security misses, failing `style_only` runs, and the
   judge's means against PMAT-311's provisional proposal.
-- **The quick check (`mesh run-evals --quick`)** runs each case once (k=1, 65 reviews, only the judge's first
-  repeat) and compares it with the baseline's first repeat, with the tolerance scaled down to 6 (`quick_tolerance`: the
-  noise grows with the square root of the runs), and the judge's tolerances scaled up by √3 (0.43 and 0.21,
-  `quick_judge_tolerance`: a mean over a third of the runs is noisier) against the baseline's means. Each of the 9
-  noise-test repeats passes the judge rule. A single repeat is noisy: across the 9 repeats of the three noise-test
-  runs it passed 43 to 54 of 65, so on unchanged code about 1 quick check in 10 warns for nothing. It catches a large
-  drop early and cheaply, and posts only a PR comment: it can never let a PR merge.
+- **The smoke evals (`mesh run-evals --smoke`, PMAT-358)** run the 19 cases in `eval/smoke.json` once (k=1, only the
+  judge's first repeat: every dev security and `style_only` case, and some from each folder, never a hold-out case).
+  They are scored on those cases only (`score_eval_run.py --quick --cases`) against the baseline's first repeat, the
+  tolerance scaled to the smaller run (`quick_tolerance`: the noise grows with the square root of the runs; 10 runs ->
+  3 on 19 of 65 cases at k=1) and the judge's tolerances scaled up the same way (`quick_judge_tolerance`: 0.25 -> 0.80,
+  0.12 -> 0.38). A small k=1 run is noisy: on unchanged code it fails now and then, so rerun a failed smoke once
+  before reading it as a regression. They post `evals-smoke`, which `mesh merge-pr` needs for an agent PR to go into
+  the queue; never `evals`, so they cannot promote anything. `mesh run-evals --smoke` reads master's smoke list, so a
+  PR cannot shrink its own.
 - **Cost:** the agent is free; the judge is about $0.005 per judged run, so about $1 per gate run. **Time:** about
   75 min (`PMAT-312-aa1`: 1 h 16 min at concurrency 8). **Quota:** a full run uses about a day's free-model quota
   on OpenRouter (`free-models-per-day-high-balance`; the second noise-test run on 2026-11-13 hit it after 32 minutes), shared
-  with every `mesh review-pull-request`. Run `mesh run-evals` again after the reset: it resumes.
+  with every `mesh review-pull-request`. Run `mesh run-evals` again after the reset: it resumes. Since PMAT-358 a run
+  starts only when the free requests left today cover it (400 full, 50 smoke, from OpenRouter's `/api/v1/key`), one
+  run at a time on the box (a lock), and `~/.mesh/quota.log` records the quota before and after each run, so the
+  real cost of a gate gets measured; a run not started exits 75.
 - **GitHub blocks the merge, whoever merges.** The required check `evals-gate` (`.github/workflows/evals-gate.yml`)
   runs on every PR and push, in seconds, with no model call: `check_pr_evals.py --evals-only` passes a
   PR that changes no agent file at once, and an agent PR only when `evals` = success on its head (or carried over).

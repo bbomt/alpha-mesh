@@ -1,0 +1,24 @@
+{
+  "about": "The smoke evals (PMAT-358): mesh run-evals --smoke runs these development cases at k=1. Every dev security and style_only case, and 4 or more each from alpha-mesh and public. Never a hold-out case (eval/tests/test_smoke.py).",
+  "cases": [
+    "sec-001",
+    "sec-002",
+    "sec-004",
+    "sec-005",
+    "sec-007",
+    "sec-008",
+    "sty-002",
+    "sty-004",
+    "sty-005",
+    "sty-006",
+    "R36-812f904-001",
+    "R37-1fbb920-001",
+    "R45-02d37e7-001",
+    "R45-fee8a9a-001",
+    "R45-fee8a9a-018",
+    "pub-ansible-66192",
+    "pub-httpx-307",
+    "pub-trio-1832",
+    "pub-typeorm-6889"
+  ]
+}

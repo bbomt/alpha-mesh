@@ -2,6 +2,7 @@
 
     python3 eval/scripts/check_pr_evals.py https://github.com/<owner>/<repo>/pull/<n>   # exit 0: may merge
     python3 eval/scripts/check_pr_evals.py --evals-only <PR url>   # the evals items only (the job)
+    python3 eval/scripts/check_pr_evals.py --evals-only --smoke <PR url>   # evals-smoke instead (PMAT-358)
 
 `mesh merge-pr` merges only when nothing in the report blocks, and prints it when it refuses. The workflow `.github/workflows/evals-gate.yml` runs it with `--evals-only` on every PR: GitHub then blocks
 the merge itself (the check is required on master), whoever merges.
@@ -11,6 +12,9 @@ saying in words what it found; then, when blocked, the next command. The items, 
 date with its base; and, when the PR changes a gated file (list_evals_gated_files.py), `evals` = success on its head
 (posted by `mesh run-evals` on the dev box), or on an older commit of the PR with no gated file changed since. A PR
 that changes no gated file needs no evals. Standard library only: `mesh merge-pr` runs it with the system python3.
+
+--smoke checks the status `evals-smoke` (posted by `mesh run-evals --smoke`) instead of `evals`: what `mesh merge-pr`
+needs before it merges an agent PR into the queue eval-rc-q/current, whose gate then runs the full evals (PMAT-358).
 """
 
 from __future__ import annotations  # the system python3 that mesh merge-pr uses may be older than 3.10
@@ -42,22 +46,23 @@ def _status(gh, repo: str, ref: str, context: str) -> tuple[str, str]:
     return (found["state"], found.get("description") or "") if found else ("missing", "")
 
 
-def _evals_line(state: str, desc: str, head: str) -> str:
+def _evals_line(state: str, desc: str, head: str, context: str = "evals") -> str:
     at = f"head {head[:7]}"
-    return {"success": f"evals passed on {at}",
-            "failure": f"evals failed on {at}",
-            "pending": f"evals are still running on {at} (or stopped without a verdict)",
-            "error": f"evals stopped with an error on {at}",
-            "missing": f"evals have not run on {at}"}.get(state, f"evals on {at}: {state}") + (f": {desc}" if desc else "")
+    return {"success": f"{context} passed on {at}",
+            "failure": f"{context} failed on {at}",
+            "pending": f"{context} are still running on {at} (or stopped without a verdict)",
+            "error": f"{context} stopped with an error on {at}",
+            "missing": f"{context} have not run on {at}"}.get(state, f"{context} on {at}: {state}") + (f": {desc}" if desc else "")
 
 
-def check(url: str, gh=_gh, evals_only: bool = False) -> Result:
+def check(url: str, gh=_gh, evals_only: bool = False, smoke: bool = False) -> Result:
     m = re.fullmatch(r"https://github\.com/([^/]+/[^/]+)/pull/(\d+)", url)
     if not m:
         raise ValueError(f"not a PR url: {url}")
     repo, number = m.groups()
     pr = json.loads(gh("pr", "view", url, "--json", "state,headRefOid,baseRefName"))
     head, base = pr["headRefOid"], pr["baseRefName"]
+    context, command = ("evals-smoke", "mesh run-evals --smoke") if smoke else ("evals", "mesh run-evals")
     items, nxt = [], None
 
     def item(passed: bool, text: str, detail=()):
@@ -73,18 +78,18 @@ def check(url: str, gh=_gh, evals_only: bool = False) -> Result:
 
     gated = list_evals_gated_files.triggers(gh("pr", "diff", url, "--name-only").split())
     if not gated:
-        item(True, "it changes no agent file, so it needs no evals")
+        item(True, f"it changes no agent file, so it needs no {'smoke evals' if smoke else 'evals'}")
     else:
-        item(True, f"it changes {len(gated)} agent file(s), so it needs a passing evals status", gated)
-        state, desc = _status(gh, repo, head, "evals")
-        carried = None if state == "success" else _carried(gh, repo, number, head)
+        item(True, f"it changes {len(gated)} agent file(s), so it needs a passing {context} status", gated)
+        state, desc = _status(gh, repo, head, context)
+        carried = None if state == "success" else _carried(gh, repo, number, head, context)
         if carried:
-            item(True, f"evals passed on {carried[:7]}, an older commit of this PR, and no agent file changed since "
-                       f"(head {head[:7]}: {state})")
+            item(True, f"{context} passed on {carried[:7]}, an older commit of this PR, and no agent file changed "
+                       f"since (head {head[:7]}: {state})")
         else:
-            item(state == "success", _evals_line(state, desc, head))
+            item(state == "success", _evals_line(state, desc, head, context))
             if state != "success":
-                nxt = nxt or f"mesh run-evals {url}"
+                nxt = nxt or f"{command} {url}"
 
     blocked = sum(not passed for passed, _, _ in items)
     verdict = "READY TO MERGE" if not blocked else f"BLOCKED by {blocked} item{'s' if blocked > 1 else ''}"
@@ -97,11 +102,11 @@ def check(url: str, gh=_gh, evals_only: bool = False) -> Result:
     return Result(not blocked, "\n".join(lines))
 
 
-def _carried(gh, repo: str, number: str, head: str) -> str | None:
-    """The newest older commit of the PR with evals = success, if no gated file changed between it and head."""
+def _carried(gh, repo: str, number: str, head: str, context: str = "evals") -> str | None:
+    """The newest older commit of the PR with <context> = success, if no gated file changed between it and head."""
     commits = [c["sha"] for c in json.loads(gh("api", f"repos/{repo}/pulls/{number}/commits?per_page=100"))]
     for sha in reversed(commits[:-1] if commits and commits[-1] == head else commits):
-        if _status(gh, repo, sha, "evals")[0] == "success":
+        if _status(gh, repo, sha, context)[0] == "success":
             files = json.loads(gh("api", f"repos/{repo}/compare/{sha}...{head}")).get("files", [])
             changed = list_evals_gated_files.triggers(f["filename"] for f in files)
             if changed:
@@ -112,10 +117,10 @@ def _carried(gh, repo: str, number: str, head: str) -> str | None:
 
 if __name__ == "__main__":
     args = sys.argv[1:]
-    only = "--evals-only" in args
-    args = [a for a in args if a != "--evals-only"]
+    only, smoke = "--evals-only" in args, "--smoke" in args
+    args = [a for a in args if a not in ("--evals-only", "--smoke")]
     if len(args) != 1:
-        sys.exit("usage: check_pr_evals.py [--evals-only] <PR url>")
-    result = check(args[0], evals_only=only)
+        sys.exit("usage: check_pr_evals.py [--evals-only] [--smoke] <PR url>")
+    result = check(args[0], evals_only=only, smoke=smoke)
     print(result.text)
     sys.exit(0 if result.ok else 1)

@@ -13,7 +13,7 @@ SCRIPTS_DIR="$(cd "$(dirname "$SCRIPT_REALPATH")" && pwd)"
 cmd="${1:-}"
 if [[ -z "$cmd" ]]; then
   echo "Usage: mesh <command> [args]" >&2
-  echo "Commands: model | dream | review-pull-request | run-evals | merge-pr | sync-main | orchestrate | test" >&2
+  echo "Commands: model | dream | review-pull-request | run-evals | merge-pr | eval-rc-q | sync-main | orchestrate | test" >&2
   exit 1
 fi
 
@@ -23,15 +23,16 @@ case "$cmd" in
   review-pull-request) shift; exec "$SCRIPTS_DIR/review-pull-request.sh" "$@" ;;
   run-evals)             shift; exec "$SCRIPTS_DIR/run-evals.sh" "$@" ;;
   merge-pr)              shift; exec "$SCRIPTS_DIR/merge-pr.sh" "$@" ;;
+  eval-rc-q)             shift; exec "$SCRIPTS_DIR/eval-rc-q.sh" "$@" ;;
   sync-main)             shift; exec "$SCRIPTS_DIR/sync-main.sh" "$@" ;;
   orchestrate)           shift; exec "$SCRIPTS_DIR/orchestrate.sh" "$@" ;;
   test)                  shift; exec "$SCRIPTS_DIR/../test/run-all.sh" "$@" ;;
   help|--help|-h)        echo "Usage: mesh <command> [args]" >&2
-                         echo "Commands: model | dream | review-pull-request | run-evals | merge-pr | sync-main | orchestrate | test" >&2
+                         echo "Commands: model | dream | review-pull-request | run-evals | merge-pr | eval-rc-q | sync-main | orchestrate | test" >&2
                          exit 0 ;;
   *)
     echo "ERROR: unknown command '$cmd'" >&2
-    echo "Commands: model | dream | review-pull-request | run-evals | merge-pr | sync-main | orchestrate | test" >&2
+    echo "Commands: model | dream | review-pull-request | run-evals | merge-pr | eval-rc-q | sync-main | orchestrate | test" >&2
     exit 1
     ;;
 esac

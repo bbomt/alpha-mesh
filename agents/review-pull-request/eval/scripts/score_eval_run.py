@@ -18,8 +18,13 @@ another judge model or rubric than the baseline's, or with repeats not judged.
 Reported, never gating yet (the owner switches them on): security misses, failing style_only runs, and the judge's
 means against PMAT-311's provisional proposal. Exits 1 when the gate fails.
 
---quick scores a k=1 run (mesh run-evals --quick) against the baseline's first repeat, with the tolerance scaled to
-the smaller run (QUICK_TOLERANCE). It is a cheap early warning for large drops, never the gate.
+--quick scores a k=1 run against the baseline's first repeat, with the tolerance scaled to the smaller run
+(quick_tolerance). It is a cheap check for large drops, never the gate.
+
+--cases <file> scores only the cases a list ({"cases": [...]}) names, the tolerances scaled to their share of the
+development cases: the smoke evals (mesh run-evals --smoke, with --quick) and the eval-rc-q drop loop's runs of a
+failed gate's cases (PMAT-358). --regressed <file> writes the cases that passed fewer runs than the baseline, or had a
+harness error: the cases the drop loop re-runs and bisects on.
 """
 
 import argparse
@@ -47,11 +52,12 @@ MAX_JUDGE_ERROR_RATE = 0.05
 REBASELINE_NEW_CASES = 5  # suggest a rebaseline once this many cases are new since the baseline (not gated)
 
 
-def quick_tolerance(tolerance: int, baseline_k: int) -> int:
+def quick_tolerance(tolerance: int, baseline_k: int, share: float = 1.0) -> int:
     """The tolerance for a k=1 run: the noise in a count grows with the square root of the runs, so a third of the
     runs gets about 1/sqrt(3) of the tolerance (10 -> 6). A single repeat is noisy: the 9 repeats of the three
-    same-code runs passed 43 to 54 of 65, so about 1 quick check in 10 warns on unchanged code."""
-    return round(tolerance / math.sqrt(baseline_k))
+    same-code runs passed 43 to 54 of 65, so about 1 quick check in 10 warns on unchanged code. A run of `share` of
+    the cases (the smoke set) scales it again: 19 of 65 cases gives 10 -> 3."""
+    return round(tolerance * math.sqrt(share / baseline_k))
 
 
 def judge_gate(base: dict | None, run: dict, tolerance: dict[str, float]) -> tuple[list[str], list[dict]]:
@@ -81,9 +87,10 @@ def judge_gate(base: dict | None, run: dict, tolerance: dict[str, float]) -> tup
     return reasons, rows
 
 
-def quick_judge_tolerance(tolerance: float, baseline_k: int) -> float:
-    """The judge tolerance for a k=1 run: a mean over a third of the runs is about sqrt(3) times as noisy."""
-    return round(tolerance * math.sqrt(baseline_k), 2)
+def quick_judge_tolerance(tolerance: float, baseline_k: int, share: float = 1.0) -> float:
+    """The judge tolerance for a k=1 run: a mean over a third of the runs is about sqrt(3) times as noisy, and a mean
+    over `share` of the cases about 1/sqrt(share) times as noisy again."""
+    return round(tolerance * math.sqrt(baseline_k / share), 2)
 
 
 def gate_cases() -> list[dict]:
@@ -91,8 +98,19 @@ def gate_cases() -> list[dict]:
     return case_rules.development_cases()
 
 
+def smoke_cases(path: Path) -> list[dict]:
+    """The development cases a smoke list (eval/smoke.json) names; exits on a name that is not a development case."""
+    names = json.loads(path.read_text())["cases"]
+    if not names:
+        sys.exit(f"{path}: no cases")
+    dev = {c["case_id"]: c for c in gate_cases()}
+    if bad := sorted(set(names) - set(dev)):
+        sys.exit(f"{path}: not development cases: {', '.join(bad)}")
+    return [dev[n] for n in names]
+
+
 def gate(baseline: dict, results: dict, run: dict, cases: list[dict], tolerance: int = TOLERANCE,
-         quick: bool = False, judge_tolerance: dict[str, float] | None = None) -> dict:
+         quick: bool = False, judge_tolerance: dict[str, float] | None = None, share: float = 1.0) -> dict:
     held = case_rules.holdout_ids()
     if found := sorted({r["vars"]["case_id"] for r in results["results"]["results"]} & held):
         raise ValueError(f"{', '.join(found)}: hold-out cases; the gate reads development results only")
@@ -106,9 +124,10 @@ def gate(baseline: dict, results: dict, run: dict, cases: list[dict], tolerance:
     if quick:
         if run["k"] != 1:
             reasons.append(f"a quick run has k=1, this one k={run['k']}")
-        tolerance = quick_tolerance(tolerance, baseline["k"])
     elif run["k"] != baseline["k"]:
         reasons.append(f"the run has k={run['k']}, the baseline k={baseline['k']}")
+    if quick or share < 1:  # fewer runs than the full gate: the noise, and so the tolerance, scale with sqrt(runs)
+        tolerance = quick_tolerance(tolerance, baseline["k"] if quick else 1, share)
     if errors := sorted(c for c, rs in runs.items() if any(r["result"] == "error" for r in rs)):
         reasons.append(f"harness error in {len(errors)} case(s): {', '.join(errors)}")
     if missing := sorted(set(by_id) - set(runs)):
@@ -140,14 +159,20 @@ def gate(baseline: dict, results: dict, run: dict, cases: list[dict], tolerance:
     if drop > tolerance:
         reasons.append(f"runs passed {run_passed}/{total}, below the {needed}/{total} needed "
                        f"(the baseline's {baseline_passed} minus the tolerance {tolerance})")
+    # The cases to bisect on: only when the run count failed (or a harness error), those that lost runs or errored.
+    # A failure on the judge's means alone names none: the baseline holds means, not per-case scores (PMAT-358 R2).
+    regressed = sorted(c for c in gated if [x["result"] for x in runs[c]].count("pass") < (
+        baseline["cases"][c]["runs"][:1] if quick else baseline["cases"][c]["runs"]).count("pass")
+        or any(x["result"] == "error" for x in runs[c])) if drop > tolerance or errors else []
 
     def failing(pred):
         return sum(x["result"] == "fail" for c in gated if pred(by_id[c]) for x in runs[c])
 
     collected = judge_report.collect(results, cases)
     judge_tolerance = dict(judge_tolerance or JUDGE_TOLERANCE)
-    if quick:
-        judge_tolerance = {d: quick_judge_tolerance(t, baseline["k"]) for d, t in judge_tolerance.items()}
+    if quick or share < 1:
+        judge_tolerance = {d: quick_judge_tolerance(t, baseline["k"] if quick else 1, share)
+                           for d, t in judge_tolerance.items()}
     judge_reasons, judge_rows = judge_gate(baseline.get("judge"),
                                            judge_report.gate_means([e for e in collected
                                                                     if e["case"]["case_id"] in gated]),
@@ -161,8 +186,9 @@ def gate(baseline: dict, results: dict, run: dict, cases: list[dict], tolerance:
         "security_misses": failing(lambda c: c["category"] == "security" and c["expected"]["action"] == "raise_true_bug"),
         "style_only_failures": failing(lambda c: c["category"] == "style_only"),
         "judge": judge_report.summarise(collected), "judge_rows": judge_rows,
-        "model": run["model"], "k": run["k"], "quick": quick,
+        "model": run["model"], "k": run["k"], "quick": quick, "smoke": len(cases) if share < 1 else None,
         "rebaseline": [] if quick else rebaseline_hints(drop, tolerance, not_gated),
+        "regressed": regressed,
     }
 
 
@@ -182,6 +208,8 @@ def render(out: dict) -> str:
     fmt = lambda v: "n/a" if v is None else f"{v:.2f}"  # noqa: E731
     verdict = "PASS" if out["passed"] else "FAIL"
     title = "quick check (k=1, an early warning, not the gate)" if out["quick"] else "evals gate"
+    if out.get("smoke"):
+        title = f"smoke evals (k=1 on {out['smoke']} cases, not the full gate)"
     lines = [f"## {title}: {verdict}", "", out["count"], "",
              f"Model `{out['model']}`, k={out['k']}. A run is one review of one case; it passes when the review does "
              "what the case expects. The baseline is the agent as it is on master, not a target.", ""]
@@ -220,15 +248,22 @@ def main(argv=None) -> int:
     parser.add_argument("--tolerance", type=int, default=TOLERANCE)
     parser.add_argument("--markdown", type=Path, help="also write the report to this file")
     parser.add_argument("--quick", action="store_true", help="score a k=1 run against the baseline's first repeat")
+    parser.add_argument("--cases", type=Path, help="score only the cases this list ({\"cases\": [...]}) names")
+    parser.add_argument("--regressed", type=Path, help="write the cases that lost runs against the baseline here")
     args = parser.parse_args(argv)
 
+    cases = all_cases = gate_cases()
+    if args.cases:
+        cases = smoke_cases(args.cases)
     out = gate(json.loads(args.baseline.read_text()), json.loads((args.run_dir / "results.json").read_text()),
-               json.loads((args.run_dir / "run.json").read_text()), gate_cases(), tolerance=args.tolerance,
-               quick=args.quick)
+               json.loads((args.run_dir / "run.json").read_text()), cases, tolerance=args.tolerance,
+               quick=args.quick, share=len(cases) / len(all_cases))
     text = render(out)
     print(text)
     if args.markdown:
         args.markdown.write_text(text)
+    if args.regressed:
+        args.regressed.write_text(json.dumps(out["regressed"]) + "\n")
     return 0 if out["passed"] else 1
 
 
