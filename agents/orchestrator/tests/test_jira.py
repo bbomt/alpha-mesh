@@ -1,6 +1,6 @@
 """Which comment counts as the owner's newest, from Jira's newest-first comment list."""
 
-from orchestrator.jira import newest_owner_comment
+from orchestrator.jira import newest_owner_comment, newest_worker_comment
 
 WORKER = "MESSAGE-FROM-WORKER\n\nDone: ..."
 
@@ -33,3 +33,12 @@ def test_logged_in_only_once_tokens_are_saved(tmp_path, monkeypatch):
     assert not jira.logged_in()
     jira.STORE.write_text('{"client": {}, "tokens": {}}')
     assert jira.logged_in()
+
+
+def test_the_newest_worker_comment_comes_with_its_time_for_a_pause():
+    # PMAT-355: a pause checks the worker posted its status after the pause warning.
+    newest_first = [{"id": "8", "body": "owner reply", "created": "2026-11-24T13:41:00.000+0000"},
+                    {"id": "7", "body": WORKER, "created": "2026-11-24T13:40:54.276+0000"},
+                    {"id": "6", "body": WORKER, "created": "2026-11-24T13:00:00.000+0000"}]
+    assert newest_worker_comment(newest_first) == ("7", "2026-11-24T13:40:54.276+0000")
+    assert newest_worker_comment([{"id": "8", "body": "owner reply", "created": "x"}]) is None

@@ -28,6 +28,7 @@ class Ticket:
     labels: list[str]
     done: bool
     comment_id: str | None = None  # the owner's newest comment (workers' comments skipped)
+    worker_comment: tuple[str, str] | None = None  # the worker's newest comment: (id, created), for a pause
 
 
 class FileStorage(TokenStorage):
@@ -99,6 +100,12 @@ def newest_owner_comment(newest_first: list[dict]) -> str | None:
                  if WORKER_MARK not in c["body"].strip().split("\n", 1)[0]), None)
 
 
+def newest_worker_comment(newest_first: list[dict]) -> tuple[str, str] | None:
+    """The newest comment marked as a worker's: its id and when it was created."""
+    return next(((c["id"], c["created"]) for c in newest_first
+                 if WORKER_MARK in c["body"].strip().split("\n", 1)[0]), None)
+
+
 def auth() -> OAuthClientProvider:
     storage = FileStorage()
     provider = OAuthClientProvider(
@@ -141,6 +148,7 @@ async def snapshot(keys: list[str]) -> dict[str, Ticket]:
                 labels=issue["fields"].get("labels", []),
                 done=issue["fields"]["status"]["statusCategory"]["key"] == "done",
                 comment_id=newest_owner_comment(comments),
+                worker_comment=newest_worker_comment(comments),
             )
     if provider.context.oauth_metadata:
         FileStorage().set_metadata(provider.context.oauth_metadata)
