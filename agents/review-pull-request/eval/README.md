@@ -116,7 +116,7 @@ a real bug here that no one raised. Use these for instructive comparison.
 | `scripts/split_holdout.py`, `scripts/holdout_report.py` | draw the hold-out, report its totals |
 | `scripts/score_eval_run.py`, `scripts/list_evals_gated_files.py`, `scripts/check_pr_evals.py` | the gate decision on a run, the files that need evals, the merge status report (and the `evals-gate` check's logic) ([The regression gate](#the-regression-gate)) |
 | `schema/review.schema.json`, `schema/baseline.schema.json` | the provider's output, the baseline's guard |
-| `promptfoo/llm_rubric.py`, `judge/rubric.v1.md` | the judge and its versioned rubric ([The judge](#the-judge)) |
+| `promptfoo/llm_rubric.py`, `promptfoo/judge_cache.py`, `judge/rubric.v1.md` | the judge, its judgment cache and its versioned rubric ([The judge](#the-judge)) |
 | `judge/sample.json`, `judge/gold-human-calibration.json`, `judge/silver-ai-calibration.json`, `judge/judge_scores.json` | the 25 calibration cases, the human (gold) scores, the silver labeller's scores, the judge's scores for them |
 | `scripts/judge_sample.py`, `scripts/judge_labelling_sheet.py`, `scripts/generate_silver_calibration_labels.py`, `scripts/judge_report.py`, `scripts/judge_calibration_alignment.py` | draw the sample, write the scoring sheet, write the silver labels, report a run's scores, compute the judge's agreement with the reference |
 | `baseline.json`, `error_analysis.json` | the committed baseline and the error analysis behind it (development cases only) |
@@ -350,6 +350,17 @@ DONE): `first`, the default, judges repeat 0 of each case only, for iterating on
 before merging an agent change. The line checks run on every repeat either way. Repeats cost money only through the
 judge, and they mostly add precision to the mean: a change's direction shows on repeat 0 across all cases, while the
 merge decision wants the precise mean. The report counts the skipped repeats (`N not judged (repeat 0 only)`).
+
+**The judgment cache** (PMAT-331): judging a row whose request to the judge is byte-for-byte one it judged before
+reuses that judgment, with no model call. The key is a sha256 of the request as sent, after redaction: the URL host,
+the rubric version, and the body (the model, the rubric text, the prompt, temperature and every other parameter), so
+any change to them is a new call. Entries live in `~/.mesh/judge-cache/<key>.json`, outside the worktree: the judgment
+(scores and why), the reported model and provider, tokens, cost and the date, never the prompt. Only a judgment that
+parsed is stored, so a judge error (a 402, a bad reply) is retried on the next run. Each run deletes entries unused for
+30 days at its start (a hit restarts its days); `rm -rf ~/.mesh/judge-cache` clears it by hand. The report counts the
+rows from the cache (`N from the judgment cache (no model call, $0)`); they add no cost or tokens. `--no-judge-cache`
+calls the model for every row and stores nothing, for a deliberate re-judge (e.g. the judge's own run-to-run
+agreement). The silver labeller doesn't use the cache.
 
 **Judge Calibration (meta-evaluation):** humans score 25 development cases blind (gold), a silver labeller scores them
 too (below); together these are the **Calibration Labels**. The judge's scores are compared with them, gold where set, else

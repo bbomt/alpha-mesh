@@ -48,6 +48,7 @@ def _mean(values: list) -> float | None:
 def summarise(collected: list[dict]) -> dict:
     judged = [e for e in collected if e["judgment"]]
     called = [e for e in judged if not e["judgment"].get("fixed_by_rubric")]  # a rubric-fixed row made no model call
+    paid = [e for e in called if e["judgment"].get("judge_cache") != "hit"]  # a cached one spent nothing (PMAT-331)
     style = [e for e in judged if e["case"]["category"] == "style_only"]
     return {
         "runs": len(collected),
@@ -64,12 +65,13 @@ def summarise(collected: list[dict]) -> dict:
         "models": Counter(e["judgment"].get("model_reported") or e["judgment"].get("model_requested") for e in called),
         "providers": Counter(e["judgment"].get("provider") or "unknown" for e in called),
         "fixed_by_rubric": len(judged) - len(called),
-        "cost": sum(e["judgment"].get("cost") or 0 for e in called),
-        "cost_reported": any(e["judgment"].get("cost") is not None for e in called),
+        "from_cache": len(called) - len(paid),
+        "cost": sum(e["judgment"].get("cost") or 0 for e in paid),
+        "cost_reported": any(e["judgment"].get("cost") is not None for e in paid),
         "tokens": sum((e["judgment"].get("prompt_tokens") or 0) + (e["judgment"].get("completion_tokens") or 0)
-                      for e in called),
-        "prompt_tokens": sum(e["judgment"].get("prompt_tokens") or 0 for e in called),
-        "cached_tokens": sum(e["judgment"].get("cached_tokens") or 0 for e in called),
+                      for e in paid),
+        "prompt_tokens": sum(e["judgment"].get("prompt_tokens") or 0 for e in paid),
+        "cached_tokens": sum(e["judgment"].get("cached_tokens") or 0 for e in paid),
     }
 
 
@@ -93,7 +95,7 @@ def print_summary(s: dict) -> None:
     cost = f"cost ${s['cost']:.4f}" if s["cost_reported"] else "cost not reported by the provider"
     skipped = f", {s['not_judged']} not judged (repeat 0 only)" if s["not_judged"] else ""
     print(f"Runs: {s['runs']}, judge errors: {s['judge_errors']}{skipped}, {s['fixed_by_rubric']} fixed by the rubric "
-          f"(no model call), {cost}, {s['tokens']} tokens")
+          f"(no model call), {s['from_cache']} from the judgment cache (no model call, $0), {cost}, {s['tokens']} tokens")
     if s["prompt_tokens"]:
         print(f"Prompt cache: cached {s['cached_tokens']} of {s['prompt_tokens']} prompt tokens "
               f"({s['cached_tokens'] / s['prompt_tokens']:.0%})")

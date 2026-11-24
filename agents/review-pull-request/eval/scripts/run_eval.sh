@@ -2,11 +2,13 @@
 # Run the evals (PMAT-304): every development case in eval/cases, reviewed at its raised_sha, k times, on the
 # model --model names, else [model] review in review_config.toml (the model the reviews use).
 #
-#   eval/scripts/run_eval.sh [--model <model>] [--k <n>] [--run <name>] [--judge-repeats first|all] [--holdout] [promptfoo eval args...]
-#   eval/scripts/run_eval.sh --stored <run dir> [--k <n>] [--run <name>] [--judge-repeats first|all] [promptfoo eval args...]
+#   eval/scripts/run_eval.sh [--model <model>] [--k <n>] [--run <name>] [--judge-repeats first|all] [--no-judge-cache] [--holdout] [promptfoo eval args...]
+#   eval/scripts/run_eval.sh --stored <run dir> [--k <n>] [--run <name>] [--judge-repeats first|all] [--no-judge-cache] [promptfoo eval args...]
 #
 # --judge-repeats: the judge scores repeat 0 of each case only (first, the default: while iterating on the agent)
 # or all k repeats (all: before merging an agent change). The line checks run on every repeat either way.
+# --no-judge-cache: the judge calls its model for every row, even one whose exact request it judged before (the
+# judgment cache in ~/.mesh/judge-cache/, PMAT-331), and stores nothing: e.g. to measure the judge's own agreement.
 # --stored runs the judge on that run's stored reviews without running the agent (PMAT-311). Its results go to a
 # new run folder with no run.json, so they can never become the baseline.
 # --holdout runs the hold-out cases instead, into results-holdout.json, and prints only their totals. Use it
@@ -19,7 +21,7 @@ set -euo pipefail
 
 EVAL="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 AGENT="$(dirname "$EVAL")"
-MODEL="" K="" RUN="" HOLDOUT="" STORED="" JUDGE_REPEATS="first"
+MODEL="" K="" RUN="" HOLDOUT="" STORED="" JUDGE_REPEATS="first" JUDGE_CACHE="on"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --model) MODEL="$2"; shift 2 ;;
@@ -28,6 +30,7 @@ while [[ $# -gt 0 ]]; do
     --holdout) HOLDOUT=1; shift ;;
     --stored) STORED="$2"; shift 2 ;;
     --judge-repeats) JUDGE_REPEATS="$2"; shift 2 ;;
+    --no-judge-cache) JUDGE_CACHE="off"; shift ;;
     *) break ;;
   esac
 done
@@ -63,7 +66,7 @@ if [[ -z "$STORED" ]]; then
   "$AGENT/.venv/bin/python" "$EVAL/scripts/write_eval_run_info.py" "$RUN_DIR/run.json" "$COMMIT" "$MODEL" "$(date +%Y-%m-%d)" "$K" "$DIRTY"
 fi
 
-echo "Run: $RUN_DIR (model $MODEL, k=$K, judge repeats $JUDGE_REPEATS, commit ${COMMIT:0:7}${STORED:+, stored reviews from $STORED})" >&2
+echo "Run: $RUN_DIR (model $MODEL, k=$K, judge repeats $JUDGE_REPEATS, judge cache $JUDGE_CACHE, commit ${COMMIT:0:7}${STORED:+, stored reviews from $STORED})" >&2
 cd "$EVAL"
 RESULTS="$RUN_DIR/results.json"
 if [[ -n "$HOLDOUT" ]]; then
@@ -72,7 +75,7 @@ if [[ -n "$HOLDOUT" ]]; then
 fi
 STATUS=0
 # Templating off: Promptfoo renders string vars as Nunjucks, which can run code; the provider ignores the prompt.
-EVAL_RUN_DIR="$RUN_DIR" EVAL_JUDGE_REPEATS="$JUDGE_REPEATS" EVAL_MODEL="$MODEL" EVAL_HOLDOUT="$HOLDOUT" EVAL_STORED_RESULTS="${STORED:+$STORED/results.json}" PROMPTFOO_PYTHON="$AGENT/.venv/bin/python" \
+EVAL_RUN_DIR="$RUN_DIR" EVAL_JUDGE_REPEATS="$JUDGE_REPEATS" EVAL_JUDGE_CACHE="$JUDGE_CACHE" EVAL_MODEL="$MODEL" EVAL_HOLDOUT="$HOLDOUT" EVAL_STORED_RESULTS="${STORED:+$STORED/results.json}" PROMPTFOO_PYTHON="$AGENT/.venv/bin/python" \
   PROMPTFOO_DISABLE_TEMPLATING=true PROMPTFOO_DISABLE_TELEMETRY=1 PROMPTFOO_DISABLE_UPDATE=1 PROMPTFOO_CONFIG_DIR="$RUN_DIR/.promptfoo" \
   promptfoo eval -c promptfooconfig.yaml --repeat "$K" --no-cache -o "$RESULTS" "$@" || STATUS=$?
 if [[ -n "$HOLDOUT" ]]; then
