@@ -604,23 +604,24 @@ flowchart TD
 ```
 
 **The steps for an agent PR (PMAT-358).** The full run is expensive (about a day's free quota), so it runs once per
-batch of up to 4 PRs, on the queue `eval-rc-q/current` ([`EVAL-RC-Q.md`](../../../EVAL-RC-Q.md)), not on each PR.
-Each agent PR runs the smoke evals instead:
+batch of up to 4 queued PRs, on the queue `eval-rc-q/current` ([`EVAL-RC-Q.md`](../../../EVAL-RC-Q.md)), not on each
+PR; a failing PR is dropped from the batch by a fluke check and a bisect on the cases that lost runs
+(`score_eval_run.py --regressed`, `mesh run-evals --cases`). Each agent PR runs the smoke evals first:
 
 ```bash
 mesh run-evals --smoke https://github.com/bbomt/alpha-mesh/pull/<n>   # the worker, before AWAITING-MERGE: k=1 on
                                                                       #   eval/smoke.json; posts evals-smoke
 mesh merge-pr https://github.com/bbomt/alpha-mesh/pull/<n>            # the team lead: needs evals-smoke = success;
-                                                                      #   squash-merges into the queue
+                                                                      #   queues the PR (it stays open)
 mesh eval-rc-q gate                                                   # the team lead (or tonight's cron): the full
-                                                                      #   run on the batch's promotion PR, then promote
+                                                                      #   run on the batch PR, drops, then merges each PR
 ```
 
 `mesh merge-pr` refuses an agent PR without `evals-smoke` and prints the report: a verdict, then `OK` or `BLOCKED`
 per item, then the next command.
 
 ```
-Not merged:
+Not queued:
 Merge status for PR #<n> (head 1a2b3c4): BLOCKED by 1 item
 
   OK       it changes 1 agent file(s), so it needs a passing evals-smoke status

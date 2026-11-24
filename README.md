@@ -12,14 +12,14 @@ alpha-mesh/
 │   ├── dream.sh             # End-of-session memory consolidation (delegates to agents/dream/)
 │   ├── review-pull-request.sh # PR review agent (delegates to agents/review-pull-request/)
 │   ├── run-evals.sh         # Runs the review-pull-request evals on a PR (or --smoke, --force-success); posts `evals`
-│   ├── merge-pr.sh          # The owner's merge: into the eval-rc-q queue (alpha-mesh), else straight into the base
-│   ├── eval-rc-q.sh         # The batch queue: status, gate (tests + full evals once per batch), promote (EVAL-RC-Q.md)
+│   ├── merge-pr.sh          # The owner's merge: queues the PR for eval-rc-q (alpha-mesh), else merges it into the base
+│   ├── eval-rc-q.sh         # The batch queue: gate (tests + full evals once per batch, drop failing PRs), promote
 │   ├── sync-main.sh         # Fast-forwards a main checkout and verifies it, or fails loudly
 │   ├── orchestrate.sh       # One Claude worker per Jira ticket in tmux tabs (delegates to agents/orchestrator/)
 │   ├── bootstrap-memory     # One-time: extract from existing Claude Code logs
 │   ├── install.sh           # One-time setup
 │   ├── lib/repo.sh          # Shared bash functions: find_repo_root, get_active_model
-│   └── lib/merge-queue.sh   # Shared bash functions: the queue's branch, promotion PR, state and batch
+│   └── lib/merge-queue.sh   # Shared bash functions: the queue's branch, batch PR, state and members
 ├── agents/
 │   ├── dream/               # Dream agent
 │   │   ├── dream/           # Python package
@@ -205,18 +205,19 @@ Full documentation: `agents/review-pull-request/README.md`
 
 `mesh merge-pr <PR url>` is how the owner merges a ticket's PR.
 
-**alpha-mesh: into the batch queue** (PMAT-358; the runbook is [`EVAL-RC-Q.md`](EVAL-RC-Q.md), the rules
-[`CLAUDE_EVALS.md`](CLAUDE_EVALS.md)). A repo listed in [`config/merge-queue.json`](config/merge-queue.json) merges
-every PR, except a `hotfix/*` branch, into its queue branch `eval-rc-q/current` instead of master. It refuses while the
-queue is gating or being fixed (clear it first) or full (4 PRs), and an agent PR needs `evals-smoke` = success
-(`mesh run-evals --smoke <PR url>`). It creates the queue and its draft promotion PR on the first merge after a
-promotion, moves the PR's base to the queue, refuses a PR that conflicts with it, and squash-merges it. At 4 PRs it
-offers to gate. `mesh eval-rc-q gate` then runs the tests and the full evals once for the batch and promotes it
-into master with a merge commit; `mesh eval-rc-q status` shows the queue.
+**alpha-mesh: through the batch queue** (PMAT-358; the runbook is [`EVAL-RC-Q.md`](EVAL-RC-Q.md), the rules
+[`CLAUDE_EVALS.md`](CLAUDE_EVALS.md)). For a repo listed in [`config/merge-queue.json`](config/merge-queue.json),
+`mesh merge-pr` *queues* every PR except a `hotfix/*` branch: it adds the PR's diff as one commit onto
+`eval-rc-q/current` (master plus the queued PRs) and leaves the PR open against master. It refuses while the queue is
+gating, when it is full (4 PRs), for an agent PR without `evals-smoke` = success (`mesh run-evals --smoke <PR url>`),
+and for a PR that conflicts with the queue. At 4 PRs it offers to gate. `mesh eval-rc-q gate` runs the tests and the
+full evals once for the batch, drops a failing PR (a fluke check, then a bisect) and gates the rest again until green,
+then squash-merges each passing PR into master in order, one commit per ticket, after checking its tree is the gated
+tree and marking it `eval-rc-q` = success.
 
 ```bash
-mesh eval-rc-q status            # the queue's state, its batch and the promotion PR
-mesh eval-rc-q gate              # tests + full evals on the batch, then promote (or label it eval-rc:fixing)
+mesh eval-rc-q status            # the queue's state, its PRs, and Jira notes still to post for dropped PRs
+mesh eval-rc-q gate              # gate until green, then squash-merge each passing PR into master
 mesh eval-rc-q gate --due        # the nightly cron's call (00:30 UTC)
 mesh eval-rc-q promote           # promote a batch whose evals already passed
 ```
@@ -258,8 +259,9 @@ Next: mesh run-evals https://github.com/bbomt/alpha-mesh/pull/65
   At a terminal, when the evals are all that is missing, it offers to run `mesh run-evals` now and then merge
   (`[y/N]`): the full run is expensive, so it runs once, when the rest of the ticket's code is accepted.
 - **GitHub enforces the same rule** for every merge, including its own merge button: the required check
-  `evals-gate` ([`.github/workflows/evals-gate.yml`](.github/workflows/evals-gate.yml)) fails a PR into master from
-  any branch but `eval-rc-q/current` or `hotfix/*`; for those it passes at once for a PR that
+  `evals-gate` ([`.github/workflows/evals-gate.yml`](.github/workflows/evals-gate.yml)) fails a PR into master without
+  `eval-rc-q` = success on its head (posted only by the queue's promotion), except a `hotfix/*` branch; then it passes
+  at once for a PR that
   changes no agent file, and otherwise only when `evals` = success
   ([the regression gate](agents/review-pull-request/eval/README.md#the-regression-gate)).
 - Workers end their "ready to merge" Jira comment with this command, ready to copy.

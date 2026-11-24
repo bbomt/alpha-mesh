@@ -35,7 +35,7 @@ Usage:
       The full evals on the PR's head: the development cases, k=3, every repeat judged, scored against master's
       baseline and tolerance. Posts the commit status `evals` and a PR comment with the score table.
       Takes about 75 min and about a day's free-model quota. Run it again on the same head to resume.
-      On alpha-mesh, the queue's gate (mesh eval-rc-q gate) runs it on the promotion PR; see EVAL-RC-Q.md.
+      On alpha-mesh, the queue's gate (mesh eval-rc-q gate) runs it on the batch PR; see EVAL-RC-Q.md.
   mesh run-evals --smoke <PR url>
       The smoke evals: k=1 on the cases in master's eval/smoke.json, scored against the baseline's first repeat.
       Posts the commit status `evals-smoke` and a PR comment. Run it before marking an agent PR AWAITING-MERGE:

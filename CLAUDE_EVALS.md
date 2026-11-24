@@ -1,31 +1,30 @@
 # Evals and the merge queue (eval-rc-q)
 
-Every alpha-mesh PR reaches master through one batch queue branch, `eval-rc-q/current`, whose gate runs the full
-evals once per batch (PMAT-358). The runbook, with every command and its manual equivalent, is `EVAL-RC-Q.md`.
+Every alpha-mesh PR reaches master through one batch queue, `eval-rc-q/current`, which only tests: up to 4 queued
+PRs are gated together (tests and the full evals once), failing PRs are dropped, and each passing PR is then
+squash-merged into master on its own, one commit per ticket (PMAT-358). The runbook is `EVAL-RC-Q.md`.
 
 ## Workers
-- Branch from `origin/master` and open the PR against master, as always. Its `evals-gate` check fails while it
-  targets master: that is expected, because `mesh merge-pr` moves it into the queue.
+- Branch from `origin/master` and open the PR against master, as always. Its `evals-gate` check fails until the
+  queue marks it `eval-rc-q` = success at its promotion: that is expected.
 - An agent PR (one that changes a file `list_evals_gated_files.py` names) runs `mesh run-evals --smoke <PR url>`
-  before `AWAITING-MERGE`; `mesh merge-pr` needs `evals-smoke` = success. Never run the full `mesh run-evals` on a
-  ticket PR: the queue's gate runs it.
-- "Merged" means merged into `eval-rc-q/current`; the ticket is DONE then. Run the post-merge tests on
-  `origin/eval-rc-q/current` (on `origin/master` if the queue was already promoted and deleted).
-- If the gate reverts the ticket, it reopens with the failing cases in a Jira comment: fix it on a new branch.
-- A worker never gates, promotes, reverts on the queue or merges a hotfix.
+  before `AWAITING-MERGE`; `mesh merge-pr` needs `evals-smoke` = success to queue it. Never run the full
+  `mesh run-evals` on a ticket PR: the queue's gate runs it.
+- The "ready to merge" comment ends with `mesh merge-pr <PR url>` as usual: it queues the PR.
+- Once queued, never push to the PR: a queued PR that moves is dropped. The ticket stays at `AWAITING-MERGE` until
+  its PR is merged into master; then it is DONE, with the usual post-merge checks on `origin/master`.
+- Dropped (a PR comment, and a note on the ticket): fix it on the same branch (merge master in), run smoke again for an
+  agent PR, then "ready to merge" again.
+- A worker never gates, promotes or merges a hotfix.
 
 ## The queue (owner and team lead)
 - One queue, up to 4 PRs. It gates at once when full (`mesh merge-pr` offers it), otherwise at 00:30 UTC
-  (`mesh eval-rc-q gate --due`) if it holds a PR.
+  (`mesh eval-rc-q gate --due`) if it holds a PR. Nothing is queued while it gates.
+- The gate never fixes the queue: it drops the failing PR and gates the rest again, until green.
+- After a gate, post each pending drop note (`mesh eval-rc-q status` lists them) on its Jira ticket, then delete it.
 - One eval run at a time on the box; a run starts only when the free quota left covers it (400 full, 50 smoke).
-- While the queue is `eval-rc:gating` or `eval-rc:fixing`, nothing merges into it: clear it first
-  (`EVAL-RC-Q.md`, "Fix"). Never work around a blocked queue.
 - Hotfix, for an emergency only (a broken master, a security issue): a `hotfix/<TICKET>-…` branch, merged straight
-  into master by the owner with `mesh merge-pr`, under the old eval rules. The next gate merges it into the queue.
-
-## Commit messages (the scope is the promotion's tag)
-- Promotion: `chore[eval-rc-q-2026-11-24-1]: promoted PMAT-338, PMAT-347 (#72, #73)`.
-- Master into the queue: `chore[eval-rc-q-2026-11-24-1]: merged master before the gate`.
+  into master by the owner with `mesh merge-pr`, under the old eval rules. The next gate rebuilds the queue on it.
 
 ## Judge repeats
 - Evals, like review passes (incremental while iterating, full before DONE): while iterating on the agent,
