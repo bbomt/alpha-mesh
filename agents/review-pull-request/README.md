@@ -423,7 +423,7 @@ Checkpoint store (optional; the defaults suit the dev EC2):
 | Variable | Description |
 |----------|-------------|
 | `DEPLOY_ENV` | Environment whose SSM parameters name the table, bucket and TTL (default `dev`) |
-| `AWS_REGION` | AWS region (default `eu-west-1`) |
+| `AWS_REGION` | Your AWS region; unset, the region of your AWS profile (`aws configure get region`). With neither, a review stops with an error |
 | `ALPHA_MESH_REVIEW_PULL_REQ_CHECKPOINT_TABLE` | Overrides the table name from SSM |
 | `ALPHA_MESH_REVIEW_PULL_REQ_CHECKPOINT_BUCKET` | Overrides the bucket name from SSM |
 
@@ -499,6 +499,11 @@ Deploy to dev (needs `aws sso login`, Node and pnpm):
 ```bash
 agents/review-pull-request/scripts/deploy-dev-from-ec2.sh
 ```
+
+No account or region is committed. The script takes the region from `AWS_REGION`, else from your AWS profile, and
+checks your credentials against `AWS_ACCOUNT_ID`, from the environment or else the alpha-mesh `.env`. It stops if
+either is missing. In a GitHub Action, `aws-actions/configure-aws-credentials` with `aws-region: ${{ vars.AWS_REGION }}`
+sets the region, and `env: AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}` the account, so neither is in the tree.
 
 CDK assertion tests:
 

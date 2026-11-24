@@ -4,7 +4,7 @@ import { EvalRunsStack } from "../lib/eval-runs-stack";
 
 function synth(deployEnv: string): Template {
   const app = new App();
-  const env = { account: "123456789012", region: "eu-west-1" };
+  const env = { account: "123456789012", region: "zz-test-1" };
   return Template.fromStack(new EvalRunsStack(app, `Test-${deployEnv}`, { deployEnv, env }));
 }
 

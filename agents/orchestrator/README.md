@@ -69,7 +69,7 @@ sums them up as they stood on 2026-10-23.
 
 ### Orchestrator (`mesh orchestrate`)
 
-- **Opens a tab per ticket** and starts a Claude worker with `settings.json` and `worker-prompt.md`; **resumes**
+- **Opens a tab per ticket** and starts a Claude worker with `settings.template.json` (region filled in) and `worker-prompt.md`; **resumes**
   the same session when a tab is missing (reboot, closed tab). Works across repos: each ticket keeps the folder
   it started in.
 - **Passes on the team lead's comments:** the newest one not from a worker, when it is newer than the last one
@@ -94,7 +94,7 @@ nudge workers. It tells the team lead, who decides.
 ### This machine
 
 - Worker sandboxes may write `~/.mesh`, `~/.cache/uv` and pnpm's folders, and reach GitHub, openrouter.ai, PyPI,
-  npm and AWS eu-west-1, so reviews and installs need no approvals. `~/.aws` stays closed: an SSO token renewal
+  npm and AWS in your region, so reviews and installs need no approvals. `~/.aws` stays closed: an SSO token renewal
   is the one command a worker retries outside its sandbox.
 - A weekly cron job (Sundays 03:00) runs `uv cache prune --force` and `pnpm store prune`, logging to
   `~/environment/logs/prune-caches.log`.
@@ -282,7 +282,7 @@ call. So the worker marks the loss itself (`jira-access.sh lost`, per its prompt
 it after the next Atlassian call that works (`PostToolUse` fires only on success). The mark is `jira_lost` (a time,
 or null) in the ticket's status file. Reconnecting (`/mcp`) is not a turn, so the worker stays idle until the
 owner types "continue"; that turn's first working Jira call clears the warning. Workers can reach Jira through two
-connectors, the plugin in `settings.json` (`mcp__plugin_atlassian_atlassian__*`) and the user-level `atlassian`
+connectors, the plugin in `settings.template.json` (`mcp__plugin_atlassian_atlassian__*`) and the user-level `atlassian`
 server in `~/.claude.json` (`mcp__atlassian__*`); the hook matches both, but not their `authenticate` and
 `complete_authentication` login tools.
 
@@ -299,7 +299,10 @@ a worker by answering in its tab and telling it not to post to Jira.
   (one `KEY FOLDER` line per waiting ticket), with `cap.txt`, `priority.txt` and `order.txt` beside it, all
   changed under `queue.lock`.
 - `src/orchestrator/tmux.py`: the tabs, named by ticket key, in the tmux session the orchestrator runs in.
-- `settings.json`: the settings every worker is started with (`--settings`):
+- `settings.template.json`: the settings every worker is started with. It names the AWS region `${AWS_REGION}`, as
+  no region is committed: each start or resume fills in `AWS_REGION`, else `AWS_DEFAULT_REGION`, else your AWS
+  profile's region, and writes `~/environment/logs/orchestrator/worker-settings.json`, which `--settings` names.
+  With no region found, the worker does not start and the screen says why. The file holds:
   - the status hooks (`SessionStart` → started, except that a compact or `/clear` keeps the state,
     `UserPromptSubmit` → working, `Stop` → idle, `Notification` → waiting), each running `status-hook.sh`;
   - a `PostToolUse` hook on the Atlassian tools, running `jira-access.sh ok`;
@@ -307,7 +310,7 @@ a worker by answering in its tab and telling it not to post to Jira.
   - what a worker needs to work inside its sandbox without approvals: write access to `~/.mesh` (review
     locks and checkpoints), `~/.cache/uv` and pnpm's store, cache and state folders, and the hosts it reaches
     (GitHub, openrouter.ai, PyPI, the npm registry, and the AWS SSO, STS, SSM, DynamoDB and S3 endpoints in
-    eu-west-1).
+    your region).
   Settings load when a worker starts or resumes, so a running worker gets a change only after a restart.
 - `status-hook.sh <state>`: the hook. It reads the hook input on stdin and writes the session's state to
   `~/environment/logs/orchestrator/$ORCH_TICKET.json` (state, session ID, worktree, transcript, notification
