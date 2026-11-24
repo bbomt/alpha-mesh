@@ -20,7 +20,8 @@ Run every command from the main checkout, `~/environment/pmat/alpha-mesh`, on an
 ## The queue
 
 - **The branch** `eval-rc-q/current`: master plus one commit per queued PR, in order. Each commit is the PR's diff
-  (`git merge-tree`), its subject the PR's title and `(#N)`, with the trailers `PR: <n>` and `PR-Head: <sha>`. The
+  merged onto the queue (`git merge-tree --write-tree`: the same three-way merge, and the same tree, as
+  `git merge --squash`, with no working tree; `test-eval-rc-q.sh` checks the trees match), its subject the PR's title and `(#N)`, with the trailers `PR: <n>` and `PR-Head: <sha>`. The
   trailers are the batch. The branch is disposable: the gate rebuilds it and force-pushes it; it is never merged.
 - **The batch PR**: a draft PR from `eval-rc-q/current` into master, never merged, closed after the promotion. Its
   label is the queue's state; the gate's `evals` status and report are posted on it. Its own `evals-gate` check fails
@@ -49,7 +50,9 @@ Before: the PR is open against master and reviewed. An agent PR has `evals-smoke
 mesh merge-pr https://github.com/bbomt/alpha-mesh/pull/<n>
 ```
 Expected: `Queued https://github.com/bbomt/alpha-mesh/pull/<n> (2/4 PRs in eval-rc-q/current, at <sha>). The PR stays open: do not push to it now.`
-and `Batch PR: <url>`. At 4/4 it asks `Queue full: gate it now? [y/N]`: `y` gates now, `N` leaves it to tonight.
+and `Batch PR: <url>`. When no queued PR changes an agent file, it then gates at once (tests only, no quota):
+`No queued PR changes an agent file: gating now (tests only).` Otherwise, at 4/4 it asks
+`Queue full: gate it now? [y/N]`: `y` gates now, `N` leaves it to tonight.
 Check: `mesh eval-rc-q status` lists the PR; the PR is still open on GitHub, with no new commit.
 
 When it did not work:
@@ -89,18 +92,35 @@ What it does, in order, with what it prints:
 4. The full evals on the batch PR (`mesh run-evals <batch PR url>`: about 75 min, k=3, every repeat judged), unless no
    queued PR changes an agent file (`No queued PR changes an agent file: no evals needed.`).
 5. On an evals failure, the drop loop:
-   1. `The evals failed; cases that lost runs: <ids>.` (from the run's `regressed.json`).
+   1. `The evals failed; cases that lost runs: <ids>.` (from the run's `regressed.json`). The cases are named only when
+      the run-count rule failed (or a harness error). A failure on the judge's means alone names none: the baseline
+      holds means, not per-case scores, so the gate **stops for the owner** (below).
    2. **Fluke check:** those cases only, k=3, on the same head (`mesh run-evals --cases … --run fluke-…`). They pass:
       `Fluke: the failing cases pass on a re-run. Gating again (attempt 2).`, a fresh full run, back to step 4. One
       fluke check per head.
-   3. **Bisect:** those cases on the queue's commits (`--run bisect-…`), at most 2 runs for 4 PRs, to find the first
+   3. **Master alone:** the same cases on the queue's base (`--run base-…`). They fail there too: no PR is to blame
+      (model or provider drift, a flaky case, the judge), so the gate **stops for the owner**. The same holds for tests
+      that fail on master alone.
+   4. **Bisect:** those cases on the queue's commits (`--run bisect-…`), at most 2 runs for 4 PRs, to find the first
       PR at which they fail.
-   4. **Drop** it: `Dropped #<n>: …` and `To post on Jira <ticket>: ~/.mesh/eval-rc-q/drops/<n>.md`. Back to step 2:
+   5. **Drop** it: `Dropped #<n>: …` and `To post on Jira <ticket>: ~/.mesh/eval-rc-q/drops/<n>.md`. Back to step 2:
       the rest are rebuilt and gated again, with a full eval.
-6. On a pass, **promote**, each PR in queue order: GitHub updates its branch with master (the master ruleset requires
-   it up to date); its new tree must be the queue's tree at that PR; it gets the commit statuses `eval-rc-q` =
-   success (and `evals` = success for an agent PR), a "Gated in eval-rc-q batch" comment, and is squash-merged:
-   `Merged #<n> into master.` Last: `Promoted <n> PR(s) as eval-rc-q-<date>-<k>: master is at <sha>, the gated tree.`
+6. On a pass, **promote**. First every queued PR must be unchanged, and master must still be the queue's base (a
+   hotfix during the gate: `master moved since the gate`, rebuilt and gated again, nothing merged). Then each PR in
+   queue order:
+   1. master must still be the gated batch up to the PR before it (a hotfix between two merges:
+      `master moved during the promotion`, the rest rebuilt and gated again);
+   2. GitHub updates its branch with master (the master ruleset requires it up to date);
+   3. its new tree must be the queue's tree at that PR, else it is dropped;
+   4. it gets the commit statuses `eval-rc-q` = success (and `evals` = success for an agent PR) and a "Gated in
+      eval-rc-q batch" comment;
+   5. the `evals-gate` run on its new head must pass (one that ran before the statuses is re-run once);
+   6. it is squash-merged: `Merged #<n> into master.`
+   Last: `Promoted <n> PR(s) as eval-rc-q-<date>-<k>: master is at <sha>, the gated tree.`
+7. **A promotion that stopped partway** (a crash, a killed job, an evals-gate run that did not pass) carries on at the
+   next `mesh eval-rc-q gate` or `promote`: when the merged PRs are the first ones of the queue and master's tree is
+   the queue's tree at the last of them, it says `Carrying on a promotion that stopped after <k> PR(s)` and promotes the
+   rest, with no new tests or evals. Otherwise the rest are rebuilt and gated again.
 
 Check: `git fetch && git log --oneline -5 origin/master` shows one squash commit per promoted ticket;
 `git diff <gated sha> origin/master` is empty; the batch PR is closed; `mesh eval-rc-q status` says `No queue`.
@@ -111,7 +131,7 @@ When it did not work:
 | It says (exit code) | State after | Do |
 | :-- | :-- | :-- |
 | `Gate paused … (exit 75 …)` (75) | gating | Another eval run holds the lock, or the free quota left is too low. `mesh eval-rc-q gate` again later, or leave it to tonight: it **resumes** the same head. |
-| `Gate stopped: the evals failed but no case regressed` (1) | gating | The gate failed on the judge's means only, so no case points at a PR. Read the report on the batch PR; drop a PR by hand (Recovery) or rerun. |
+| `Gate stopped for the owner: …` (1) | gating | No PR is to blame. See "Stopped for the owner". |
 | `Gate stopped without a verdict` (1) | gating | The eval run crashed (status `error`). Read its log, then `mesh eval-rc-q gate` again. |
 | `The queue is empty: closed the batch PR …` (0 or 1) | none | Every PR was dropped (1) or merged (0). Post the drop notes. |
 | `ERROR: master's tree … is not the gated tree` (1) | gating | Recovery. |
@@ -136,9 +156,21 @@ promotion). It refuses if the batch changed or the evals have not passed: then r
 
 ## Dropped PRs and their Jira notes
 
-The gate has no Jira access. For each dropped PR it comments on the PR and writes `~/.mesh/eval-rc-q/drops/<n>.md`,
-whose first line names the ticket. The team lead posts each note as a comment on that ticket, so the worker sees it,
-then deletes the file. `mesh eval-rc-q status` lists the notes still to post.
+The gate has no Jira access. For each dropped PR it comments on the PR and writes `~/.mesh/eval-rc-q/drops/<n>.md`.
+Its first line names the ticket, its second says what to do: post the rest as a comment on that ticket **without** a
+`MESSAGE-FROM-WORKER` line (so the orchestrator relays it and wakes the ticket's worker, whatever its labels), and
+remove `AWAITING-MERGE` from the ticket's labels (labels are replaced: send the others). Then delete the file. The
+worker, woken by the comment, fixes the PR. `mesh eval-rc-q status` lists the notes still to post.
+
+## Stopped for the owner
+
+The gate stops, drops nothing and keeps `eval-rc:gating` when no PR is to blame:
+- the failing cases also fail on master alone (model or provider drift, a flaky case, the judge), or the tests do;
+- the full evals failed on the judge's means alone, so there is no failing case to bisect on.
+
+It comments on the batch PR and writes a note for the queue's ticket (`jira` in `config/merge-queue.json`) in
+`~/.mesh/eval-rc-q/notes/`: post it there, as above. The owner then decides: rebaseline, rerun
+(`mesh eval-rc-q gate`), or drop a PR by hand (Recovery).
 
 ## Nightly
 

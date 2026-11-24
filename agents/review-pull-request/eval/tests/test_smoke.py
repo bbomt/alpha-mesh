@@ -95,9 +95,15 @@ def test_a_k3_run_of_some_cases_scales_the_tolerance_to_their_share():
 
 
 def test_the_cli_writes_the_regressed_cases(tmp_path, monkeypatch):
-    out = full(base(30), run_results(27))
+    out = full(base(30), run_results(15))                    # 15 runs lost: C5 to C9
     monkeypatch.setattr(score_eval_run, "gate", lambda *a, **k: out)
     (tmp_path / "results.json").write_text("{}"); (tmp_path / "run.json").write_text("{}")
     (tmp_path / "b.json").write_text("{}")
     score_eval_run.main([str(tmp_path), "--baseline", str(tmp_path / "b.json"), "--regressed", str(tmp_path / "r.json")])
-    assert json.loads((tmp_path / "r.json").read_text()) == ["C9"]
+    assert json.loads((tmp_path / "r.json").read_text()) == ["C5", "C6", "C7", "C8", "C9"]
+
+
+def test_a_gate_failed_on_the_judge_means_alone_names_no_case_to_bisect_on():
+    out = full(base(30), run_results(28, scores=(1, 1, 5)))   # 2 runs lost (within the tolerance), means far down
+    assert not out["passed"] and any("judge mean" in r for r in out["reasons"])
+    assert out["regressed"] == []                             # the count rule passed: no case is to blame

@@ -84,6 +84,13 @@ if [ -n "$mq_branch" ] && [[ "$head_ref" != hotfix/* ]]; then
   count=$((count + 1))
   echo "Queued $url ($count/$mq_batch PRs in $mq_branch, at $head). The PR stays open: do not push to it now." >&2
   echo "Batch PR: $mq_pr_url" >&2
+  # A batch with no agent file needs no evals and costs no quota: gate it at once (tests only), never at night.
+  gated="$(mq_git diff --name-only "$(mq_git merge-base "$(mq_master)" "$commit")" "$commit" \
+    | python3 "$mesh_dir/agents/review-pull-request/eval/scripts/list_evals_gated_files.py")"
+  if [ -z "$gated" ]; then
+    echo "No queued PR changes an agent file: gating now (tests only)." >&2
+    exec "${MESH_EVAL_RC_Q:-$mesh_dir/bin/eval-rc-q.sh}" gate
+  fi
   if [ "$count" -ge "$mq_batch" ]; then
     if at_terminal; then
       printf "Queue full: gate it now? [y/N] " >&2

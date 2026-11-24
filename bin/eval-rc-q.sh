@@ -3,12 +3,12 @@
 # mesh eval-rc-q: the batch queue eval-rc-q/current (PMAT-358 v2). The runbook, with every step's manual equivalent,
 # is EVAL-RC-Q.md.
 #
-#   mesh eval-rc-q status        the queue's state, its PRs, and Jira notes for dropped PRs still to post
+#   mesh eval-rc-q status        the queue's state, its PRs, and notes still to post on Jira
 #   mesh eval-rc-q gate          gate the batch until it is green: rebuild it if master moved, run the tests, run the
-#                                full evals; on a failure confirm it (fluke check), bisect, drop the first bad PR and
-#                                gate again; then squash-merge each passing PR into master, in order
+#                                full evals; on a failure confirm it (fluke check, then master alone), bisect, drop the
+#                                first bad PR and gate again; then squash-merge each passing PR into master, in order
 #   mesh eval-rc-q gate --due    the nightly cron's call: gate a filling queue that holds a PR, or resume a gate
-#   mesh eval-rc-q promote       promote a batch whose evals have already passed (after a crash)
+#   mesh eval-rc-q promote       promote a batch whose evals have already passed, or finish one that stopped partway
 #
 # While the batch PR is labelled eval-rc:gating, mesh merge-pr queues nothing, so the gated head stays fixed: a gate
 # stopped by the quota or the lock (exit 75) resumes on the next gate of the same head.
@@ -23,7 +23,7 @@ run_evals="${MESH_RUN_EVALS:-$mesh_dir/bin/run-evals.sh}"
 runs_dir="${MESH_EVAL_RUNS:-$HOME/.mesh/eval-runs}"
 state_dir="${MESH_EVAL_RC_Q_STATE:-$HOME/.mesh/eval-rc-q}"
 
-help_text() { sed -n '3,15p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+help_text() { sed -n '3,16p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 usage() { help_text >&2; exit 2; }
 note() { echo "$*" >&2; }
 
@@ -39,15 +39,28 @@ next_tag() {  # eval-rc-q-<UTC date>-<n>, n counting the batches already tagged 
   n="$(gh api "repos/$repo/git/matching-refs/tags/eval-rc-q-$day-" | jq length)"
   echo "eval-rc-q-$day-$((n + 1))"
 }
+tree_of() { mq_git rev-parse "$1^{tree}"; }                                       # a local commit's tree
+gh_tree() { gh api "repos/$repo/commits/$1" | jq -r .commit.tree.sha; }          # a GitHub commit's tree
+master_tree() { gh_tree "$(gh api "repos/$repo/git/ref/heads/$mq_default" | jq -r .object.sha)"; }
 
 # ── The batch ────────────────────────────────────────────────────────────────────────────────────────────────────
 # members: the queued PRs, "<queue commit> <pr> <pr head> <subject>" per line, read fresh from origin.
-members=() skip=()   # skip: PRs dropped or already merged during this gate, left out of every rebuild
+members=() skip=()   # skip: PRs dropped or merged during this gate, left out of every rebuild
 merged_any=0         # whether this gate merged a PR into the default branch
 load_members() { mq_fetch; mapfile -t members < <(mq_members); }
 skipped() { local s; for s in "${skip[@]}"; do [ "$s" = "$1" ] && return 0; done; return 1; }
+queue_base() { local c; read -r c _ <<<"${members[0]}"; mq_git rev-parse "$c^"; }   # what the batch was built on
+member_pr() { local c n; read -r c n _ <<<"${members[$(( $1 - 1 ))]}"; echo "$n"; }
+member_commit() { local c; read -r c _ <<<"${members[$(( $1 - 1 ))]}"; echo "$c"; }
 
-# drop <pr> <why>: out of the batch. A PR comment, and a Jira note to post (this script has no Jira access).
+# note_file <dir> <name> <jira> <instructions> <body>: a note for a person to post on Jira (no Jira access here).
+note_file() {
+  mkdir -p "$state_dir/$1"
+  { echo "Jira: $3"; echo "$4"; echo; echo "$5"; } > "$state_dir/$1/$2.md"
+  note "To post on Jira $3: $state_dir/$1/$2.md (delete it once posted)."
+}
+
+# drop <pr> <why>: out of the batch. A PR comment, and a Jira note for its ticket.
 drop() {
   local n="$1" why="$2" url title ticket body
   url="$(pr_url "$n")"
@@ -55,35 +68,62 @@ drop() {
   ticket="$( { grep -oE '[A-Z][A-Z0-9]+-[0-9]+' <<<"$title" || true; } | head -n 1)"
   body="**Dropped from the eval-rc-q batch** (${mq_pr_url}): $why
 
-The PR stays open and nothing of it reached $mq_default. Fix it on this branch (merge $mq_default in), run \`mesh run-evals --smoke\` again if it is an agent PR, then mark it ready to merge again (EVAL-RC-Q.md, \"Dropped\")."
+The PR stays open and nothing of it reached $mq_default. Remove \`AWAITING-MERGE\` (the rule for fixing pre-merge feedback), fix it on this branch (merge $mq_default in), run \`mesh run-evals --smoke\` again if it is an agent PR, then mark it ready to merge again (EVAL-RC-Q.md, \"Dropped PRs\")."
   gh pr comment "$url" --body "$body" >/dev/null
-  mkdir -p "$state_dir/drops"
-  { echo "Jira: ${ticket:-its ticket}   PR: $url"; echo; echo "$body"; } > "$state_dir/drops/$n.md"
+  note_file drops "$n" "${ticket:-its ticket}   PR: $url" \
+    "Post the text below as a comment on the ticket (no MESSAGE-FROM-WORKER line, so the orchestrator wakes its worker), and remove AWAITING-MERGE from its labels (send the others)." \
+    "$body"
   skip+=("$n")
   note "Dropped #$n: $why"
-  note "To post on Jira ${ticket:-(its ticket)}: $state_dir/drops/$n.md (delete it once posted)."
 }
+
+# stop_for_owner <why>: no PR is to blame. Nothing dropped; the label stays eval-rc:gating for the owner.
+stop_for_owner() {
+  local body="**mesh eval-rc-q gate stopped for the owner:** $1 Nothing was dropped; the queue stays eval-rc:gating (EVAL-RC-Q.md, \"Stopped for the owner\")."
+  gh pr comment "$mq_pr_url" --body "$body" >/dev/null
+  note_file notes "stopped-$(date -u +%Y%m%dT%H%M%SZ)" "${mq_jira:-the queue ticket}" \
+    "Post the text below as a comment on the ticket." "$body"
+  note "Gate stopped for the owner: $1"
+  exit 1
+}
+
+# gated_ok <pr head> <queue commit>: the head's tree is the tree gated for that PR (it was updated with master by a
+# promotion that stopped partway, so it moved, but to exactly what passed).
+gated_ok() { [ "$(gh_tree "$1")" = "$(tree_of "$2")" ]; }
 
 # pr_state <pr>: "<state> <head>" from GitHub. A command substitution, never a process substitution, so a gh
 # failure stops the script (set -e) instead of reading as an empty state.
 pr_state() { gh pr view "$(pr_url "$1")" --json state,headRefOid | jq -r '"\(.state) \(.headRefOid)"'; }
 
-# check_members: drop a PR that moved or closed since it was queued; skip one already merged (a promotion that
-# stopped partway). Sets changed=1 when the batch changed, so it needs a rebuild. Called plainly (never in an `if`),
-# so set -e holds inside it.
+# check_members: drop a PR that moved or closed since it was queued, and note the merged ones. Sets changed=1 when
+# the batch changed, and prefix (with resumable=1) when only a leading run of PRs was merged: a promotion stopped
+# partway, which can carry on without a new gate. Called plainly (never in an `if`), so set -e holds inside it.
 check_members() {
-  local line c n h s st cur info
-  changed=0
+  local line c n h s st cur info in_prefix=1
+  changed=0 prefix=0 resumable=1
   for line in "${members[@]}"; do
     read -r c n h s <<<"$line"
-    if skipped "$n"; then changed=1; continue; fi
+    if skipped "$n"; then
+      info="$(pr_state "$n")"; read -r st cur <<<"$info"
+      changed=1
+      if [ "$st" = MERGED ] && [ "$in_prefix" -eq 1 ]; then prefix=$((prefix + 1)); else resumable=0 in_prefix=0; fi
+      continue
+    fi
     info="$(pr_state "$n")"
     read -r st cur <<<"$info"
-    if [ "$st" = MERGED ]; then skip+=("$n"); changed=1
-    elif [ "$st" != OPEN ]; then drop "$n" "it was closed after it was queued."; changed=1
-    elif [ "$cur" != "$h" ]; then drop "$n" "it moved after it was queued (queued at \`${h:0:7}\`, now \`${cur:0:7}\`): a queued PR must not change."; changed=1
+    if [ "$st" = MERGED ]; then
+      skip+=("$n"); changed=1
+      if [ "$in_prefix" -eq 1 ]; then prefix=$((prefix + 1)); else resumable=0; fi
+      continue
+    fi
+    in_prefix=0
+    if [ "$st" != OPEN ]; then drop "$n" "it was closed after it was queued."; changed=1 resumable=0
+    elif [ "$cur" != "$h" ] && ! gated_ok "$cur" "$c"; then
+      drop "$n" "it moved after it was queued (queued at \`${h:0:7}\`, now \`${cur:0:7}\`): a queued PR must not change."
+      changed=1 resumable=0
     else mq_fetch_pr "$n" >/dev/null; fi
   done
+  [ "$prefix" -gt 0 ] || resumable=0
 }
 
 finish_empty() {  # exits 0 when this gate merged a PR, 1 when every PR was dropped
@@ -123,12 +163,12 @@ run_tests() {  # run_tests <sha>: the repo's tests at <sha>, in a throwaway work
 }
 gated_files() {  # gated_files <sha>: the files of the batch at <sha> the evals gate covers. Assign it (never in an
                  # `if`), so a failing git or python stops the script instead of reading as "no evals needed".
-  mq_git diff --name-only "$(mq_master)" "$1" | python3 "$scripts/list_evals_gated_files.py"
+  mq_git diff --name-only "$(queue_base)" "$1" | python3 "$scripts/list_evals_gated_files.py"
 }
 evals_state() {  # evals_state <sha>: the `evals` status on <sha>
   gh api "repos/$repo/commits/$1/status" | jq -r '[.statuses[] | select(.context == "evals")][0].state // "missing"'
 }
-cases_ok() {  # cases_ok <sha>: the drop loop's cases pass at <sha> (0), fail (1); exits 75 if not started
+cases_ok() {  # cases_ok <sha> <label>: the drop loop's cases pass at <sha> (0), fail (1); exits 75 if not started
   local rc=0
   "$run_evals" --cases "$cases_file" --commit "$1" --run "$2-pr$mq_pr_number-${1:0:7}" >&2 || rc=$?
   [ "$rc" -ne 75 ] || { note "Gate paused (exit 75: another run or the quota). The label stays eval-rc:gating: mesh eval-rc-q gate resumes it."; exit 75; }
@@ -140,53 +180,56 @@ tests_ok() { run_tests "$1"; }
 # knowing it fails at the last. Binary search: 4 PRs take at most 2 checks. Not in a subshell, so a check's exit 75
 # (paused) ends the script.
 first_bad() {
-  local lo=1 hi="${#members[@]}" mid c
+  local lo=1 hi="${#members[@]}" mid
   while [ "$lo" -lt "$hi" ]; do
     mid=$(( (lo + hi) / 2 ))
-    read -r c _ <<<"${members[$((mid - 1))]}"
-    if "$1" "$c" "$2"; then lo=$((mid + 1)); else hi=$mid; fi
+    if "$1" "$(member_commit "$mid")" "$2"; then lo=$((mid + 1)); else hi=$mid; fi
   done
   bad="$lo"
 }
-member_pr() { local c n; read -r c n _ <<<"${members[$(( $1 - 1 ))]}"; echo "$n"; }
 
 attempt_file() { echo "$state_dir/attempts/$1"; }
 attempt_of() { cat "$(attempt_file "$1")" 2>/dev/null || echo 1; }
 
 # ── Promote ──────────────────────────────────────────────────────────────────────────────────────────────────────
-# promote: squash-merge each queued PR into the default branch, in order. Sets promoted=0 when the batch changed (a
-# PR moved, or no longer matches the gated tree): the caller rebuilds and gates again. Called plainly, so set -e
-# holds and any failed gh call stops it.
+# promote <from>: squash-merge the queued PRs from index <from> (0-based; >0 resumes a promotion that stopped after
+# merging the first <from>), in order. Sets promoted=0 when the batch must be rebuilt and gated again: a PR changed,
+# a PR's tree is not the gated one, or master moved (a hotfix) before the promotion or between two merges. Called
+# plainly, so set -e holds and any failed gh call stops it.
 promote() {
-  local tip tag line c n h s url st cur behind new desc i master info files
+  local from="$1" tip tag idx line c n h s url st cur behind new desc info files expect
   promoted=1
   tip="$(mq_tip)" tag="$(next_tag)"
-  # Every PR first, before any merge: one that changed sends the whole batch back to the gate, so master never gets
-  # a prefix of the batch for that reason. (A tree that differs after GitHub's update-branch can only be seen at
-  # that PR's turn: then the PRs before it are already merged; EVAL-RC-Q.md, "Recovery".)
-  for line in "${members[@]}"; do
+  # Every PR first, before any merge: one that changed sends the whole batch back to the gate.
+  for line in "${members[@]:$from}"; do
     read -r c n h s <<<"$line"
-    info="$(pr_state "$n")"
-    read -r st cur <<<"$info"
-    if [ "$st" != OPEN ] || [ "$cur" != "$h" ]; then
+    info="$(pr_state "$n")"; read -r st cur <<<"$info"
+    if [ "$st" != OPEN ] || { [ "$cur" != "$h" ] && ! gated_ok "$cur" "$c"; }; then
       drop "$n" "it changed before its promotion (state $st, head \`${cur:0:7}\`)."; promoted=0; return 0
     fi
   done
-  for line in "${members[@]}"; do
-    read -r c n h s <<<"$line"
-    url="$(pr_url "$n")" cur="$h"
+  if [ "$from" -eq 0 ]; then expect="$(tree_of "$(queue_base)")"; else expect="$(tree_of "$(member_commit "$from")")"; fi
+  for ((idx = from; idx < ${#members[@]}; idx++)); do
+    read -r c n h s <<<"${members[$idx]}"
+    url="$(pr_url "$n")"
+    # Master must still be exactly what this PR was gated on top of: the queue's base, or the PRs before it.
+    if [ "$(master_tree)" != "$expect" ]; then
+      note "$mq_default moved $([ "$idx" -eq "$from" ] && echo "since the gate" || echo "during the promotion") (a hotfix?): rebuilding the rest on it and gating again."
+      promoted=0; return 0
+    fi
+    info="$(pr_state "$n")"; read -r st cur <<<"$info"
     behind="$(gh api "repos/$repo/compare/$mq_default...$cur" | jq -r .behind_by)"
     new="$cur"
     if [ "$behind" != 0 ]; then  # the master ruleset requires a branch up to date: GitHub merges master into it
       gh api -X PUT "repos/$repo/pulls/$n/update-branch" -f expected_head_sha="$cur" >/dev/null
-      for i in $(seq 1 40); do
+      for _ in $(seq 1 40); do
         new="$(gh pr view "$url" --json headRefOid | jq -r .headRefOid)"
         [ "$new" = "$cur" ] || break
         sleep "${MESH_MERGE_POLL_SECONDS:-3}"
       done
       [ "$new" != "$cur" ] || { note "ERROR: GitHub did not update #$n's branch with $mq_default in time. Run mesh eval-rc-q promote again."; exit 1; }
     fi
-    if [ "$(gh api "repos/$repo/commits/$new" | jq -r .commit.tree.sha)" != "$(mq_git rev-parse "$c^{tree}")" ]; then
+    if [ "$(gh_tree "$new")" != "$(tree_of "$c")" ]; then
       drop "$n" "updated with $mq_default, its tree is not the tree that was gated for it, so it is not what passed."
       promoted=0; return 0
     fi
@@ -196,18 +239,20 @@ promote() {
     if [ -n "$files" ]; then
       gh api "repos/$repo/statuses/$new" -f state=success -f context=evals -f description="$desc" >/dev/null
     fi
-    mq_rerun_check "$repo" "$new"
     gh pr comment "$url" --body "**Gated in eval-rc-q batch $tag:** the tests and the full evals passed on the batch at \`${tip:0:7}\` ($mq_pr_url). Squash-merging." >/dev/null
-    gh pr checks "$url" --required --watch >/dev/null 2>&1 || true  # the merge below fails if a required check failed
+    # The update-branch push started evals-gate, maybe before the statuses: merge only once a run on this head passed.
+    mq_wait_check "$repo" "$new" || { note "ERROR: evals-gate did not pass on #$n at ${new:0:7}. The label stays eval-rc:gating: mesh eval-rc-q promote carries on."; exit 1; }
     gh pr merge "$url" --squash --match-head-commit "$new"
     skip+=("$n") merged_any=1
+    expect="$(tree_of "$c")"
     note "Merged #$n into $mq_default."
   done
-  master="$(gh api "repos/$repo/git/ref/heads/$mq_default" | jq -r .object.sha)"
-  if [ "$(gh api "repos/$repo/commits/$master" | jq -r .commit.tree.sha)" != "$(mq_git rev-parse "$tip^{tree}")" ]; then
-    note "ERROR: $mq_default's tree at $master is not the gated tree at $tip. Not tagged; the queue branch is kept (EVAL-RC-Q.md, \"Recovery\")."
+  if [ "$(master_tree)" != "$(tree_of "$tip")" ]; then
+    note "ERROR: $mq_default's tree is not the gated tree at $tip. Not tagged; the queue branch is kept (EVAL-RC-Q.md, \"Recovery\")."
     exit 1
   fi
+  local master
+  master="$(gh api "repos/$repo/git/ref/heads/$mq_default" | jq -r .object.sha)"
   gh api "repos/$repo/git/refs" -f ref="refs/tags/$tag" -f sha="$master" >/dev/null
   gh pr comment "$mq_pr_url" --body "**Promoted as $tag:** $(for line in "${members[@]}"; do read -r _ n _ <<<"$line"; printf '#%s ' "$n"; done)squash-merged into $mq_default; its tree is the gated tree." >/dev/null
   gh pr close "$mq_pr_url" >/dev/null
@@ -215,9 +260,21 @@ promote() {
   note "Promoted ${#members[@]} PR(s) as $tag: $mq_default is at $master, the gated tree. $mq_branch is deleted."
 }
 
+# check_resume: sets can_resume=1 when a promotion that stopped after merging the first $prefix PRs can carry on:
+# master is exactly the queue at the last of them, and the batch's evals passed (or it needs none). Called plainly.
+check_resume() {
+  local files mt
+  can_resume=0
+  [ "$resumable" -eq 1 ] || return 0
+  mt="$(master_tree)"
+  [ "$mt" = "$(tree_of "$(member_commit "$prefix")")" ] || return 0
+  files="$(gated_files "$(mq_tip)")"
+  if [ -z "$files" ] || [ "$(evals_state "$(mq_tip)")" = success ]; then can_resume=1; fi
+}
+
 # ── Gate ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 gate() {
-  local due="${1:-}" tip attempt rc n regressed run files
+  local due="${1:-}" tip attempt rc regressed run files
   mq_batch_pr "$repo"
   if [ -z "$mq_pr_url" ]; then
     [ -n "$due" ] && { echo "Nothing to gate: no queue."; exit 0; }
@@ -235,10 +292,21 @@ gate() {
   while :; do
     load_members
     check_members
-    if [ "$changed" -eq 1 ] || ! mq_base_current; then rebuild; continue; fi
+    if [ "$changed" -eq 1 ]; then
+      check_resume
+      if [ "$can_resume" -eq 1 ]; then
+        note "Carrying on a promotion that stopped after $prefix PR(s): $mq_default is the gated batch up to #$(member_pr "$prefix")."
+        promote "$prefix"
+        [ "$promoted" -eq 1 ] && exit 0
+        continue
+      fi
+      rebuild; continue
+    fi
+    if ! mq_base_current; then rebuild; continue; fi
     tip="$(mq_tip)"
     note "Batch: ${#members[@]} PR(s) at ${tip:0:7}. Running the tests."
     if ! run_tests "$tip"; then
+      tests_ok "$(queue_base)" || stop_for_owner "the tests fail on $mq_default (\`$(queue_base | cut -c1-7)\`) alone, so no PR is to blame."
       first_bad tests_ok tests
       drop "$(member_pr "$bad")" "the tests fail with it (the first PR in the queue at which they fail)."
       continue
@@ -258,11 +326,7 @@ gate() {
         failure)
           run="gate-pr$mq_pr_number-${tip:0:7}"; [ "$attempt" -eq 1 ] || run="$run-a$attempt"
           regressed="$(cat "$runs_dir/$run/regressed.json" 2>/dev/null || echo '[]')"
-          if [ "$(jq length <<<"$regressed")" -eq 0 ]; then
-            gh pr comment "$mq_pr_url" --body "**mesh eval-rc-q gate:** the full evals failed on \`${tip:0:7}\` but no case lost runs (a judge-mean drop?), so no PR can be bisected out. Needs a person (EVAL-RC-Q.md, \"Recovery\")." >/dev/null
-            note "Gate stopped: the evals failed but no case regressed, so nothing to bisect. The label stays eval-rc:gating (EVAL-RC-Q.md, \"Recovery\")."
-            exit 1
-          fi
+          [ "$(jq length <<<"$regressed")" -gt 0 ] || stop_for_owner "the full evals failed on \`${tip:0:7}\` on the judge's means alone (no case lost runs). The baseline holds means, not per-case scores, so no PR can be bisected out; see the report on this PR."
           mkdir -p "$state_dir/attempts"
           cases_file="$state_dir/cases-${tip:0:12}.json"
           jq '{cases: .}' <<<"$regressed" > "$cases_file"
@@ -273,8 +337,10 @@ gate() {
             note "Fluke: the failing cases pass on a re-run. Gating again (attempt 2)."
             continue
           fi
+          # Before blaming a PR: do the cases fail on master alone (model or provider drift, a flaky case, the judge)?
+          cases_ok "$(queue_base)" base || stop_for_owner "the failing cases ($(jq -r 'join(", ")' <<<"$regressed")) also fail on $mq_default (\`$(queue_base | cut -c1-7)\`) alone, so no PR is to blame (model or provider drift, a flaky case, or the judge?)."
           first_bad cases_ok bisect
-          drop "$(member_pr "$bad")" "the full evals fail with it on $(jq -r 'join(", ")' <<<"$regressed") (re-run and bisected: the first PR in the queue at which they fail)."
+          drop "$(member_pr "$bad")" "the full evals fail with it on $(jq -r 'join(", ")' <<<"$regressed") (re-run, passing on $mq_default, and bisected: the first PR in the queue at which they fail)."
           continue ;;
         *) note "Gate stopped without a verdict (evals: $(evals_state "$tip")). The label stays eval-rc:gating: rerun mesh eval-rc-q gate to resume."
            exit 1 ;;
@@ -282,7 +348,7 @@ gate() {
     else
       note "No queued PR changes an agent file: no evals needed."
     fi
-    promote
+    promote 0
     [ "$promoted" -eq 1 ] || continue
     exit 0
   done
@@ -300,9 +366,9 @@ status() {
     echo "Batch PR: ${mq_pr_url:-none}"
     for line in "${members[@]}"; do read -r c n h s <<<"$line"; echo "  #$n at ${h:0:7}: $s"; done
   fi
-  for f in "$state_dir"/drops/*.md; do
+  for f in "$state_dir"/drops/*.md "$state_dir"/notes/*.md; do
     [ -e "$f" ] || continue
-    echo "Jira note to post for a dropped PR: $f ($(head -n 1 "$f"))"
+    echo "Jira note to post: $f ($(head -n 1 "$f"))"
   done
 }
 
@@ -311,14 +377,20 @@ standalone_promote() {
   [ -n "$mq_pr_url" ] || { echo "ERROR: no open batch PR for $mq_branch" >&2; exit 1; }
   load_members
   check_members
-  if [ "$changed" -eq 1 ] || ! mq_base_current; then echo "Not promoted: the batch changed; run mesh eval-rc-q gate." >&2; exit 1; fi
-  local files
-  files="$(gated_files "$(mq_tip)")"
-  if [ -n "$files" ] && [ "$(evals_state "$(mq_tip)")" != success ]; then
-    echo "Not promoted: the evals have not passed on the batch at $(mq_tip). Run mesh eval-rc-q gate." >&2
-    exit 1
+  local from=0 files
+  if [ "$changed" -eq 1 ]; then
+    check_resume
+    [ "$can_resume" -eq 1 ] || { echo "Not promoted: the batch changed; run mesh eval-rc-q gate." >&2; exit 1; }
+    from="$prefix"
+  else
+    mq_base_current || { echo "Not promoted: $mq_default moved since the gate; run mesh eval-rc-q gate." >&2; exit 1; }
+    files="$(gated_files "$(mq_tip)")"
+    if [ -n "$files" ] && [ "$(evals_state "$(mq_tip)")" != success ]; then
+      echo "Not promoted: the evals have not passed on the batch at $(mq_tip). Run mesh eval-rc-q gate." >&2
+      exit 1
+    fi
   fi
-  promote
+  promote "$from"
   [ "$promoted" -eq 1 ] || { echo "Not finished: the batch changed during the promotion; run mesh eval-rc-q gate." >&2; exit 1; }
 }
 

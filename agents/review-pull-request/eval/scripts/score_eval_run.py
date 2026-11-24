@@ -148,9 +148,6 @@ def gate(baseline: dict, results: dict, run: dict, cases: list[dict], tolerance:
         r["run"] += [x["result"] for x in runs[case_id]].count("pass")
         r["runs"] += len(runs[case_id])
 
-    regressed = sorted(c for c in gated if [x["result"] for x in runs[c]].count("pass") < (
-        baseline["cases"][c]["runs"][:1] if quick else baseline["cases"][c]["runs"]).count("pass")
-        or any(x["result"] == "error" for x in runs[c]))
     baseline_passed = sum(r["baseline"] for r in rows.values())
     run_passed = sum(r["run"] for r in rows.values())
     total = sum(r["runs"] for r in rows.values())
@@ -162,6 +159,11 @@ def gate(baseline: dict, results: dict, run: dict, cases: list[dict], tolerance:
     if drop > tolerance:
         reasons.append(f"runs passed {run_passed}/{total}, below the {needed}/{total} needed "
                        f"(the baseline's {baseline_passed} minus the tolerance {tolerance})")
+    # The cases to bisect on: only when the run count failed (or a harness error), those that lost runs or errored.
+    # A failure on the judge's means alone names none: the baseline holds means, not per-case scores (PMAT-358 R2).
+    regressed = sorted(c for c in gated if [x["result"] for x in runs[c]].count("pass") < (
+        baseline["cases"][c]["runs"][:1] if quick else baseline["cases"][c]["runs"]).count("pass")
+        or any(x["result"] == "error" for x in runs[c])) if drop > tolerance or errors else []
 
     def failing(pred):
         return sum(x["result"] == "fail" for c in gated if pred(by_id[c]) for x in runs[c])

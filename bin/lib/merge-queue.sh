@@ -24,6 +24,7 @@ mq_load() {
   mq_branch="$(jq -r '.branch // empty' <<<"$q")"
   mq_default="$(jq -r '.default // "master"' <<<"$q")"
   mq_batch="$(jq -r '.batch_size // 4' <<<"$q")"
+  mq_jira="$(jq -r '.jira // empty' <<<"$q")"
 }
 
 # mq_fetch: origin's default branch and queue branch, into refs/remotes/origin/*. A queue branch that no longer exists
@@ -102,9 +103,19 @@ mq_open_batch_pr() {
   mq_state=filling
 }
 
-# mq_rerun_check <repo> <sha>: re-run the newest evals-gate check run on <sha>, so GitHub reads a new status.
-mq_rerun_check() {
-  local id
-  id="$(gh run list -R "$1" --workflow evals-gate.yml --commit "$2" --json databaseId 2>/dev/null | jq -r '.[0].databaseId // empty' || true)"
-  [ -z "$id" ] || gh run rerun "$id" -R "$1" >/dev/null || true
+# mq_wait_check <repo> <sha>: wait until the newest evals-gate run on <sha> has passed. The run a push starts may
+# have read the statuses before they were posted: a failed run is re-run once. Returns 1 when it does not pass.
+mq_wait_check() {
+  local i run rerun=0
+  for i in $(seq 1 "${MESH_CHECK_POLLS:-120}"); do
+    run="$(gh run list -R "$1" --workflow evals-gate.yml --commit "$2" --json databaseId,status,conclusion | jq -c '.[0] // empty')"
+    if [ -n "$run" ] && [ "$(jq -r .status <<<"$run")" = completed ]; then
+      [ "$(jq -r .conclusion <<<"$run")" = success ] && return 0
+      [ "$rerun" -eq 0 ] || return 1
+      gh run rerun "$(jq -r .databaseId <<<"$run")" -R "$1" >/dev/null
+      rerun=1
+    fi
+    sleep "${MESH_MERGE_POLL_SECONDS:-5}"
+  done
+  return 1
 }
