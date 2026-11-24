@@ -71,3 +71,33 @@ def test_the_cli_refuses_an_empty_smoke_list(tmp_path):
     empty.write_text(json.dumps({"cases": []}))
     with pytest.raises(SystemExit, match="no cases"):
         score_eval_run.smoke_cases(empty)
+
+
+# The drop loop (PMAT-358 v2): which cases a failed gate lost, and a k=3 run of just those cases ───────────────────
+
+def full(baseline, res, subset=None, **kw):
+    cs = [c for c in cases() if subset is None or c["case_id"] in subset]
+    return score_eval_run.gate(baseline, res, {"model": MODEL, "k": 3}, cs, tolerance=10,
+                               judge_tolerance=JUDGE_TOLERANCE, share=len(cs) / len(IDS), **kw)
+
+
+def test_a_failed_gate_names_the_cases_that_passed_fewer_runs_than_the_baseline_and_those_with_errors():
+    out = full(base(30), run_results(24, error_at="C9"))    # C8 (and C9's last repeats) lose runs; C9 also errors
+    assert out["regressed"] == ["C8", "C9"]
+    assert full(base(30), run_results(30))["regressed"] == []
+
+
+def test_a_k3_run_of_some_cases_scales_the_tolerance_to_their_share():
+    subset = IDS[:4]                 # 4 of 10 cases, k=3 against k=3: 10 * sqrt(0.4) = 6.3 -> 6
+    out = full(base(30), keep(run_results(30), subset), subset)
+    assert out["passed"] and out["tolerance"] == 6 and out["runs"] == 12
+    assert out["judge_rows"][0]["tolerance"] == pytest.approx(round(0.3 / 0.4 ** 0.5, 2))
+
+
+def test_the_cli_writes_the_regressed_cases(tmp_path, monkeypatch):
+    out = full(base(30), run_results(27))
+    monkeypatch.setattr(score_eval_run, "gate", lambda *a, **k: out)
+    (tmp_path / "results.json").write_text("{}"); (tmp_path / "run.json").write_text("{}")
+    (tmp_path / "b.json").write_text("{}")
+    score_eval_run.main([str(tmp_path), "--baseline", str(tmp_path / "b.json"), "--regressed", str(tmp_path / "r.json")])
+    assert json.loads((tmp_path / "r.json").read_text()) == ["C9"]

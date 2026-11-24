@@ -4,6 +4,9 @@
 #
 #   mesh run-evals <PR url>                              run the evals on the PR's head; post `evals` and the score table
 #   mesh run-evals --smoke <PR url>                      k=1 on eval/smoke.json's cases: posts `evals-smoke` (PMAT-358)
+#   mesh run-evals --attempt <n> <PR url>                the full evals again on the same head, as a fresh run
+#   mesh run-evals --cases <file> --commit <sha> --run <name>   k=3 on some cases at a commit, posting nothing (the
+#                                                        eval-rc-q drop loop: fluke check and bisect)
 #   mesh run-evals --force-success <PR url> --reason R   post `evals` = success by hand ("forced: R"), recorded on the PR
 #
 # GitHub's required check `evals-gate` (.github/workflows/evals-gate.yml) reads the `evals` status these post; each
@@ -37,6 +40,12 @@ Usage:
       The smoke evals: k=1 on the cases in master's eval/smoke.json, scored against the baseline's first repeat.
       Posts the commit status `evals-smoke` and a PR comment. Run it before marking an agent PR AWAITING-MERGE:
       mesh merge-pr needs evals-smoke = success to merge an agent PR into the queue.
+  mesh run-evals --attempt <n> <PR url>
+      The full evals as attempt <n> (a fresh run, gate-pr<N>-<sha>-a<n>): the eval-rc-q gate after a fluke.
+  mesh run-evals --cases <file> --commit <sha> --run <name>
+      k=3 on only the cases <file> ({"cases": [...]}) names, at <sha>, scored by master's rule with the tolerance
+      scaled to their share. Posts nothing; exits 0 (pass), 1 (fail) or 75 (not started). The eval-rc-q drop loop
+      runs it for its fluke check and bisect (EVAL-RC-Q.md).
   mesh run-evals --force-success <PR url> --reason "<why>"
       Sets `evals` = success by hand ("forced: <why>") and records the reason on the PR, for a merge you have
       decided on despite the evals.
@@ -79,8 +88,8 @@ free_remaining() {
 
 # start_run <mode full|smoke> <run name>: take the lock and check the quota, or exit 75 having started nothing.
 # The lock is held until this script exits.
-start_run() {
-  local min=$MIN_FREE_FULL
+start_run() {  # start_run <mode> <run name> [min free requests]
+  local min="${3:-$MIN_FREE_FULL}"
   [ "$1" = smoke ] && min=$MIN_FREE_SMOKE
   mkdir -p "$(dirname "$lock_file")" "$(dirname "$quota_log")"
   exec 9>"$lock_file"
@@ -151,6 +160,8 @@ run_gate() {
     local pattern
     pattern="^($(jq -r '.cases | join("|")' <<<"$smoke_json"))\$"
     eval_args=(--k 1 --judge-repeats first --filter-pattern "$pattern")
+  elif [ "$mode" = cases ]; then  # $cases_file: the drop loop's cases, k=3 like the gate
+    eval_args=(--judge-repeats all --filter-pattern "^($(jq -r '.cases | join("|")' "$cases_file"))\$")
   fi
   local gate_src msg
   if ! gate_src="$(git -C "$mesh_dir" show "$ref:$agent_rel/eval/scripts/score_eval_run.py" 2>/dev/null)"; then
@@ -182,6 +193,11 @@ run_gate() {
   if [ -n "$smoke_json" ]; then
     printf '%s\n' "$smoke_json" > "$run_dir/smoke-${ref##*/}.json"
     check_args=(--quick --cases "$run_dir/smoke-${ref##*/}.json")
+  elif [ "$mode" = cases ]; then
+    cp "$cases_file" "$run_dir/cases.json"
+    check_args=(--cases "$run_dir/cases.json")
+  else  # the full gate: the cases it lost, for the eval-rc-q drop loop
+    check_args=(--regressed "$run_dir/regressed.json")
   fi
   echo "Eval gate: ${head:0:7}, run $run, $mode, tolerance $tolerance (worktree $wt)" >&2
 
@@ -252,9 +268,27 @@ case "${1:-}" in
     remove_worktree
     exit "$gate" ;;
 
+  --cases)
+    [ $# -eq 6 ] && [ "$3" = --commit ] && [[ "$4" =~ ^[0-9a-f]{40}$ ]] && [ "$5" = --run ] && [ -n "$6" ] && [ -f "$2" ] || usage
+    cases_file="$(cd "$(dirname "$2")" && pwd)/$(basename "$2")" head="$4" run="$6" context="" repo=""
+    git -C "$mesh_dir" fetch -q origin master
+    dev="$(git -C "$mesh_dir" show "origin/master:$agent_rel/eval/baseline.json" | jq '.cases | length')"
+    n="$(jq '.cases | length' "$cases_file")"
+    start_run cases "$run" $(( (MIN_FREE_FULL * n + dev - 1) / dev ))  # the full run's threshold, pro rata
+    run_gate "$head" "$run" origin/master cases
+    cat "$run_dir/gate.md"
+    remove_worktree
+    exit "$gate" ;;
+
+  --attempt) ;;  # the full run, below
   -*) usage ;;
 esac
 
+attempt=1
+if [ "${1:-}" = --attempt ]; then
+  [[ "${2:-}" =~ ^[1-9][0-9]*$ ]] || usage
+  attempt="$2"; shift 2
+fi
 [ $# -eq 1 ] && [[ "$1" =~ $pr_re ]] || usage
 url="$1"
 repo="${BASH_REMATCH[1]}"
@@ -273,11 +307,13 @@ if [ "$behind" != "0" ]; then
   exit 1
 fi
 
-start_run full "gate-pr$number-${head:0:7}"
+run="gate-pr$number-${head:0:7}"
+[ "$attempt" -eq 1 ] || run="$run-a$attempt"
+start_run full "$run"
 git -C "$mesh_dir" fetch -q origin "$base" "pull/$number/head"
 context=evals
 post_status "$repo" "$head" evals pending "mesh run-evals is running on ${head:0:7}"
-run_gate "$head" "gate-pr$number-${head:0:7}" "origin/$base"  # master's baseline and tolerance, never the PR's
+run_gate "$head" "$run" "origin/$base"  # master's baseline and tolerance, never the PR's
 
 if [ "$gate" -eq 0 ]; then
   post_status "$repo" "$head" evals success "$summary"
@@ -285,7 +321,7 @@ else
   post_status "$repo" "$head" evals failure "$summary"
 fi
 rerun_evals_gate "$repo" "$head"
-{ echo "**mesh run-evals** on \`${head:0:7}\` (run \`gate-pr$number-${head:0:7}\`)"; echo; cat "$run_dir/gate.md"; } \
+{ echo "**mesh run-evals** on \`${head:0:7}\` (run \`$run\`)"; echo; cat "$run_dir/gate.md"; } \
   > "$run_dir/gate-comment.md"
 gh pr comment "$url" --body-file "$run_dir/gate-comment.md" >/dev/null
 cat "$run_dir/gate.md"

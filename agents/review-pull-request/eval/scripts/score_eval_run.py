@@ -19,8 +19,12 @@ Reported, never gating yet (the owner switches them on): security misses, failin
 means against PMAT-311's provisional proposal. Exits 1 when the gate fails.
 
 --quick scores a k=1 run against the baseline's first repeat, with the tolerance scaled to the smaller run
-(quick_tolerance). With --cases <smoke.json> (mesh run-evals --smoke, PMAT-358) it scores only those cases, the
-tolerances scaled again to their share of the development cases. It is a cheap check for large drops, never the gate.
+(quick_tolerance). It is a cheap check for large drops, never the gate.
+
+--cases <file> scores only the cases a list ({"cases": [...]}) names, the tolerances scaled to their share of the
+development cases: the smoke evals (mesh run-evals --smoke, with --quick) and the eval-rc-q drop loop's runs of a
+failed gate's cases (PMAT-358). --regressed <file> writes the cases that passed fewer runs than the baseline, or had a
+harness error: the cases the drop loop re-runs and bisects on.
 """
 
 import argparse
@@ -120,9 +124,10 @@ def gate(baseline: dict, results: dict, run: dict, cases: list[dict], tolerance:
     if quick:
         if run["k"] != 1:
             reasons.append(f"a quick run has k=1, this one k={run['k']}")
-        tolerance = quick_tolerance(tolerance, baseline["k"], share)
     elif run["k"] != baseline["k"]:
         reasons.append(f"the run has k={run['k']}, the baseline k={baseline['k']}")
+    if quick or share < 1:  # fewer runs than the full gate: the noise, and so the tolerance, scale with sqrt(runs)
+        tolerance = quick_tolerance(tolerance, baseline["k"] if quick else 1, share)
     if errors := sorted(c for c, rs in runs.items() if any(r["result"] == "error" for r in rs)):
         reasons.append(f"harness error in {len(errors)} case(s): {', '.join(errors)}")
     if missing := sorted(set(by_id) - set(runs)):
@@ -143,6 +148,9 @@ def gate(baseline: dict, results: dict, run: dict, cases: list[dict], tolerance:
         r["run"] += [x["result"] for x in runs[case_id]].count("pass")
         r["runs"] += len(runs[case_id])
 
+    regressed = sorted(c for c in gated if [x["result"] for x in runs[c]].count("pass") < (
+        baseline["cases"][c]["runs"][:1] if quick else baseline["cases"][c]["runs"]).count("pass")
+        or any(x["result"] == "error" for x in runs[c]))
     baseline_passed = sum(r["baseline"] for r in rows.values())
     run_passed = sum(r["run"] for r in rows.values())
     total = sum(r["runs"] for r in rows.values())
@@ -160,8 +168,9 @@ def gate(baseline: dict, results: dict, run: dict, cases: list[dict], tolerance:
 
     collected = judge_report.collect(results, cases)
     judge_tolerance = dict(judge_tolerance or JUDGE_TOLERANCE)
-    if quick:
-        judge_tolerance = {d: quick_judge_tolerance(t, baseline["k"], share) for d, t in judge_tolerance.items()}
+    if quick or share < 1:
+        judge_tolerance = {d: quick_judge_tolerance(t, baseline["k"] if quick else 1, share)
+                           for d, t in judge_tolerance.items()}
     judge_reasons, judge_rows = judge_gate(baseline.get("judge"),
                                            judge_report.gate_means([e for e in collected
                                                                     if e["case"]["case_id"] in gated]),
@@ -177,6 +186,7 @@ def gate(baseline: dict, results: dict, run: dict, cases: list[dict], tolerance:
         "judge": judge_report.summarise(collected), "judge_rows": judge_rows,
         "model": run["model"], "k": run["k"], "quick": quick, "smoke": len(cases) if share < 1 else None,
         "rebaseline": [] if quick else rebaseline_hints(drop, tolerance, not_gated),
+        "regressed": regressed,
     }
 
 
@@ -236,7 +246,8 @@ def main(argv=None) -> int:
     parser.add_argument("--tolerance", type=int, default=TOLERANCE)
     parser.add_argument("--markdown", type=Path, help="also write the report to this file")
     parser.add_argument("--quick", action="store_true", help="score a k=1 run against the baseline's first repeat")
-    parser.add_argument("--cases", type=Path, help="score only the cases this smoke list (eval/smoke.json) names")
+    parser.add_argument("--cases", type=Path, help="score only the cases this list ({\"cases\": [...]}) names")
+    parser.add_argument("--regressed", type=Path, help="write the cases that lost runs against the baseline here")
     args = parser.parse_args(argv)
 
     cases = all_cases = gate_cases()
@@ -249,6 +260,8 @@ def main(argv=None) -> int:
     print(text)
     if args.markdown:
         args.markdown.write_text(text)
+    if args.regressed:
+        args.regressed.write_text(json.dumps(out["regressed"]) + "\n")
     return 0 if out["passed"] else 1
 
 

@@ -51,7 +51,8 @@ case "$1" in
   fetch) ;;
   show)
     case "$2" in
-      *baseline.json) [ -z "${STUB_NO_BASELINE:-}" ] || exit 128; echo '{"model": "master-baseline"}' ;;
+      *baseline.json) [ -z "${STUB_NO_BASELINE:-}" ] || exit 128  # 65 development cases, like the real one
+        printf '{"model": "master-baseline", "cases": {%s}}\n' "$(seq -f '"c%g": {}' 1 65 | paste -sd, -)" ;;
       origin/master:*smoke.json) echo '{"cases": ["sec-001", "R45-fee8a9a-001"]}' ;;
       origin/master:*score_eval_run.py)  # STUB_NO_GATE: the base has no gate (renamed or deleted)
         [ -z "${STUB_NO_GATE:-}" ] || exit 128; printf '"""doc"""\nTOLERANCE = 7  # runs\n' ;;
@@ -81,6 +82,8 @@ echo "uv $*" >> "$STUB_LOG"
 # uv run python eval/scripts/score_eval_run.py <run> --baseline <f> --tolerance <t> --markdown <md> [--quick --cases <f>]
 cp "$6" "$STUB_BASELINE_SEEN"
 [ "${12:-}" = --cases ] && cp "${13}" "$STUB_BASELINE_SEEN.cases"
+[ "${11:-}" = --cases ] && cp "${12}" "$STUB_BASELINE_SEEN.cases"
+[ "${11:-}" = --regressed ] && echo "${12}" > "$STUB_BASELINE_SEEN.regressed"
 cat eval/scripts/score_eval_run.py eval/scripts/write_baseline.py > "$STUB_BASELINE_SEEN.scorer" 2>/dev/null || true
 case "$STUB_GATE" in
   pass) echo "runs passed 142/195 · baseline 140/195 · needs at least 133/195 (tolerance 7) · change +2" > "${10}"; exit 0 ;;
@@ -216,6 +219,45 @@ if run "a second run while one holds the lock exits without a status or a run" 0
   grep -q "run_eval" "$WORK/log" && { echo "  FAIL: started a second eval"; fails=$((fails + 1)); }
 fi
 exec 8>&-
+
+# The full gate writes the cases it lost (regressed.json), for the eval-rc-q drop loop; --attempt makes a fresh run.
+rm -f "$WORK/baseline-seen.regressed"
+if run "a full run asks the scorer for the regressed cases" 0 pass 0 "pending,success" yes; then
+  grep -q "/gate-pr15-abc1234/regressed.json$" "$WORK/baseline-seen.regressed" 2>/dev/null \
+    || { echo "  FAIL: no --regressed <run>/regressed.json"; fails=$((fails + 1)); }
+fi
+: > "$WORK/log"; key 1000
+set +e
+PATH="$WORK/bin:$PATH" HOME="$WORK/home" MESH_RUN_EVALS_DIR="$WORK/gates" STUB_LOG="$WORK/log" STUB_HEAD="$HEAD_SHA" STUB_BEHIND=0 \
+  STUB_GATE=pass STUB_COMMENT="$WORK/comment" STUB_BASELINE_SEEN="$WORK/baseline-seen" \
+  "$MESH_DIR/bin/mesh" run-evals --attempt 2 "$URL" >/dev/null 2>&1; code=$?
+set -e
+if [ "$code" -eq 0 ] && grep -q -- "--run gate-pr15-abc1234-a2 --judge-repeats all" "$WORK/log"; then
+  echo "  PASS: --attempt 2 runs the full evals as a fresh run (gate-pr15-abc1234-a2)"
+else echo "  FAIL: --attempt (exit $code)"; sed 's/^/    log: /' "$WORK/log"; fails=$((fails + 1)); fi
+
+# --cases: k=3 on the listed cases at a commit, scored with --cases, posting no status; the quota needed is pro rata.
+printf '{"cases": ["sec-001", "log-002"]}\n' > "$WORK/cases.json"
+cases_run() {  # cases_run <remaining>: sets code
+  : > "$WORK/log"; key "$1"; rm -f "$WORK/baseline-seen.cases"
+  set +e
+  PATH="$WORK/bin:$PATH" HOME="$WORK/home" MESH_RUN_EVALS_DIR="$WORK/gates" STUB_LOG="$WORK/log" STUB_HEAD="$HEAD_SHA" \
+    STUB_GATE="${GATE:-pass}" STUB_BASELINE_SEEN="$WORK/baseline-seen" \
+    "$MESH_DIR/bin/mesh" run-evals --cases "$WORK/cases.json" --commit "$HEAD_SHA" --run fluke-x >"$WORK/cases-out" 2>&1
+  code=$?
+  set -e
+}
+cases_run 1000
+if [ "$code" -eq 0 ] && grep -qF -- "--run fluke-x --judge-repeats all --filter-pattern ^(sec-001|log-002)\$" "$WORK/log" \
+   && grep -q '"log-002"' "$WORK/baseline-seen.cases" && ! grep -q "statuses\|pr comment" "$WORK/log"; then
+  echo "  PASS: --cases runs k=3 on the listed cases at the commit, scores them with --cases and posts nothing"
+else echo "  FAIL: --cases (exit $code)"; sed 's/^/    out: /' "$WORK/cases-out"; sed 's/^/    log: /' "$WORK/log"; fails=$((fails + 1)); fi
+GATE=fail cases_run 1000
+[ "$code" -eq 1 ] && echo "  PASS: --cases exits 1 when the cases fail" || { echo "  FAIL: --cases fail exit $code"; fails=$((fails + 1)); }
+cases_run 12   # 2 of 65 cases: ceil(400 * 2 / 65) = 13
+if [ "$code" -eq 75 ] && ! grep -q run_eval "$WORK/log"; then
+  echo "  PASS: --cases needs the full run's quota pro rata (13 for 2 of 65 cases): with 12 left it does not start"
+else echo "  FAIL: --cases quota (exit $code)"; fails=$((fails + 1)); fi
 
 # The help: --help prints it and exits 0; no arguments print it to stderr and exit 2. Both name every mode.
 set +e
