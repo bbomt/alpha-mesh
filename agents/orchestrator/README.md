@@ -347,7 +347,12 @@ The orchestrator drives programs, not libraries: `tmux` (the tabs), `claude` (st
   status file name (`~/environment/logs/orchestrator/<KEY>.json`) and part of the `claude ...` command tmux
   runs, so `../x` or `PMAT-1;rm -rf ~` must never get through.
 - The one string a shell runs (the `claude ...` command in the new tab) quotes every value with `shlex.quote`.
-- Text typed into a tab is a fixed template plus Jira comment IDs, sent with `send-keys -l` (literally).
+- Text typed into a tab is a fixed template plus Jira comment IDs, the cap (an int) and ticket keys (checked as
+  above), sent with `send-keys -l` (literally). The resume-after-pause prompt, which names the worker's Jira
+  comment ID, is part of the `claude ...` command, so it is `shlex.quote`d like every other value there.
+- `--priority` is checked as a ticket key before it is stored. The orchestrator's own files (`cap.txt`,
+  `priority.txt`, `order.txt`, `queue.txt`) are written only by `mesh orchestrate`, as atomic replaces under
+  `queue.lock`. Worker sandboxes cannot write `~/environment/logs/` (see `settings.json`).
 
 ## Limits (v1)
 
