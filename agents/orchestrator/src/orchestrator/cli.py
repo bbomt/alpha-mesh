@@ -61,7 +61,7 @@ recently started worker (never the priority ticket) is paused. Once at its promp
 processes and post its status on Jira; its tab closes {loop.CLOSE_GRACE.seconds // 60} minutes later unless you type there (then it is never
 paused again). It waits in the Queue marked paused, behind the priority ticket, and resumes its same Claude
 session when a slot frees up. --priority TICKET (one at a time) moves a ticket to the front; a new one needs
---repo-dir. A ticket that loses the mark to a newer one keeps running.
+--repo-dir. A ticket that loses the mark to a newer one is an ordinary worker again (it may be paused for room).
 
 Talking to workers: answer a worker's question with a Jira comment, or type in its tab. Worker comments
 start with MESSAGE-FROM-WORKER; any other comment is taken as yours. Merge a worker's PR yourself (by hand,
@@ -157,13 +157,9 @@ def settings(args, repo: str | None, event, p: argparse.ArgumentParser) -> list[
             if entry is None and repo is None:  # never start a ticket in whatever folder the owner is in
                 p.error(f"--repo-dir is required to make a new ticket the priority: the local folder of {key}'s repo")
             queue = [entry or (key, repo), *(e for e in queue if e[0] != key)]
-        for k in active:  # only the ticket replaced last keeps that protection
-            if status.read(k).get("was_priority"):
-                status.update(k, was_priority=None)
-        if old in active:  # it keeps running (acceptance test 7): never paused to make room for the new one
-            status.update(old, was_priority=True)
+        # The old one (if any) is an ordinary ticket from now on, so it may be paused to make room for this one.
         if status.path(key).exists():
-            status.update(key, was_priority=None, pausing=None)  # the priority ticket is never paused: drop its pause
+            status.update(key, pausing=None)  # the priority ticket is never paused: drop its pause
         status.save_priority(key)
         say(f"{key}: priority, already running" if key in active
             else f"{key}: priority, moved to the front of the queue")

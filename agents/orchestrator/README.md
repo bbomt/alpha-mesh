@@ -158,9 +158,9 @@ mesh orchestrate --priority PMAT-291 --repo-dir ~/environment/pmat/alpha-mesh   
   (named by ID) first. A paused ticket is never started afresh.
 - **`--priority TICKET`:** there is one priority ticket at a time, stored in `priority.txt`. A queued or paused
   ticket moves to the front; a new one (with `--repo-dir`) goes there; a running one is only marked. A newer
-  `--priority` takes the mark; the old ticket keeps its place, and if it is running it is never paused to make
-  room for the new one (it still counts as an ordinary worker for a lowered cap). The mark is cleared once the
-  priority ticket has finished.
+  `--priority` takes the mark, and the old ticket is an ordinary one from then on: if every slot is taken, it may
+  be the worker paused to make room (to keep it running too, raise the cap, e.g. `--max-workers 2 --priority Y`).
+  The mark is cleared once the priority ticket has finished.
 - **Events:** `PMAT-X: pausing (cap N | room for priority PMAT-Y), closing in 5 min`, `PMAT-X: paused`,
   `PMAT-X: pause cancelled (owner typed)`, `PMAT-X: paused without a Jira comment`, `PMAT-X: resumed after
   pause`, `PMAT-X: priority, moved to the front of the queue`, `cap set to N`.

@@ -203,14 +203,15 @@ def test_5_priority_goes_to_the_front_and_pauses_the_newest_worker_for_room(worl
     assert "nothing changed" in capsys.readouterr().out
     assert queue() == [("PMAT-2", "paused"), ("PMAT-1", "paused")]
 
-    # A new ticket as priority needs --repo-dir; it takes the mark from PMAT-3, which keeps running.
+    # A new ticket as priority needs --repo-dir; it takes the mark from PMAT-3, now an ordinary worker, which is
+    # paused to make room for it (owner, PMAT-355 comment 13925).
     with pytest.raises(SystemExit):
         second("--priority", "PMAT-4")
     assert second("--priority", "PMAT-4", "--repo-dir", str(world.repo)) == 0
     assert status.priority() == "PMAT-4" and queue()[0] == ("PMAT-4", "")
     world.idle()
     assert check() == 0
-    assert not status.read("PMAT-3").get("pausing") and world.tabs == {"PMAT-3"}
+    assert "PMAT-3: pausing (room for priority PMAT-4)" in events()
     assert "Workers 1/1 · priority PMAT-4" in capsys.readouterr().out
 
 
@@ -229,7 +230,7 @@ def test_6_the_owners_scenario_one_ticket_alone(world):
     assert all(f"PMAT-{n}: pausing" in log and f"PMAT-{n}: paused" in log for n in (1, 2, 3))
 
 
-def test_7_the_priority_ticket_is_never_paused(world):
+def test_7_the_priority_ticket_is_never_paused_until_it_loses_the_mark(world):
     start(world, "PMAT-1", "PMAT-2")
     assert second("--priority", "PMAT-2") == 0  # running: marked, nothing else changes
     assert queue() == []
@@ -239,12 +240,16 @@ def test_7_the_priority_ticket_is_never_paused(world):
     world.later(GRACE.seconds // 60)
     assert check() == 0 and world.tabs == {"PMAT-2"}
 
-    # A newer priority takes the mark: PMAT-2 keeps running, and PMAT-5 waits for a free slot.
+    # A newer priority takes the mark: PMAT-2 is an ordinary worker now (owner, PMAT-355 comment 13925), so it is
+    # paused to make room, and PMAT-5 runs alone.
     assert second("--priority", "PMAT-5", "--repo-dir", str(world.repo)) == 0
     world.idle()
     assert check() == 0
-    assert world.warned() == ["PMAT-1"] and world.tabs == {"PMAT-2"}
-    assert queue() == [("PMAT-5", ""), ("PMAT-1", "paused")]
+    assert world.warned() == ["PMAT-1", "PMAT-2"]
+    world.later(GRACE.seconds // 60)
+    assert check() == 0
+    assert check() == 0
+    assert world.tabs == {"PMAT-5"} and queue() == [("PMAT-1", "paused"), ("PMAT-2", "paused")]
 
 
 def test_8_a_restart_keeps_the_cap_queue_priority_and_paused_marks(world, capsys):

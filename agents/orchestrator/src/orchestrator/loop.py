@@ -109,10 +109,8 @@ def choose_pauses(keys: list[str], cap: int, first: str | None, waiting: bool) -
     staying = len(keys) - len(leaving)
     over = max(staying - cap, 0)
     chosen = {k: f"cap {cap}" for k in eligible[:over]}
-    if waiting and staying - over >= cap:
-        # The ticket replaced as priority keeps running (PMAT-355 acceptance test 7): never paused to make room.
-        if room := [k for k in eligible[over:] if not statuses[k].get("was_priority")][:1]:
-            chosen[room[0]] = f"room for priority {first}"
+    if waiting and staying - over >= cap and (room := eligible[over:over + 1]):
+        chosen[room[0]] = f"room for priority {first}"
     for k, s in statuses.items():
         pausing = s.get("pausing") or {}
         if pausing.get("warned_at"):
