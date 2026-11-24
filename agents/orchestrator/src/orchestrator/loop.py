@@ -97,22 +97,24 @@ def started(s: dict) -> datetime:
 
 
 def choose_pauses(keys: list[str], cap: int, first: str | None, waiting: bool) -> None:
-    """Mark the workers to pause, the latest in the ticket order first (the caller holds status.queue_lock), so the running workers come down to `cap` and, while
-    the priority ticket `first` is `waiting` in the queue, one slot is left for it. Workers already warned (in their
-    pause grace) or closing as Done count as running but leaving, so one slot never pauses two. A pause not yet
-    warned (its worker busy) is dropped again when no longer needed, e.g. the cap was raised."""
+    """Mark the workers to pause (the caller holds status.queue_lock), so the running workers come down to `cap`
+    and, while the priority ticket `first` is `waiting` in the queue, one slot is left for it. Workers at their
+    prompt go first, as they can be warned now and free a slot soonest (owner, PMAT-355); among those, and then
+    among busy ones, the latest in the ticket order first. Workers already warned (in their pause grace) or closing
+    as Done count as running but leaving, so one slot never pauses two. A pause not yet warned (every candidate
+    busy) is chosen again each check, so it moves to a worker that reaches its prompt, or is dropped when no longer
+    needed (e.g. the cap was raised)."""
     statuses = {k: status.read(k) for k in keys}
     # Workers started before order.txt existed join the order by when they started.
     rank = status.add_to_order(sorted(keys, key=lambda k: started(statuses[k])))
     leaving = [k for k, s in statuses.items()
                if (s.get("pausing") or {}).get("warned_at") or s.get("close_warned_at")]
     eligible = sorted((k for k, s in statuses.items() if k not in leaving and k != first and not s.get("keep_running")),
-                      key=rank.index, reverse=True)
+                      key=lambda k: (statuses[k].get("state") in AT_PROMPT, rank.index(k)), reverse=True)
     staying = len(keys) - len(leaving)
     over = max(staying - cap, 0)
-    chosen = {k: f"cap {cap}" for k in eligible[:over]}
-    if waiting and staying - over >= cap and (room := eligible[over:over + 1]):
-        chosen[room[0]] = f"room for priority {first}"
+    reasons = [f"cap {cap}"] * over + ([f"room for priority {first}"] if waiting and staying - over >= cap else [])
+    chosen = dict(zip(eligible, reasons))
     for k, s in statuses.items():
         pausing = s.get("pausing") or {}
         if pausing.get("warned_at"):

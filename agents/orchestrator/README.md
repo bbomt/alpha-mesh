@@ -83,7 +83,7 @@ sums them up as they stood on 2026-10-23.
   Further tickets wait in a queue, in command-line order, and the next one starts on the check after a worker
   finishes (its tab closed, or kept by the owner). Resumed workers count toward the cap; the queue survives a
   restart. Workers above a lowered cap are **paused** (see [Cap, pause and priority](#cap-pause-and-priority-pmat-355)).
-- **Runs one priority ticket** (`--priority`) first, pausing the worker latest in the ticket order to make room.
+- **Runs one priority ticket** (`--priority`) first, pausing a worker to make room (one at its prompt first).
 - **Never writes Jira and never merges.** Ticket keys must look like `PMAT-282`. One copy runs at a time.
 
 ### Not part of the process
@@ -144,15 +144,18 @@ mesh orchestrate --priority PMAT-291 --repo-dir ~/environment/pmat/alpha-mesh   
   their first hook). For example, tickets [A, B, C] then `--priority P --max-workers 2` give
   [P, A, B (paused), C (paused)].
 - **Which worker is paused:** at each check, while more workers run than the cap, or while the priority ticket
-  waits with every slot taken, the worker latest in the ticket order is chosen. The priority ticket is never chosen, nor a worker whose pause the
+  waits with every slot taken, a worker at its prompt is chosen first, as it can be warned now and frees a slot
+  soonest (owner, PMAT-355): the latest in the ticket order among those. Only if every candidate is busy is the
+  latest busy one chosen, and the choice is made again each check, so it moves to whichever reaches its prompt
+  first. For example, with B busy, [A, B, C] then `--priority P --max-workers 2` give [P, A (paused), B, C (paused)]. The priority ticket is never chosen, nor a worker whose pause the
   owner cancelled. A worker in its pause grace, or closing as Done, counts as running until its tab closes, so a
   check never pauses two workers for one slot. A pause not yet warned is dropped if no longer needed (the cap
   was raised).
-- **How:** like the Done close. Once the worker is at its prompt (until then NEEDS YOU says `pause pending
-  (busy)`), a warning is typed into its tab: stop any running processes, and post a `MESSAGE-FROM-WORKER` comment
+- **How:** like the Done close. Once the worker is at its prompt (while all candidates are busy, NEEDS YOU says
+  `pause pending (busy)`), a warning is typed into its tab: stop any running processes, and post a `MESSAGE-FROM-WORKER` comment
   on its ticket with its current status (paused by the orchestrator, where it stopped, its next step). The tab
   closes 5 minutes later. If the owner types in the tab during the grace, the pause is cancelled and the worker
-  is never paused again while it runs; the next check picks the next latest worker in the order. No Jira
+  is never paused again while it runs; the next check picks another worker by the same rule. No Jira
   comment is passed on during the grace (it would count as the owner typing). If the worker's comment isn't on
   Jira when the tab closes, the event says so.
 - **Paused tickets** keep their status file, `launch_dir` and Claude session id, are marked `paused` (so the

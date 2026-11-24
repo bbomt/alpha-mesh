@@ -58,8 +58,8 @@ copy is refused.
 
 Ticket order: tickets keep the order they were added in; only --priority puts one first, and pausing never
 moves one. Pausing: while more workers run than the cap, or the --priority ticket waits with every slot taken,
-the worker latest in that order (never the priority ticket) is paused. Once at its prompt, it is told to stop its
-processes and post its status on Jira; its tab closes {loop.CLOSE_GRACE.seconds // 60} minutes later unless you type there (then it is never
+a worker is paused (never the priority ticket): the latest in that order that is at its prompt, or, if all are
+busy, the first to reach it. It is told to stop its processes and post its status on Jira; its tab closes {loop.CLOSE_GRACE.seconds // 60} minutes later unless you type there (then it is never
 paused again). It waits in the Queue marked paused, in its own place, and resumes its same Claude session
 when a slot frees up. --priority TICKET (one at a time) moves a ticket to the front; a new one needs
 --repo-dir. A ticket that loses the mark to a newer one is an ordinary worker again (it may be paused for room).

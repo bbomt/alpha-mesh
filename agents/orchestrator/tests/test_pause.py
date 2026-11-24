@@ -284,7 +284,8 @@ def test_a_restart_with_a_lower_cap_pauses_workers_already_running(world):
 
 def test_a_worker_chosen_for_a_pause_whose_tab_is_gone_is_paused_not_resumed(world):
     start(world, "PMAT-1", "PMAT-2")
-    status.update("PMAT-2", state="working")  # busy: chosen, not yet warned
+    for key in ("PMAT-1", "PMAT-2"):  # both busy: PMAT-2 (latest) chosen, not yet warned
+        status.update(key, state="working")
     assert second("--max-workers", "1") == 0
     assert check() == 0 and world.warned() == []
     assert "pause pending (busy)" in cli.display.needs(status.read("PMAT-2"), None, None, True, world.clock, 5)[0]
@@ -312,3 +313,28 @@ def test_the_owners_order_example_priority_first_then_the_order_tickets_were_add
     assert world.tabs == {"PMAT-9", "PMAT-1"}
     assert status.order() == ["PMAT-1", "PMAT-2", "PMAT-3", "PMAT-9"]
     assert queue() == [("PMAT-2", "paused"), ("PMAT-3", "paused")]
+
+
+def test_a_worker_at_its_prompt_is_paused_before_a_busy_one_later_in_the_order(world):
+    # Owner, PMAT-355 (option b; comment 13928's second example): [P, A(paused), B, C(paused)] when B is busy.
+    start(world, "PMAT-1", "PMAT-2", "PMAT-3")
+    status.update("PMAT-2", state="working")
+    assert second("--priority", "PMAT-9", "--repo-dir", str(world.repo), "--max-workers", "2") == 0
+    assert check() == 0
+    assert world.warned() == ["PMAT-3", "PMAT-1"]  # PMAT-2 is busy: PMAT-1, at its prompt, goes instead
+    world.later(GRACE.seconds // 60)
+    assert check() == 0
+    assert check() == 0
+    assert world.tabs == {"PMAT-9", "PMAT-2"} and queue() == [("PMAT-1", "paused"), ("PMAT-3", "paused")]
+
+
+def test_when_every_candidate_is_busy_the_pause_waits_and_moves_to_the_first_at_its_prompt(world):
+    start(world, "PMAT-1", "PMAT-2")
+    for key in ("PMAT-1", "PMAT-2"):
+        status.update(key, state="working")
+    assert second("--max-workers", "1") == 0
+    assert check() == 0
+    assert world.warned() == [] and status.read("PMAT-2")["pausing"]["reason"] == "cap 1"  # latest, waiting
+    status.update("PMAT-1", state="idle")  # PMAT-1 reaches its prompt first
+    assert check() == 0
+    assert world.warned() == ["PMAT-1"] and not status.read("PMAT-2").get("pausing")
