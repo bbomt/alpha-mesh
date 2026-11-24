@@ -1,0 +1,10 @@
+{
+  "about": "Repos whose PRs reach their default branch through a batch queue branch (PMAT-358, EVAL-RC-Q.md). mesh merge-pr merges a listed repo's PRs into the queue; mesh eval-rc-q gates and promotes it. A repo not listed merges straight into its base, as before.",
+  "queues": {
+    "bbomt/alpha-mesh": {
+      "branch": "eval-rc-q/current",
+      "default": "master",
+      "batch_size": 4
+    }
+  }
+}

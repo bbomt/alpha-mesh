@@ -7,6 +7,8 @@
 # The filter is inside the job, not a `paths:` filter: a workflow skipped by `paths:` never reports, and a required
 # check that never reports blocks the merge. The check runs the base branch's copy of its scripts, so a PR cannot
 # loosen the check that judges it; a base without them fails the check, never running the PR's copy.
+# PMAT-358: a PR into master comes from the queue eval-rc-q/current (its promotion PR) or a hotfix/* branch; any
+# other head fails here, since mesh merge-pr moves a ticket's PR into the queue instead (EVAL-RC-Q.md).
 # See agents/review-pull-request/eval/README.md, "The regression gate".
 name: evals-gate
 on:
@@ -27,7 +29,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PR_URL: ${{ github.event.pull_request.html_url }}
           BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
         run: |
+          case "$HEAD_REF" in
+            eval-rc-q/current|hotfix/*) ;;
+            *) echo "ERROR: a PR into $BASE_REF comes from the queue eval-rc-q/current or a hotfix/* branch, not $HEAD_REF." >&2
+               echo "mesh merge-pr moves this PR into the queue, whose gate runs the full evals (EVAL-RC-Q.md)." >&2
+               exit 1 ;;
+          esac
           scripts=agents/review-pull-request/eval/scripts
           git fetch -q --depth 1 origin "$BASE_REF"
           if ! git cat-file -e "FETCH_HEAD:$scripts/check_pr_evals.py" 2>/dev/null; then

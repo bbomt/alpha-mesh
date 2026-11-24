@@ -3,6 +3,7 @@
 # Runs the `evals-gate` job's step (.github/workflows/evals-gate.yml) in a scratch repo and checks that it runs the
 # base branch's check_pr_evals.py and list_evals_gated_files.py, not the PR's, so a PR cannot loosen the check
 # that judges it; and that the job fails, never running the PR's copy, when the base has none (PMAT-312, PMAT-349).
+# PMAT-358: a PR into master comes from the queue eval-rc-q/current or a hotfix/* branch; any other head fails.
 
 set -euo pipefail
 
@@ -42,7 +43,8 @@ setup() {
   git_q "$WORK/pr" add -A && git_q "$WORK/pr" commit -m pr
 }
 
-run_step() { (cd "$WORK/pr" && BASE_REF=master PR_URL=https://github.com/o/r/pull/1 bash "$WORK/step.sh" 2>&1); }
+run_step() { (cd "$WORK/pr" && BASE_REF=master HEAD_REF="${HEAD_REF:-eval-rc-q/current}" PR_URL=https://github.com/o/r/pull/1 \
+  bash "$WORK/step.sh" 2>&1); }
 
 setup yes
 out="$(run_step)" || true
@@ -60,6 +62,22 @@ if [ "$code" -ne 0 ] && ! grep -q "ran pr check_pr_evals" <<<"$out" \
   echo "  PASS: when the base has no check_pr_evals.py, the job fails and never runs the PR's copy"
 else
   echo "  FAIL: no base copy (exit $code)"; sed 's/^/    /' <<<"$out"; fails=$((fails + 1))
+fi
+
+setup yes
+for head in feature/PMAT-1-x eval-rc-q/other; do
+  code=0; out="$(HEAD_REF="$head" run_step)" || code=$?
+  if [ "$code" -ne 0 ] && ! grep -q "ran .* check_pr_evals" <<<"$out" && grep -q "mesh merge-pr moves" <<<"$out"; then
+    echo "  PASS: a PR into master from $head fails and says it goes through the queue"
+  else
+    echo "  FAIL: head $head (exit $code)"; sed 's/^/    /' <<<"$out"; fails=$((fails + 1))
+  fi
+done
+out="$(HEAD_REF=hotfix/PMAT-2-broken run_step)" || true
+if grep -q "ran base check_pr_evals" <<<"$out"; then
+  echo "  PASS: a hotfix/* PR into master is judged by check_pr_evals as before"
+else
+  echo "  FAIL: hotfix"; sed 's/^/    /' <<<"$out"; fails=$((fails + 1))
 fi
 
 [ "$fails" -eq 0 ] || exit 1
