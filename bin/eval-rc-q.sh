@@ -90,6 +90,15 @@ stop_for_owner() {
 # gated_ok <pr head> <queue commit>: the head's tree is the tree gated for that PR (it was updated with master by a
 # promotion that stopped partway, so it moved, but to exactly what passed).
 gated_ok() { [ "$(gh_tree "$1")" = "$(tree_of "$2")" ]; }
+# promote_moved <pr head> <PR-Head>: the head is GitHub's update-branch commit made by a promotion that stopped
+# before its merge: first parent the queued PR-Head, second parent on the default branch. Nothing of the PR changed.
+promote_moved() {
+  local p1 p2
+  read -r p1 p2 < <(gh api "repos/$repo/commits/$1" | jq -r '[.parents[].sha] | join(" ")') || return 1
+  [ "$p1" = "$2" ] && [ -n "$p2" ] && mq_git merge-base --is-ancestor "$p2" "refs/remotes/origin/$mq_default"
+}
+# unchanged <pr head> <PR-Head> <queue commit>: the PR is still what was queued (or gated).
+unchanged() { [ "$1" = "$2" ] || promote_moved "$1" "$2" || gated_ok "$1" "$3"; }
 
 # pr_state <pr>: "<state> <head>" from GitHub. A command substitution, never a process substitution, so a gh
 # failure stops the script (set -e) instead of reading as an empty state.
@@ -118,7 +127,7 @@ check_members() {
     fi
     in_prefix=0
     if [ "$st" != OPEN ]; then drop "$n" "it was closed after it was queued."; changed=1 resumable=0
-    elif [ "$cur" != "$h" ] && ! gated_ok "$cur" "$c"; then
+    elif ! unchanged "$cur" "$h" "$c"; then
       drop "$n" "it moved after it was queued (queued at \`${h:0:7}\`, now \`${cur:0:7}\`): a queued PR must not change."
       changed=1 resumable=0
     else mq_fetch_pr "$n" >/dev/null; fi
@@ -168,6 +177,9 @@ gated_files() {  # gated_files <sha>: the files of the batch at <sha> the evals 
 evals_state() {  # evals_state <sha>: the `evals` status on <sha>
   gh api "repos/$repo/commits/$1/status" | jq -r '[.statuses[] | select(.context == "evals")][0].state // "missing"'
 }
+# The full evals judge a tree, not a commit: a rebuilt batch with a tree that already passed reuses that pass.
+passed_file() { echo "$state_dir/passed/$(tree_of "$1")"; }
+evals_passed() { [ -f "$(passed_file "$1")" ] || [ "$(evals_state "$1")" = success ]; }
 cases_ok() {  # cases_ok <sha> <label>: the drop loop's cases pass at <sha> (0), fail (1); exits 75 if not started
   local rc=0
   "$run_evals" --cases "$cases_file" --commit "$1" --run "$2-pr$mq_pr_number-${1:0:7}" >&2 || rc=$?
@@ -204,7 +216,7 @@ promote() {
   for line in "${members[@]:$from}"; do
     read -r c n h s <<<"$line"
     info="$(pr_state "$n")"; read -r st cur <<<"$info"
-    if [ "$st" != OPEN ] || { [ "$cur" != "$h" ] && ! gated_ok "$cur" "$c"; }; then
+    if [ "$st" != OPEN ] || ! unchanged "$cur" "$h" "$c"; then
       drop "$n" "it changed before its promotion (state $st, head \`${cur:0:7}\`)."; promoted=0; return 0
     fi
   done
@@ -269,7 +281,7 @@ check_resume() {
   mt="$(master_tree)"
   [ "$mt" = "$(tree_of "$(member_commit "$prefix")")" ] || return 0
   files="$(gated_files "$(mq_tip)")"
-  if [ -z "$files" ] || [ "$(evals_state "$(mq_tip)")" = success ]; then can_resume=1; fi
+  if [ -z "$files" ] || evals_passed "$(mq_tip)"; then can_resume=1; fi
 }
 
 # ── Gate ─────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -312,7 +324,9 @@ gate() {
       continue
     fi
     files="$(gated_files "$tip")"
-    if [ -n "$files" ]; then
+    if [ -n "$files" ] && [ -f "$(passed_file "$tip")" ]; then
+      note "The batch's tree already passed the full evals (at $(cut -c1-7 "$(passed_file "$tip")")): reusing that pass."
+    elif [ -n "$files" ]; then
       attempt="$(attempt_of "$tip")" rc=0
       if [ "$attempt" -gt 1 ]; then "$run_evals" --attempt "$attempt" "$mq_pr_url" || rc=$?
       else "$run_evals" "$mq_pr_url" || rc=$?; fi
@@ -322,7 +336,7 @@ gate() {
         exit 75
       fi
       case "$(evals_state "$tip")" in
-        success) ;;
+        success) mkdir -p "$state_dir/passed"; echo "$tip" > "$(passed_file "$tip")" ;;
         failure)
           run="gate-pr$mq_pr_number-${tip:0:7}"; [ "$attempt" -eq 1 ] || run="$run-a$attempt"
           regressed="$(cat "$runs_dir/$run/regressed.json" 2>/dev/null || echo '[]')"
@@ -385,7 +399,7 @@ standalone_promote() {
   else
     mq_base_current || { echo "Not promoted: $mq_default moved since the gate; run mesh eval-rc-q gate." >&2; exit 1; }
     files="$(gated_files "$(mq_tip)")"
-    if [ -n "$files" ] && [ "$(evals_state "$(mq_tip)")" != success ]; then
+    if [ -n "$files" ] && ! evals_passed "$(mq_tip)"; then
       echo "Not promoted: the evals have not passed on the batch at $(mq_tip). Run mesh eval-rc-q gate." >&2
       exit 1
     fi

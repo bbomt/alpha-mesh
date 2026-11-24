@@ -84,20 +84,20 @@ if [ -n "$mq_branch" ] && [[ "$head_ref" != hotfix/* ]]; then
   count=$((count + 1))
   echo "Queued $url ($count/$mq_batch PRs in $mq_branch, at $head). The PR stays open: do not push to it now." >&2
   echo "Batch PR: $mq_pr_url" >&2
-  # A batch with no agent file needs no evals and costs no quota: gate it at once (tests only), never at night.
+  # A batch with no agent file needs no evals and costs no quota: offer to gate it at once (tests only), as for a
+  # full queue, rather than wait for the night.
   gated="$(mq_git diff --name-only "$(mq_git merge-base "$(mq_master)" "$commit")" "$commit" \
     | python3 "$mesh_dir/agents/review-pull-request/eval/scripts/list_evals_gated_files.py")"
-  if [ -z "$gated" ]; then
-    echo "No queued PR changes an agent file: gating now (tests only)." >&2
-    exec "${MESH_EVAL_RC_Q:-$mesh_dir/bin/eval-rc-q.sh}" gate
-  fi
-  if [ "$count" -ge "$mq_batch" ]; then
+  offer=""
+  if [ -z "$gated" ]; then offer="No queued PR changes an agent file (the gate runs the tests only, no quota)"
+  elif [ "$count" -ge "$mq_batch" ]; then offer="Queue full"; fi
+  if [ -n "$offer" ]; then
     if at_terminal; then
-      printf "Queue full: gate it now? [y/N] " >&2
+      printf "%s: gate it now? [y/N] " "$offer" >&2
       read -r answer || answer=""
       if [[ "$answer" =~ ^[Yy]$ ]]; then exec "${MESH_EVAL_RC_Q:-$mesh_dir/bin/eval-rc-q.sh}" gate; fi
     fi
-    echo "The queue is full: run mesh eval-rc-q gate (or it gates tonight)." >&2
+    echo "$offer: run mesh eval-rc-q gate (or it gates tonight)." >&2
   fi
   exit 0
 fi

@@ -22,8 +22,9 @@ squash-merged into master on its own, one commit per ticket (PMAT-358). The runb
 - A worker never gates, promotes or merges a hotfix.
 
 ## The queue (owner and team lead)
-- One queue, up to 4 PRs. A batch with no agent file gates at once (tests only). Otherwise it gates when full
-  (`mesh merge-pr` offers it), or at 00:30 UTC (`mesh eval-rc-q gate --due`) if it holds a PR. Nothing is queued while
+- One queue, up to 4 PRs. `mesh merge-pr` offers to gate at once when no queued PR changes an agent file (tests
+  only, no quota) or when the queue is full; otherwise it gates at 00:30 UTC (`mesh eval-rc-q gate --due`) if it holds
+  a PR. Nothing is queued while
   it gates.
 - The gate never fixes the queue: it drops the failing PR and gates the rest again, until green. When no PR is to blame
   (the failing cases fail on master too, or only the judge's means dropped) it stops for the owner, dropping nothing.

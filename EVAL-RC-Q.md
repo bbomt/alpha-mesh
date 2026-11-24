@@ -50,8 +50,8 @@ Before: the PR is open against master and reviewed. An agent PR has `evals-smoke
 mesh merge-pr https://github.com/bbomt/alpha-mesh/pull/<n>
 ```
 Expected: `Queued https://github.com/bbomt/alpha-mesh/pull/<n> (2/4 PRs in eval-rc-q/current, at <sha>). The PR stays open: do not push to it now.`
-and `Batch PR: <url>`. When no queued PR changes an agent file, it then gates at once (tests only, no quota):
-`No queued PR changes an agent file: gating now (tests only).` Otherwise, at 4/4 it asks
+and `Batch PR: <url>`. When no queued PR changes an agent file it asks
+`No queued PR changes an agent file (the gate runs the tests only, no quota): gate it now? [y/N]`, and at 4/4
 `Queue full: gate it now? [y/N]`: `y` gates now, `N` leaves it to tonight.
 Check: `mesh eval-rc-q status` lists the PR; the PR is still open on GitHub, with no new commit.
 
@@ -90,7 +90,9 @@ What it does, in order, with what it prints:
    failure the tests run on the queue's commits (binary search) to find the first PR at which they fail; it is
    dropped and the gate goes back to step 2.
 4. The full evals on the batch PR (`mesh run-evals <batch PR url>`: about 75 min, k=3, every repeat judged), unless no
-   queued PR changes an agent file (`No queued PR changes an agent file: no evals needed.`).
+   queued PR changes an agent file (`No queued PR changes an agent file: no evals needed.`), or the batch's tree already
+   passed them (a rebuild that changed no file, for example after a resume): `… already passed the full evals …:
+   reusing that pass.` Passed trees are kept in `~/.mesh/eval-rc-q/passed/`.
 5. On an evals failure, the drop loop:
    1. `The evals failed; cases that lost runs: <ids>.` (from the run's `regressed.json`). The cases are named only when
       the run-count rule failed (or a harness error). A failure on the judge's means alone names none: the baseline
@@ -120,7 +122,9 @@ What it does, in order, with what it prints:
 7. **A promotion that stopped partway** (a crash, a killed job, an evals-gate run that did not pass) carries on at the
    next `mesh eval-rc-q gate` or `promote`: when the merged PRs are the first ones of the queue and master's tree is
    the queue's tree at the last of them, it says `Carrying on a promotion that stopped after <k> PR(s)` and promotes the
-   rest, with no new tests or evals. Otherwise the rest are rebuilt and gated again.
+   rest, with no new tests or evals. Otherwise the rest are rebuilt and gated again. A PR whose head moved only
+   because the promotion updated it with master (GitHub's update commit: first parent its `PR-Head`, second on master)
+   or whose tree is its gated tree counts as unchanged, never as "moved".
 
 Check: `git fetch && git log --oneline -5 origin/master` shows one squash commit per promoted ticket;
 `git diff <gated sha> origin/master` is empty; the batch PR is closed; `mesh eval-rc-q status` says `No queue`.

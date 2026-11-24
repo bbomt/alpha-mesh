@@ -88,7 +88,8 @@ case "$1 $2" in
     og update-ref refs/heads/master "$c"; echo MERGED > "$S/pr/$n/state"
     [ "${STUB_HOTFIX_AFTER_MERGE:-}" != "$n" ] || hotfix_master hot-after-merge.txt ;;
   "run list")  # the newest evals-gate run on --commit <sha>: passed, unless STUB_CHECK_FAIL_FIRST and not re-run yet
-    if [ -n "${STUB_CHECK_FAIL_FIRST:-}" ] && [ ! -f "$S/rerun" ]; then
+    if [ -n "${STUB_CHECK_FAIL_ALWAYS:-}" ]; then echo '[{"databaseId": 7, "status": "completed", "conclusion": "failure"}]'
+    elif [ -n "${STUB_CHECK_FAIL_FIRST:-}" ] && [ ! -f "$S/rerun" ]; then
       echo '[{"databaseId": 7, "status": "completed", "conclusion": "failure"}]'
     else echo '[{"databaseId": 7, "status": "completed", "conclusion": "success"}]'; fi ;;
   "run rerun") touch "$S/rerun" ;;
@@ -112,7 +113,9 @@ case "$1 $2" in
       repos/q/r/git/matching-refs/tags/*)
         og for-each-ref --format='%(refname)' "refs/tags/${2#repos/q/r/git/matching-refs/tags/}*" | jq -Rn '[inputs | {ref: .}]' ;;
       repos/q/r/commits/*/status) status_json "$(cut -d/ -f5 <<<"$2")" ;;
-      repos/q/r/commits/*) jq -n --arg t "$(og rev-parse "${2##*/}^{tree}")" '{commit: {tree: {sha: $t}}}' ;;
+      repos/q/r/commits/*)
+        jq -n --arg t "$(og rev-parse "${2##*/}^{tree}")" --arg p "$(og rev-list --parents -n 1 "${2##*/}" | cut -d' ' -f2-)" \
+          '{commit: {tree: {sha: $t}}, parents: [$p | split(" ")[] | select(. != "") | {sha: .}]}' ;;
       repos/q/r/statuses/*)  # api repos/q/r/statuses/<sha> -f state=<s> -f context=<c> -f description=<d>
         mkdir -p "$S/status"; echo "${6#context=} ${4#state=}" >> "$S/status/${2##*/}" ;;
       repos/q/r/pulls/*/commits*) jq -n --arg h "$(head_of "$(cut -d/ -f5 <<<"$2")")" '[{sha: $h}]' ;;
@@ -382,6 +385,34 @@ check "R5: the rerun skips the merged PR and carries on: no tests, no evals, no 
     && [ "$3" = "feature[PMAT-131]: did thing 131 (#131)|feature[PMAT-132]: did thing 132 (#132)|feature[PMAT-133]: did thing 133 (#133)" ] \
     && [ "$(git --git-dir="$ORIGIN" rev-parse "master^{tree}")" = "$4" ]' "$code" "$STUB_LOG" "$out" "$(on_master)" "$gated_tree"
 
+# B1 a promotion stopped after update-branch, and a hotfix lands before the rerun: the PR's head is GitHub's update
+# commit (first parent its PR-Head, second on master), so it is rebuilt and gated again, never dropped as "moved".
+fresh; add_pr 135 "$AGENT/g.py"; add_pr 136 f136.txt; smoke_ok 135; queue_all 135 136
+STUB_MERGE_FAIL_ONCE=136 mesh eval-rc-q gate
+git -C "$WORK/seed" fetch -q "$ORIGIN" master; git -C "$WORK/seed" checkout -q -B hf FETCH_HEAD; echo hot > "$WORK/seed/hot-b1.txt"
+git -C "$WORK/seed" add -A; git -C "$WORK/seed" commit -qm "hotfix b1"; git -C "$WORK/seed" push -q "$ORIGIN" HEAD:master
+mesh eval-rc-q gate
+check "B1: after update-branch and a hotfix, the rerun rebuilds and merges the PR instead of dropping it" \
+  bash -c '[ "$0" -eq 0 ] && ! grep -q "pull/136 \*\*Dropped" "$1/comments" && [ "$(cat "$1/pr/136/state")" = MERGED ]' "$code" "$S"
+
+# B3 tests that fail on master alone: no PR is to blame.
+fresh
+git -C "$WORK/seed" checkout -q master; git -C "$WORK/seed" pull -q "$ORIGIN" master; echo x > "$WORK/seed/TESTFAIL"
+git -C "$WORK/seed" add -A; git -C "$WORK/seed" commit -qm "master breaks the tests"; git -C "$WORK/seed" push -q "$ORIGIN" master
+add_pr 145 f145.txt; add_pr 146 f146.txt; TTY="" queue_all 145 146
+mesh eval-rc-q gate
+check "B3: tests that fail on master alone stop the gate for the owner and drop nothing" \
+  bash -c '[ "$0" -ne 0 ] && [ "$1" = gating ] && ! grep -q "Dropped" "$2/comments" 2>/dev/null' "$code" "$(label)" "$S"
+
+# R5 cost: a rebuilt batch whose tree already passed the evals reuses that pass.
+fresh; add_pr 171 "$AGENT/h.py"; smoke_ok 171; queue_all 171
+STUB_CHECK_FAIL_ALWAYS=1 mesh eval-rc-q gate     # the evals pass, then the promotion stops (evals-gate never passes)
+tip1="$(og rev-parse eval-rc-q/current)"
+og update-ref refs/heads/eval-rc-q/current "$(git --git-dir="$ORIGIN" log -1 --format=%B "$tip1" | og commit-tree "$tip1^{tree}" -p "$tip1~1")"  # same tree, new commit
+mesh eval-rc-q gate
+check "R5: a batch whose tree already passed the full evals is not evaluated again" \
+  bash -c '[ "$0" -eq 0 ] && ! grep -q "^run-evals" "$1" && grep -qi "already passed" <<<"$2" && [ "$(cat "$3/pr/171/state")" = MERGED ]' "$code" "$STUB_LOG" "$out" "$S"
+
 # R7a the update-branch push started evals-gate before the statuses: it failed, so it is re-run before the merge.
 fresh; add_pr 141 f141.txt; queue_all 141
 STUB_CHECK_FAIL_FIRST=1 mesh eval-rc-q gate
@@ -399,9 +430,12 @@ check "R8: the queue commit's tree is the tree git merge --squash gives for the 
   is "$(git -C "$WORK/sq" write-tree)" "$(og rev-parse 'eval-rc-q/current^{tree}')"
 rm -rf "$WORK/sq"
 
-# R9 no queued PR changes an agent file: merge-pr gates at once; an agent PR waits for the batch.
-fresh; add_pr 161 f161.txt; mesh merge-pr "$(url 161)"
-check "R9: queuing a non-agent PR into a queue with no agent PR gates at once" bash -c '[ "$0" -eq 0 ] && grep -qx "eval-rc-q gate" "$1"' "$code" "$STUB_LOG"
+# R9 no queued PR changes an agent file: merge-pr offers to gate at once; an agent PR waits for the batch.
+fresh; add_pr 161 f161.txt; TTY=1 ANSWER=y mesh merge-pr "$(url 161)"
+check "R9: queuing a non-agent PR into a queue with no agent PR offers to gate at once, and on yes gates" \
+  bash -c '[ "$0" -eq 0 ] && grep -qi "gate it now" <<<"$1" && grep -qx "eval-rc-q gate" "$2"' "$code" "$out" "$STUB_LOG"
+fresh; add_pr 164 f164.txt; TTY=1 ANSWER=n mesh merge-pr "$(url 164)"
+check "R9: on no it only queues" bash -c '[ "$0" -eq 0 ] && ! grep -q "^eval-rc-q gate" "$1"' "$code" "$STUB_LOG"
 fresh; add_pr 162 "$AGENT/f.py"; smoke_ok 162; add_pr 163 f163.txt; mesh merge-pr "$(url 162)"; mesh merge-pr "$(url 163)"
 check "R9: with an agent PR in the queue, a non-agent PR waits for the batch" bash -c '[ "$0" -eq 0 ] && ! grep -q "^eval-rc-q gate" "$1"' "$code" "$STUB_LOG"
 
