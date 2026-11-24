@@ -28,6 +28,7 @@ import httpx
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 
+import judge_cache
 from case_rules import EVAL, holdout_ids
 from review_pull_request import config as config_module
 from review_pull_request import llm
@@ -74,6 +75,9 @@ def startup_check() -> None:
     judge, pin = os.environ["EVAL_JUDGE_MODEL"], judge_extra_body()  # a pin off OpenRouter stops the run here
     host = f", host {pin['provider']['order'][0]} only" if pin else ""
     print(f"Judge model: {judge} (rubric {RUBRIC_VERSION}{host})", file=sys.stderr)
+    judge_cache.prune()
+    print(f"Judge cache: {judge_cache.DIR}" if judge_cache.enabled() else "Judge cache: off (--no-judge-cache)",
+          file=sys.stderr)
     for label, model in (("the run's model", os.environ.get("EVAL_MODEL")),
                          ("[model] review", config_module.configured_model("review"))):
         if model and _family(model) == _family(judge):
@@ -167,12 +171,17 @@ def judge_extra_body() -> dict | None:
     return {"provider": {"order": [host], "allow_fallbacks": False}}
 
 
-def make_judge_chat_model(meta: dict, temperature: float | None = 0, extra_body: dict | None = None):
+def make_judge_chat_model(meta: dict, temperature: float | None = 0, extra_body: dict | None = None,
+                          cache: bool = False):
     """A chat_model_factory for ReviewSession: as session.make_chat_model, at temperature 0, recording into meta.
-    The silver labeller (PMAT-326) sets no temperature and adds its schema and reasoning effort in extra_body."""
+    The silver labeller (PMAT-326) sets no temperature and adds its schema and reasoning effort in extra_body.
+    cache: answer from the judgment cache (judge_cache.py) when it holds this exact request."""
     def factory(config, model=None):
         name, base_url = _sent(config, model or config.model)
-        client = httpx.Client(transport=WatchdogTransport(RecordingTransport(http_transport(base_url), meta)),
+        transport = RecordingTransport(http_transport(base_url), meta)
+        if cache:
+            transport = judge_cache.CachingTransport(transport, meta, RUBRIC_VERSION)
+        client = httpx.Client(transport=WatchdogTransport(transport),
                               timeout=httpx.Timeout(llm.IDLE_TIMEOUT, connect=30))
         return ChatOpenAI(model=name, api_key=config.api_token, base_url=base_url, temperature=temperature,
                           streaming=True, stream_usage=True, max_retries=0, http_client=client, extra_body=extra_body)
@@ -285,8 +294,13 @@ def judge_review(case: dict, review: dict) -> dict:
         fixed = {"why": "fixed by the rubric: a raise_nothing case whose review has no findings", "score": None}
         return {**{d: fixed for d in DIMENSIONS}, "coverage": {**fixed, "score": 5}, "fixed_by_rubric": True,
                 "rubric": RUBRIC_VERSION, "model_requested": config.model}
-    text, findings = ask(case, review, config, make_judge_chat_model(meta, extra_body=judge_extra_body()))
-    return {**_parse(text, findings), "rubric": RUBRIC_VERSION, "model_requested": config.model, **meta}
+    cache = judge_cache.enabled()
+    text, findings = ask(case, review, config, make_judge_chat_model(meta, extra_body=judge_extra_body(), cache=cache))
+    judgment = _parse(text, findings)
+    if cache:
+        judge_cache.save(meta, judgment)  # only now: a judge error or a bad reply is never stored
+    meta.pop(judge_cache.KEY, None)
+    return {**judgment, "rubric": RUBRIC_VERSION, "model_requested": config.model, **meta}
 
 
 def ask(case: dict, review: dict, config, chat_model_factory) -> tuple[str, list[dict]]:

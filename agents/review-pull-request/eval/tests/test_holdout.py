@@ -110,7 +110,8 @@ rows = [{"vars": {"case_id": t["vars"]["case_id"]}, "repeatIndex": 0, "failureRe
 out = sys.argv[sys.argv.index("-o") + 1]
 json.dump({"results": {"results": rows}}, open(out, "w"))
 json.dump({"args": sys.argv[1:], "cases": [t["vars"]["case_id"] for t in tests],
-           "judge_repeats": os.environ.get("EVAL_JUDGE_REPEATS")}, open(os.environ["FAKE_RECORD"], "w"))
+           "judge_repeats": os.environ.get("EVAL_JUDGE_REPEATS"), "judge_cache": os.environ.get("EVAL_JUDGE_CACHE")},
+          open(os.environ["FAKE_RECORD"], "w"))
 sys.exit(100)
 """
 
@@ -291,6 +292,12 @@ def test_a_run_judges_repeat_0_only_unless_asked_for_every_repeat(run_eval):
     """While iterating, the judge scores repeat 0; before merging an agent change, all k (CLAUDE.md, Evals)."""
     assert run_eval()[1]["judge_repeats"] == "first"
     assert run_eval("--judge-repeats", "all")[1]["judge_repeats"] == "all"
+
+
+def test_a_run_uses_the_judgment_cache_unless_told_not_to(run_eval):
+    """PMAT-331 (e): --no-judge-cache re-judges every row."""
+    assert run_eval()[1]["judge_cache"] == "on"
+    assert run_eval("--no-judge-cache")[1]["judge_cache"] == "off"
 
 
 def test_an_unknown_judge_repeats_value_stops_the_run(run_eval):
