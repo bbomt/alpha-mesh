@@ -2,12 +2,11 @@
 # alpha-mesh/bin/merge-pr.sh
 # mesh merge-pr <PR url>: the owner's merge.
 #
-# A repo with a batch queue (config/merge-queue.json; alpha-mesh: eval-rc-q/current, PMAT-358, EVAL-RC-Q.md):
-# the PR goes into the queue, not master. Refused while the queue is gating or being fixed (clear it first) or full.
-# An agent PR needs `evals-smoke` = success on its head (mesh run-evals --smoke). The queue branch and its draft
-# promotion PR are created on the first merge after a promotion. The PR's base moves to the queue, a PR that
-# conflicts with the queue is refused (and moved back), and it is squash-merged there. The queue's gate (mesh
-# eval-rc-q gate) runs the full evals once for the whole batch and promotes it into master.
+# A repo with a batch queue (config/merge-queue.json; alpha-mesh: eval-rc-q/current, PMAT-358 v2, EVAL-RC-Q.md):
+# the PR is *queued*, not merged. Its diff is added as one commit onto the queue branch; the PR stays open against
+# master. Refused while the queue is gating, when it is full, for an agent PR without `evals-smoke` = success, and when
+# the PR conflicts with the queue (it waits for the next batch). The queue's gate (mesh eval-rc-q gate) runs the full
+# evals once for the batch, drops failing PRs, then squash-merges each passing PR into master.
 #
 # A hotfix/* branch, or a repo with no queue: as before. Squash-merges the PR only if it is open and its branch
 # already has the latest commit of its base branch, so nothing merges onto a base it was not tested against.
@@ -38,63 +37,53 @@ fi
 
 mq_load "$repo"
 if [ -n "$mq_branch" ] && [[ "$head_ref" != hotfix/* ]]; then
-  # ── Into the queue ────────────────────────────────────────────────────────────────────────────────────────────
-  if [ "$base" != "$mq_default" ] && [ "$base" != "$mq_branch" ]; then
-    echo "Not merged: the PR's base is $base; a PR into the queue starts from $mq_default." >&2
+  # ── Queue it ──────────────────────────────────────────────────────────────────────────────────────────────
+  number="${url##*/}"
+  if [ "$base" != "$mq_default" ]; then
+    echo "Not queued: the PR's base is $base; a ticket PR targets $mq_default." >&2
     exit 1
   fi
-  mq_promo "$repo"
-  if [ -n "$mq_state" ] && [ "$mq_state" != filling ]; then
-    echo "Not merged: the queue $mq_branch is $mq_state: clear it first (EVAL-RC-Q.md). The PR waits at AWAITING-MERGE." >&2
-    echo "Promotion PR: $mq_promo_url" >&2
+  mq_batch_pr "$repo"
+  if [ "$mq_state" = gating ]; then
+    echo "Not queued: the queue $mq_branch is gating. The PR waits at AWAITING-MERGE; queue it after the gate (EVAL-RC-Q.md)." >&2
+    echo "Batch PR: $mq_pr_url" >&2
     exit 1
   fi
-  count="$(mq_count "$repo")"
+  mq_fetch
+  if mq_members | awk -v n="$number" '$2 == n {found=1} END {exit !found}'; then
+    echo "Already queued: $url is in $mq_branch. Batch PR: $mq_pr_url" >&2
+    exit 0
+  fi
+  count="$(mq_count)"
   if [ "$count" -ge "$mq_batch" ]; then
-    echo "Not merged: the queue $mq_branch is full ($count/$mq_batch PRs): gate it first (mesh eval-rc-q gate)." >&2
-    [ -z "$mq_promo_url" ] || echo "Promotion PR: $mq_promo_url" >&2
+    echo "Not queued: the queue $mq_branch is full ($count/$mq_batch PRs): gate it first (mesh eval-rc-q gate)." >&2
+    [ -z "$mq_pr_url" ] || echo "Batch PR: $mq_pr_url" >&2
     exit 1
   fi
   # The smoke evals: an agent PR needs evals-smoke = success (on its head, or carried from an older commit).
   if ! report="$(python3 "$status_report" --evals-only --smoke "$url")"; then
-    echo "Not merged:" >&2
+    echo "Not queued:" >&2
     echo "$report" >&2
     exit 1
   fi
-
-  if ! mq_branch_exists "$repo"; then
-    sha="$(gh api "repos/$repo/git/ref/heads/$mq_default" | jq -r .object.sha)"
-    gh api "repos/$repo/git/refs" -f ref="refs/heads/$mq_branch" -f sha="$sha" >/dev/null
-    echo "Created the queue $mq_branch from $mq_default (${sha:0:7})." >&2
-  fi
-  [ "$base" = "$mq_branch" ] || gh pr edit "$url" --base "$mq_branch" >/dev/null
-  # GitHub computes mergeable in the background after the base changes: UNKNOWN until it has.
-  mergeable=UNKNOWN
-  for _ in 1 2 3 4 5 6 7 8 9 10; do
-    mergeable="$(gh pr view "$url" --json mergeable | jq -r .mergeable)"
-    [ "$mergeable" = UNKNOWN ] || break
-    sleep "${MESH_MERGE_POLL_SECONDS:-3}"
-  done
-  if [ "$mergeable" != MERGEABLE ]; then
-    gh pr edit "$url" --base "$mq_default" >/dev/null
-    echo "Not merged: the PR conflicts with the queue $mq_branch (GitHub: $mergeable); its base is back to $mq_default." >&2
-    echo "Ask the worker to merge origin/$mq_branch into the branch, resolve, rerun its tests and push (EVAL-RC-Q.md)." >&2
+  fetched="$(mq_fetch_pr "$number")"
+  if [ "$fetched" != "$head" ]; then
+    echo "Not queued: the PR moved while queuing it ($head, now $fetched). Run this again." >&2
     exit 1
   fi
-  if ! gh pr merge "$url" --squash --match-head-commit "$head"; then
-    gh pr edit "$url" --base "$mq_default" >/dev/null || true
-    echo "Not merged: the squash merge into $mq_branch failed (above); the PR's base is back to $mq_default." >&2
+  old=""; tip="$(mq_master)"
+  if mq_queue_exists; then old="$(mq_tip)"; tip="$old"; fi
+  title="$(gh pr view "$url" --json title | jq -r .title)"
+  if ! commit="$(mq_add "$tip" "$number" "$head" "$title")"; then
+    echo "Not queued: the PR conflicts with the queue $mq_branch. It waits for the next batch: after this batch is" >&2
+    echo "promoted, the worker merges $mq_default in, resolves, reruns its tests and pushes (EVAL-RC-Q.md)." >&2
     exit 1
   fi
-  if [ -z "$mq_promo_url" ]; then
-    mq_promo_url="$(gh pr create -R "$repo" --draft --base "$mq_default" --head "$mq_branch" --label eval-rc:filling \
-      --title "eval-rc-q: promote the queued batch into $mq_default" \
-      --body "The queue $mq_branch (EVAL-RC-Q.md). Its commits are the batch; its label is the queue's state. \`mesh eval-rc-q gate\` runs the full evals here and promotes it with a merge commit." \
-      | tail -n 1)"
-  fi
+  mq_push "$commit" "$old"
+  [ -n "$mq_pr_url" ] || mq_open_batch_pr "$repo"
   count=$((count + 1))
-  echo "Merged $url into the queue $mq_branch (squash, at $head): $count/$mq_batch PRs." >&2
-  echo "Promotion PR: $mq_promo_url" >&2
+  echo "Queued $url ($count/$mq_batch PRs in $mq_branch, at $head). The PR stays open: do not push to it now." >&2
+  echo "Batch PR: $mq_pr_url" >&2
   if [ "$count" -ge "$mq_batch" ]; then
     if at_terminal; then
       printf "Queue full: gate it now? [y/N] " >&2

@@ -3,7 +3,8 @@
 # Runs the `evals-gate` job's step (.github/workflows/evals-gate.yml) in a scratch repo and checks that it runs the
 # base branch's check_pr_evals.py and list_evals_gated_files.py, not the PR's, so a PR cannot loosen the check
 # that judges it; and that the job fails, never running the PR's copy, when the base has none (PMAT-312, PMAT-349).
-# PMAT-358: a PR into master comes from the queue eval-rc-q/current or a hotfix/* branch; any other head fails.
+# PMAT-358: a PR into master needs the commit status eval-rc-q = success on its head (posted only by the queue's
+# promotion, mesh eval-rc-q), except a hotfix/* branch; a stand-in gh answers the status.
 
 set -euo pipefail
 
@@ -43,8 +44,16 @@ setup() {
   git_q "$WORK/pr" add -A && git_q "$WORK/pr" commit -m pr
 }
 
-run_step() { (cd "$WORK/pr" && BASE_REF=master HEAD_REF="${HEAD_REF:-eval-rc-q/current}" PR_URL=https://github.com/o/r/pull/1 \
-  bash "$WORK/step.sh" 2>&1); }
+mkdir -p "$WORK/bin"
+cat > "$WORK/bin/gh" <<'EOF'
+#!/usr/bin/env bash
+# api repos/o/r/commits/<sha>/status: eval-rc-q = $STUB_RCQ (none when empty)
+[ "$*" = "api repos/o/r/commits/h123/status" ] || { echo "unexpected gh call: $*" >&2; exit 9; }
+if [ -n "${STUB_RCQ:-}" ]; then printf '{"statuses":[{"context":"eval-rc-q","state":"%s"}]}\n' "$STUB_RCQ"; else echo '{"statuses":[]}'; fi
+EOF
+chmod +x "$WORK/bin/gh"
+run_step() { (cd "$WORK/pr" && PATH="$WORK/bin:$PATH" BASE_REF=master HEAD_REF="${HEAD_REF:-feature/PMAT-1-x}" HEAD_SHA=h123 \
+  REPO=o/r STUB_RCQ="${RCQ-success}" PR_URL=https://github.com/o/r/pull/1 bash "$WORK/step.sh" 2>&1); }
 
 setup yes
 out="$(run_step)" || true
@@ -65,17 +74,20 @@ else
 fi
 
 setup yes
-for head in feature/PMAT-1-x eval-rc-q/other; do
-  code=0; out="$(HEAD_REF="$head" run_step)" || code=$?
-  if [ "$code" -ne 0 ] && ! grep -q "ran .* check_pr_evals" <<<"$out" && grep -q "mesh merge-pr moves" <<<"$out"; then
-    echo "  PASS: a PR into master from $head fails and says it goes through the queue"
+for rcq in "" failure pending; do
+  code=0; out="$(RCQ="$rcq" run_step)" || code=$?
+  if [ "$code" -ne 0 ] && ! grep -q "ran .* check_pr_evals" <<<"$out" && grep -q "mesh merge-pr queues it" <<<"$out"; then
+    echo "  PASS: a PR into master without eval-rc-q = success (it is '${rcq:-missing}') fails and says it goes through the queue"
   else
-    echo "  FAIL: head $head (exit $code)"; sed 's/^/    /' <<<"$out"; fails=$((fails + 1))
+    echo "  FAIL: eval-rc-q '${rcq:-missing}' (exit $code)"; sed 's/^/    /' <<<"$out"; fails=$((fails + 1))
   fi
 done
-out="$(HEAD_REF=hotfix/PMAT-2-broken run_step)" || true
+out="$(RCQ=success run_step)" || true
+grep -q "ran base check_pr_evals" <<<"$out" && echo "  PASS: with eval-rc-q = success, check_pr_evals then judges the PR as before" \
+  || { echo "  FAIL: eval-rc-q success"; sed 's/^/    /' <<<"$out"; fails=$((fails + 1)); }
+out="$(HEAD_REF=hotfix/PMAT-2-broken RCQ="" run_step)" || true
 if grep -q "ran base check_pr_evals" <<<"$out"; then
-  echo "  PASS: a hotfix/* PR into master is judged by check_pr_evals as before"
+  echo "  PASS: a hotfix/* PR needs no eval-rc-q and is judged by check_pr_evals as before"
 else
   echo "  FAIL: hotfix"; sed 's/^/    /' <<<"$out"; fails=$((fails + 1))
 fi

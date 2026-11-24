@@ -7,8 +7,9 @@
 # The filter is inside the job, not a `paths:` filter: a workflow skipped by `paths:` never reports, and a required
 # check that never reports blocks the merge. The check runs the base branch's copy of its scripts, so a PR cannot
 # loosen the check that judges it; a base without them fails the check, never running the PR's copy.
-# PMAT-358: a PR into master comes from the queue eval-rc-q/current (its promotion PR) or a hotfix/* branch; any
-# other head fails here, since mesh merge-pr moves a ticket's PR into the queue instead (EVAL-RC-Q.md).
+# PMAT-358: a PR into master also needs the commit status `eval-rc-q` = success on its head, which only the queue's
+# promotion posts (mesh eval-rc-q, after the batch passed its tests and full evals), so nothing reaches master around
+# the queue. A hotfix/* branch is the one exception (EVAL-RC-Q.md, "Hotfix").
 # See agents/review-pull-request/eval/README.md, "The regression gate".
 name: evals-gate
 on:
@@ -30,12 +31,18 @@ jobs:
           PR_URL: ${{ github.event.pull_request.html_url }}
           BASE_REF: ${{ github.base_ref }}
           HEAD_REF: ${{ github.head_ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REPO: ${{ github.repository }}
         run: |
           case "$HEAD_REF" in
-            eval-rc-q/current|hotfix/*) ;;
-            *) echo "ERROR: a PR into $BASE_REF comes from the queue eval-rc-q/current or a hotfix/* branch, not $HEAD_REF." >&2
-               echo "mesh merge-pr moves this PR into the queue, whose gate runs the full evals (EVAL-RC-Q.md)." >&2
-               exit 1 ;;
+            hotfix/*) echo "A hotfix/* branch: no eval-rc-q status needed." ;;
+            *) rcq="$(gh api "repos/$REPO/commits/$HEAD_SHA/status" | jq -r '[.statuses[] | select(.context == "eval-rc-q")][0].state // "missing"')"
+               if [ "$rcq" != success ]; then
+                 echo "ERROR: eval-rc-q is $rcq on ${HEAD_SHA:0:7}: a PR reaches $BASE_REF only through the eval-rc-q queue." >&2
+                 echo "mesh merge-pr queues it; mesh eval-rc-q gate tests the batch and marks each passing PR (EVAL-RC-Q.md)." >&2
+                 exit 1
+               fi
+               echo "eval-rc-q = success on ${HEAD_SHA:0:7}." ;;
           esac
           scripts=agents/review-pull-request/eval/scripts
           git fetch -q --depth 1 origin "$BASE_REF"
