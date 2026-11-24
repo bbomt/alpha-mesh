@@ -3,7 +3,10 @@ what the owner would do by hand in that tab. The worker runs the ticket itself t
 (worktree, branch, labels, PR, Done); the orchestrator only reads Jira and never writes it.
 """
 
+import os
+import re
 import shlex
+import subprocess
 import time
 import uuid
 from dataclasses import dataclass
@@ -15,7 +18,10 @@ from orchestrator import status
 from orchestrator.jira import Ticket
 
 AGENT_DIR = Path(__file__).resolve().parents[2]
-HOOKS = AGENT_DIR / "settings.json"
+# The workers' settings (hooks, sandbox). The template names the AWS region as ${AWS_REGION}, so no region is
+# committed (PMAT-347); each start or resume writes the filled-in copy that --settings points at.
+SETTINGS_TEMPLATE = AGENT_DIR / "settings.template.json"
+REGION = re.compile(r"[a-z]{2}(-[a-z]+)+-\d")
 # How an orchestrated worker differs from a manual session (Jira questions, comment marker, worktree);
 # passed on every start and resume, as a system prompt does not survive the process.
 WORKER_PROMPT = AGENT_DIR / "worker-prompt.md"
@@ -62,8 +68,36 @@ class Ops:
     sleep: Callable[[float], None] = time.sleep
 
 
+def settings_path() -> Path:
+    """Where the workers' filled-in settings file goes (next to the status files)."""
+    return status.DIR / "worker-settings.json"
+
+
+def aws_region() -> str:
+    """AWS_REGION, else AWS_DEFAULT_REGION, else the AWS profile's region (as boto3 and the AWS CLI find it)."""
+    region = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION")
+    if not region:
+        try:
+            # A list (no shell); a timeout, so a hung CLI cannot stall every ticket's tick.
+            region = subprocess.run(["aws", "configure", "get", "region"], capture_output=True, text=True,
+                                    timeout=10).stdout.strip()
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            region = ""
+    if not REGION.fullmatch(region or ""):
+        raise RuntimeError(f"no AWS region for the workers' sandbox (got {region!r}): set AWS_REGION, or the region "
+                           "of your AWS profile (aws configure set region <region>)")
+    return region
+
+
+def write_settings() -> Path:
+    path = settings_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(SETTINGS_TEMPLATE.read_text().replace("${AWS_REGION}", aws_region()))
+    return path
+
+
 def _claude(key: str, args: str) -> str:
-    return (f"ORCH_TICKET={shlex.quote(key)} claude {args} --settings {shlex.quote(str(HOOKS))} "
+    return (f"ORCH_TICKET={shlex.quote(key)} claude {args} --settings {shlex.quote(str(write_settings()))} "
             f"--append-system-prompt-file {shlex.quote(str(WORKER_PROMPT))}")
 
 

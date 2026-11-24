@@ -147,7 +147,7 @@ def test_start_comment_resume_and_close_end_to_end(world, monkeypatch):
     cwd, argv = wait_for(lambda: lines(record / "PMAT-1.argv"), "the stub to start")[0].split("\t")
     assert cwd == world["repo"] == s["launch_dir"]
     assert f"--session-id {s['session_id']}" in argv and "--name PMAT-1" in argv
-    assert f"--settings {loop.HOOKS}" in argv and f"--append-system-prompt-file {loop.WORKER_PROMPT}" in argv
+    assert f"--settings {loop.settings_path()}" in argv and f"--append-system-prompt-file {loop.WORKER_PROMPT}" in argv
     assert "Work on Jira PMAT-1." in argv
     assert s["session_start_input"]["source"] == "startup"  # written by the real hook
 

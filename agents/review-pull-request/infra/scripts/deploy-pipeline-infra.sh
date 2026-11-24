@@ -15,7 +15,7 @@ case "${DEPLOY_ENV:-}" in
 esac
 
 if [[ -z "${AWS_REGION:-}" ]]; then
-  echo "*** EXECUTION STOPPED: AWS_REGION is not set (e.g. export AWS_REGION=eu-west-1)" >&2
+  echo "*** EXECUTION STOPPED: AWS_REGION is not set (export AWS_REGION=<your region>)" >&2
   exit 1
 fi
 

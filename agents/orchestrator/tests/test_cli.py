@@ -341,7 +341,7 @@ def test_a_worker_that_lost_its_jira_connector_is_flagged_until_jira_works_again
 def test_the_jira_access_hook_matches_both_atlassian_connectors_but_not_their_login_tools():
     # Claude Code reads a matcher with other characters than letters, digits, _, -, | as an unanchored JavaScript
     # regex; this one uses nothing Python's re reads differently.
-    hooks = json.loads((loop.AGENT_DIR / "settings.json").read_text())["hooks"]["PostToolUse"]
+    hooks = json.loads(loop.SETTINGS_TEMPLATE.read_text())["hooks"]["PostToolUse"]
     matcher = next(h["matcher"] for h in hooks if "jira-access.sh ok" in h["hooks"][0]["command"])
     for name in ("mcp__plugin_atlassian_atlassian__getJiraIssue", "mcp__atlassian__addCommentToJiraIssue",
                  "mcp__plugin_atlassian_atlassian__executeRead"):
