@@ -83,7 +83,7 @@ sums them up as they stood on 2026-10-23.
   Further tickets wait in a queue, in command-line order, and the next one starts on the check after a worker
   finishes (its tab closed, or kept by the owner). Resumed workers count toward the cap; the queue survives a
   restart. Workers above a lowered cap are **paused** (see [Cap, pause and priority](#cap-pause-and-priority-pmat-355)).
-- **Runs one priority ticket** (`--priority`) first, pausing the most recently started worker to make room.
+- **Runs one priority ticket** (`--priority`) first, pausing the worker latest in the ticket order to make room.
 - **Never writes Jira and never merges.** Ticket keys must look like `PMAT-282`. One copy runs at a time.
 
 ### Not part of the process
@@ -138,9 +138,13 @@ mesh orchestrate --priority PMAT-291 --repo-dir ~/environment/pmat/alpha-mesh   
 ```
 
 - **The cap** is stored in `cap.txt` and used from the next check, by a running orchestrator or after a restart.
+- **Ticket order** (`order.txt`): tickets keep the order they were added to the orchestrator in, and that
+  order never changes; only `--priority` puts one first, and pausing a ticket does not move it (owner, PMAT-355
+  comment 13928). Tickets already running when this was added join it by when they started (for older workers,
+  their first hook). For example, tickets [A, B, C] then `--priority P --max-workers 2` give
+  [P, A, B (paused), C (paused)].
 - **Which worker is paused:** at each check, while more workers run than the cap, or while the priority ticket
-  waits with every slot taken, the most recently started worker is chosen (for workers started before this
-  change, the time of their first hook). The priority ticket is never chosen, nor a worker whose pause the
+  waits with every slot taken, the worker latest in the ticket order is chosen. The priority ticket is never chosen, nor a worker whose pause the
   owner cancelled. A worker in its pause grace, or closing as Done, counts as running until its tab closes, so a
   check never pauses two workers for one slot. A pause not yet warned is dropped if no longer needed (the cap
   was raised).
@@ -148,12 +152,12 @@ mesh orchestrate --priority PMAT-291 --repo-dir ~/environment/pmat/alpha-mesh   
   (busy)`), a warning is typed into its tab: stop any running processes, and post a `MESSAGE-FROM-WORKER` comment
   on its ticket with its current status (paused by the orchestrator, where it stopped, its next step). The tab
   closes 5 minutes later. If the owner types in the tab during the grace, the pause is cancelled and the worker
-  is never paused again while it runs; the next check picks the next most recently started worker. No Jira
+  is never paused again while it runs; the next check picks the next latest worker in the order. No Jira
   comment is passed on during the grace (it would count as the owner typing). If the worker's comment isn't on
   Jira when the tab closes, the event says so.
 - **Paused tickets** keep their status file, `launch_dir` and Claude session id, are marked `paused` (so the
-  missing-tab path leaves them alone), and wait in the queue behind the priority ticket, ahead of tickets that
-  never started, in the order they were paused. When a slot frees up, the tab reopens with
+  missing-tab path leaves them alone), and wait in the queue in their own place in the ticket order (the priority
+  ticket first). When a slot frees up, the first ticket in the queue starts, or, if paused, resumes: its tab reopens with
   `claude --resume <same id>` in its own folder, telling the worker it was paused and to read its Jira comment
   (named by ID) first. A paused ticket is never started afresh.
 - **`--priority TICKET`:** there is one priority ticket at a time, stored in `priority.txt`. A queued or paused
@@ -289,8 +293,8 @@ a worker by answering in its tab and telling it not to post to Jira.
 - `src/orchestrator/jira.py`: read-only Jira through the Atlassian MCP server (`https://mcp.atlassian.com/v2/mcp`).
 - `src/orchestrator/status.py`: the per-ticket status files, `~/environment/logs/orchestrator/<KEY>.json`,
   shared with the hooks under the same lock, and the queue, `~/environment/logs/orchestrator/queue.txt`
-  (one `KEY FOLDER` line per waiting ticket), with `cap.txt` and `priority.txt` beside it, all three changed
-  under `queue.lock`.
+  (one `KEY FOLDER` line per waiting ticket), with `cap.txt`, `priority.txt` and `order.txt` beside it, all
+  changed under `queue.lock`.
 - `src/orchestrator/tmux.py`: the tabs, named by ticket key, in the tmux session the orchestrator runs in.
 - `settings.json`: the settings every worker is started with (`--settings`):
   - the status hooks (`SessionStart` → started, except that a compact or `/clear` keeps the state,

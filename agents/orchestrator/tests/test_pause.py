@@ -113,10 +113,11 @@ def test_1_cap_set_while_running_pauses_the_newest_workers(world, capsys):
     world.later(GRACE.seconds // 60)
     assert check() == 0
     assert world.tabs == {"PMAT-1"}
-    assert queue() == [("PMAT-3", "paused"), ("PMAT-2", "paused"), ("PMAT-4", "")]
+    # Pausing never changes a ticket's place: the queue is in the order the tickets were added (comment 13928).
+    assert queue() == [("PMAT-2", "paused"), ("PMAT-3", "paused"), ("PMAT-4", "")]
     assert check() == 0 and world.tabs == {"PMAT-1"}  # at the cap: nothing more starts
     out = capsys.readouterr().out
-    assert "Workers 1/1" in out and "Queue (max workers 1)" in out and "1. PMAT-3  paused" in out
+    assert "Workers 1/1" in out and "Queue (max workers 1)" in out and "1. PMAT-2  paused" in out
 
 
 def test_2_the_owner_typing_during_the_grace_cancels_that_pause(world):
@@ -196,12 +197,12 @@ def test_5_priority_goes_to_the_front_and_pauses_the_newest_worker_for_room(worl
     world.later(GRACE.seconds // 60)
     assert check() == 0
     assert check() == 0
-    assert world.tabs == {"PMAT-3"} and queue() == [("PMAT-2", "paused"), ("PMAT-1", "paused")]
+    assert world.tabs == {"PMAT-3"} and queue() == [("PMAT-1", "paused"), ("PMAT-2", "paused")]
 
     # --priority on the running priority ticket changes nothing.
     assert second("--priority", "PMAT-3") == 0
     assert "nothing changed" in capsys.readouterr().out
-    assert queue() == [("PMAT-2", "paused"), ("PMAT-1", "paused")]
+    assert queue() == [("PMAT-1", "paused"), ("PMAT-2", "paused")]
 
     # A new ticket as priority needs --repo-dir; it takes the mark from PMAT-3, now an ordinary worker, which is
     # paused to make room for it (owner, PMAT-355 comment 13925).
@@ -225,7 +226,7 @@ def test_6_the_owners_scenario_one_ticket_alone(world):
     assert check() == 0
     assert check() == 0
     assert world.tabs == {"PMAT-9"}
-    assert queue() == [("PMAT-3", "paused"), ("PMAT-2", "paused"), ("PMAT-1", "paused")]
+    assert queue() == [("PMAT-1", "paused"), ("PMAT-2", "paused"), ("PMAT-3", "paused")]
     log = events()
     assert all(f"PMAT-{n}: pausing" in log and f"PMAT-{n}: paused" in log for n in (1, 2, 3))
 
@@ -267,9 +268,9 @@ def test_8_a_restart_keeps_the_cap_queue_priority_and_paused_marks(world, capsys
     assert check() == 0
     out = capsys.readouterr().out
     assert status.cap() == 1 and status.priority() == "PMAT-1"
-    assert queue() == [("PMAT-3", "paused"), ("PMAT-2", "paused"), ("PMAT-4", "")]
+    assert queue() == [("PMAT-2", "paused"), ("PMAT-3", "paused"), ("PMAT-4", "")]
     assert len(world.opened) == opened and world.tabs == {"PMAT-1"}  # no paused ticket started afresh
-    assert "Workers 1/1 · priority PMAT-1" in out and "2. PMAT-2  paused" in out
+    assert "Workers 1/1 · priority PMAT-1" in out and "2. PMAT-3  paused" in out
 
 
 def test_a_restart_with_a_lower_cap_pauses_workers_already_running(world):
@@ -296,3 +297,18 @@ def test_a_worker_chosen_for_a_pause_whose_tab_is_gone_is_paused_not_resumed(wor
     assert check() == 0
     assert queue() == [("PMAT-2", "paused")] and "PMAT-2: paused" in events()
     assert [name for name, *_ in world.opened].count("PMAT-2") == 1  # never reopened just to be paused
+
+
+
+def test_the_owners_order_example_priority_first_then_the_order_tickets_were_added(world):
+    # Owner, comment 13928: tickets [A, B, C], then --priority P --max-workers 2 gives [P, A, B(paused), C(paused)].
+    start(world, "PMAT-1", "PMAT-2", "PMAT-3")
+    assert second("--priority", "PMAT-9", "--repo-dir", str(world.repo), "--max-workers", "2") == 0
+    assert check() == 0
+    assert world.warned() == ["PMAT-3", "PMAT-2"]
+    world.later(GRACE.seconds // 60)
+    assert check() == 0
+    assert check() == 0
+    assert world.tabs == {"PMAT-9", "PMAT-1"}
+    assert status.order() == ["PMAT-1", "PMAT-2", "PMAT-3", "PMAT-9"]
+    assert queue() == [("PMAT-2", "paused"), ("PMAT-3", "paused")]

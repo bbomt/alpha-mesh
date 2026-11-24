@@ -4,7 +4,7 @@ The hook writes the session's state; the orchestrator adds its own fields (launc
 close_warned_at, finished, started_at, pausing, paused...). Both take the same lock, so neither loses the other's update.
 
 The orchestrator's own settings sit beside them as .txt files (so active() never takes one for a ticket): cap.txt
-(--max-workers) and priority.txt (--priority). A second `mesh orchestrate` writes them while the first runs, so
+(--max-workers), priority.txt (--priority) and order.txt (the ticket order). A second `mesh orchestrate` writes them while the first runs, so
 every read-modify-write of the queue and the priority holds queue.lock.
 """
 
@@ -96,10 +96,31 @@ def save_priority(key: str | None) -> None:
     tmp.replace(DIR / "priority.txt")
 
 
+def order() -> list[str]:
+    """Every ticket in the order it was added to the orchestrator (order.txt). The order never changes: pausing
+    keeps a ticket's place, and only --priority puts one first (owner, PMAT-355 comment 13928)."""
+    p = DIR / "order.txt"
+    return p.read_text().split() if p.exists() else []
+
+
+def add_to_order(keys: list[str]) -> list[str]:
+    """Append the keys not yet in the order, in the order given (the caller holds queue_lock); returns the order."""
+    known = order()
+    if new := [k for k in dict.fromkeys(keys) if k not in known]:
+        DIR.mkdir(parents=True, exist_ok=True)
+        tmp = DIR / "order.txt.tmp"
+        tmp.write_text("".join(f"{k}\n" for k in known + new))
+        tmp.replace(DIR / "order.txt")
+    return known + new
+
+
+def in_order(entries: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    """Queue entries in ticket order, the priority ticket first (the caller holds queue_lock)."""
+    rank, first = add_to_order([k for k, _ in entries]), priority()
+    return sorted(entries, key=lambda e: (e[0] != first, rank.index(e[0])))
+
+
 def queue_paused(key: str, folder: str) -> None:
-    """Queue a paused ticket: behind the priority ticket and the tickets paused before it, ahead of the tickets
-    that never started."""
+    """Queue a paused ticket back in its own place in the ticket order."""
     with queue_lock():
-        queue, first = queued(), priority()
-        at = next((i for i, (k, _) in enumerate(queue) if k != first and not read(k).get("paused")), len(queue))
-        save_queue([*queue[:at], (key, folder), *queue[at:]])
+        save_queue(in_order([*queued(), (key, folder)]))

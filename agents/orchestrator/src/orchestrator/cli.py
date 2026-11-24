@@ -56,11 +56,12 @@ While it runs, mesh orchestrate in another shell changes it from its next check:
 TICKET ... --repo-dir DIR queues tickets, --priority TICKET sets the priority ticket. With none of these, a second
 copy is refused.
 
-Pausing: while more workers run than the cap, or the --priority ticket waits with every slot taken, the most
-recently started worker (never the priority ticket) is paused. Once at its prompt, it is told to stop its
+Ticket order: tickets keep the order they were added in; only --priority puts one first, and pausing never
+moves one. Pausing: while more workers run than the cap, or the --priority ticket waits with every slot taken,
+the worker latest in that order (never the priority ticket) is paused. Once at its prompt, it is told to stop its
 processes and post its status on Jira; its tab closes {loop.CLOSE_GRACE.seconds // 60} minutes later unless you type there (then it is never
-paused again). It waits in the Queue marked paused, behind the priority ticket, and resumes its same Claude
-session when a slot frees up. --priority TICKET (one at a time) moves a ticket to the front; a new one needs
+paused again). It waits in the Queue marked paused, in its own place, and resumes its same Claude session
+when a slot frees up. --priority TICKET (one at a time) moves a ticket to the front; a new one needs
 --repo-dir. A ticket that loses the mark to a newer one is an ordinary worker again (it may be paused for room).
 
 Talking to workers: answer a worker's question with a Jira comment, or type in its tab. Worker comments
@@ -74,6 +75,7 @@ Files (in ~/environment/logs/orchestrator/):
   <TICKET>.json   each worker's session, state and what was passed on
   queue.txt       tickets waiting for a free worker, in order
   cap.txt         the cap (--max-workers);  priority.txt  the priority ticket (--priority)
+  order.txt       every ticket, in the order it was added
   events.log      every event, as shown under Recent
 
 First run: it prints an Atlassian login link; open it in a fresh browser tab and paste back the URL the
@@ -143,6 +145,8 @@ def settings(args, repo: str | None, event, p: argparse.ArgumentParser) -> list[
         status.save_cap(args.max_workers)
         say(f"cap set to {args.max_workers}")
     queue, active = status.queued(), status.active()
+    # The ticket order (order.txt): running tickets were added first, then the queue, then the tickets named here.
+    status.add_to_order([*sorted(active, key=lambda k: loop.started(status.read(k))), *(k for k, _ in queue)])
     for key in args.tickets:
         if key in active:
             say(f"{key}: already running")
@@ -166,7 +170,7 @@ def settings(args, repo: str | None, event, p: argparse.ArgumentParser) -> list[
         said.append(f"{key} is the priority ticket")
     elif key:
         said.append(f"{key} is already the priority ticket; nothing changed")
-    status.save_queue(queue)
+    status.save_queue(status.in_order(queue))
     return said
 
 

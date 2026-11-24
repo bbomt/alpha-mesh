@@ -89,7 +89,7 @@ def resume_paused(key: str, ops: Ops) -> None:
                    _claude(key, f"--resume {s['session_id']} {shlex.quote(RESUMED.format(comment=comment))}"))
 
 
-def _started(s: dict) -> datetime:
+def started(s: dict) -> datetime:
     """When the worker was last started or resumed after a pause; for workers started before PMAT-355, its first hook
     (hooks write local time, so compared as times, not strings)."""
     at = s.get("started_at") or next((h["at"] for h in s.get("history", [])), None)
@@ -97,15 +97,17 @@ def _started(s: dict) -> datetime:
 
 
 def choose_pauses(keys: list[str], cap: int, first: str | None, waiting: bool) -> None:
-    """Mark the workers to pause, most recently started first, so the running workers come down to `cap` and, while
+    """Mark the workers to pause, the latest in the ticket order first (the caller holds status.queue_lock), so the running workers come down to `cap` and, while
     the priority ticket `first` is `waiting` in the queue, one slot is left for it. Workers already warned (in their
     pause grace) or closing as Done count as running but leaving, so one slot never pauses two. A pause not yet
     warned (its worker busy) is dropped again when no longer needed, e.g. the cap was raised."""
     statuses = {k: status.read(k) for k in keys}
+    # Workers started before order.txt existed join the order by when they started.
+    rank = status.add_to_order(sorted(keys, key=lambda k: started(statuses[k])))
     leaving = [k for k, s in statuses.items()
                if (s.get("pausing") or {}).get("warned_at") or s.get("close_warned_at")]
     eligible = sorted((k for k, s in statuses.items() if k not in leaving and k != first and not s.get("keep_running")),
-                      key=lambda k: _started(statuses[k]), reverse=True)
+                      key=rank.index, reverse=True)
     staying = len(keys) - len(leaving)
     over = max(staying - cap, 0)
     chosen = {k: f"cap {cap}" for k in eligible[:over]}
@@ -125,8 +127,9 @@ def tick(keys: list[str], tickets: dict[str, Ticket], ops: Ops) -> list[str]:
     """One pass over the active tickets; returns what was done, for the log. Each ticket is handled on its
     own, so one ticket's failure (e.g. a tab gone mid-tick) does not starve the others."""
     done, alive = [], ops.windows()
-    # Newest first, so workers paused in one check join the queue in the order they were chosen (newest first).
-    for key in sorted(keys, key=lambda k: _started(status.read(k)), reverse=True):
+    # Latest in the ticket order first, the order workers are chosen to pause in.
+    rank = status.order()
+    for key in sorted(keys, key=lambda k: rank.index(k) if k in rank else len(rank), reverse=True):
         try:
             if line := _tick_one(key, key in alive, tickets.get(key), ops):
                 done.append(line)
