@@ -43,7 +43,7 @@ Usage:
   mesh run-evals --help
       Shows this help.
 
-Every run waits for no other: while another mesh run-evals runs, it exits (75). It starts only when the free-model
+One run at a time: while another mesh run-evals runs, it exits (75). It starts only when the free-model
 requests left today cover it (400 for a full run, 50 for smoke), and logs them in ~/.mesh/quota.log.
 
 Which PRs need it: those that change the review-pull-request agent's src/, eval/promptfoo/ or eval/cases/, or its
