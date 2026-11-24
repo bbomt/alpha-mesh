@@ -29,6 +29,16 @@ REPLY = "The owner commented on Jira {key}: comments after {after}, newest {comm
 CLOSING = ("Mesh orchestrator: Jira {key} is Done, so I will close this tab in {minutes} minutes. To keep it, type anything "
            "here before then. No reply needed.")
 CLOSE_GRACE = timedelta(minutes=5)
+# A pause (PMAT-355: a lowered --max-workers, or room for the --priority ticket) warns the same way, with the same grace.
+PAUSING = ("Mesh orchestrator: I am pausing this worker ({reason}) and will close this tab in {minutes} minutes; "
+           "this same session is resumed later. Now: stop any running processes (background commands, servers, "
+           "watchers), then post a MESSAGE-FROM-WORKER comment on Jira {key} with your current status: that you are "
+           "paused by the orchestrator, where you stopped, and your next step, so you can resume from it. "
+           "(Owner: to keep this tab running, type anything here before then.)")
+RESUMED = ("Mesh orchestrator: you were paused (your tab was closed) and are now resumed in the same session. "
+           "{comment} Check where you were (git status, the ticket) and carry on, without redoing finished work.")
+RESUMED_COMMENT = "Read your Jira comment {comment} on {key} first: your status when you were paused."
+RESUMED_NO_COMMENT = "You posted no Jira comment when paused; read your last comments on {key} first."
 
 # Hook states in which the worker sits at its prompt, so typing into the tab is safe.
 AT_PROMPT = ("idle", "waiting")
@@ -61,16 +71,64 @@ def start(key: str, repo_dir: str, ops: Ops) -> None:
     """Open the ticket's tab with a new worker. The session ID is chosen here and saved first, so the
     worker can be resumed even if it never got as far as its first hook."""
     session_id = str(uuid.uuid4())
-    status.update(key, ticket=key, session_id=session_id, launch_dir=repo_dir)
+    status.update(key, ticket=key, session_id=session_id, launch_dir=repo_dir,
+                  started_at=ops.now().isoformat())
     ops.new_window(key, repo_dir, _claude(key, f"--name {shlex.quote(key)} --session-id {session_id} "
                                                f"{shlex.quote(START.format(key=key))}"))
+
+
+def resume_paused(key: str, ops: Ops) -> None:
+    """Reopen a paused ticket's tab, resuming its same Claude session in its own folder (never afresh)."""
+    s = status.read(key)
+    comment = (RESUMED_COMMENT.format(comment=s["pause_comment"], key=key) if s.get("pause_comment")
+               else RESUMED_NO_COMMENT.format(key=key))
+    # Saved first, like start(): from here it is active, so a failed new_window is resumed by the missing-tab path.
+    status.update(key, paused=False, pausing=None, close_warned_at=None, undelivered=None,
+                  started_at=ops.now().isoformat())
+    ops.new_window(key, s["launch_dir"],
+                   _claude(key, f"--resume {s['session_id']} {shlex.quote(RESUMED.format(comment=comment))}"))
+
+
+def _started(s: dict) -> datetime:
+    """When the worker was last started or resumed after a pause; for workers started before PMAT-355, its first hook
+    (hooks write local time, so compared as times, not strings)."""
+    at = s.get("started_at") or next((h["at"] for h in s.get("history", [])), None)
+    return datetime.fromisoformat(at) if at else datetime.min.replace(tzinfo=timezone.utc)
+
+
+def choose_pauses(keys: list[str], cap: int, first: str | None, waiting: bool) -> None:
+    """Mark the workers to pause, most recently started first, so the running workers come down to `cap` and, while
+    the priority ticket `first` is `waiting` in the queue, one slot is left for it. Workers already warned (in their
+    pause grace) or closing as Done count as running but leaving, so one slot never pauses two. A pause not yet
+    warned (its worker busy) is dropped again when no longer needed, e.g. the cap was raised."""
+    statuses = {k: status.read(k) for k in keys}
+    leaving = [k for k, s in statuses.items()
+               if (s.get("pausing") or {}).get("warned_at") or s.get("close_warned_at")]
+    eligible = sorted((k for k, s in statuses.items() if k not in leaving and k != first and not s.get("keep_running")),
+                      key=lambda k: _started(statuses[k]), reverse=True)
+    staying = len(keys) - len(leaving)
+    over = max(staying - cap, 0)
+    chosen = {k: f"cap {cap}" for k in eligible[:over]}
+    if waiting and staying - over >= cap:
+        # The ticket replaced as priority keeps running (PMAT-355 acceptance test 7): never paused to make room.
+        if room := [k for k in eligible[over:] if not statuses[k].get("was_priority")][:1]:
+            chosen[room[0]] = f"room for priority {first}"
+    for k, s in statuses.items():
+        pausing = s.get("pausing") or {}
+        if pausing.get("warned_at"):
+            continue
+        if k in chosen and pausing.get("reason") != chosen[k]:
+            status.update(k, pausing={"reason": chosen[k], "warned_at": None})
+        elif k not in chosen and pausing:
+            status.update(k, pausing=None)
 
 
 def tick(keys: list[str], tickets: dict[str, Ticket], ops: Ops) -> list[str]:
     """One pass over the active tickets; returns what was done, for the log. Each ticket is handled on its
     own, so one ticket's failure (e.g. a tab gone mid-tick) does not starve the others."""
     done, alive = [], ops.windows()
-    for key in keys:
+    # Newest first, so workers paused in one check join the queue in the order they were chosen (newest first).
+    for key in sorted(keys, key=lambda k: _started(status.read(k)), reverse=True):
         try:
             if line := _tick_one(key, key in alive, tickets.get(key), ops):
                 done.append(line)
@@ -122,8 +180,47 @@ def _lost(key: str, s: dict, what: str, ops: Ops) -> str:
     return f"{key}: {what} not received (the tab's input may be in use), trying again next check"
 
 
+def _pause(key: str, alive: bool, s: dict, t: Ticket | None, ops: Ops) -> str:
+    """Close the tab and queue the ticket as paused, keeping its session and folder to resume it."""
+    warned = (s.get("pausing") or {}).get("warned_at")
+    posted = (t and t.worker_comment and warned
+              and datetime.fromisoformat(t.worker_comment[1]) >= datetime.fromisoformat(warned))
+    if alive:  # killing a missing tab fails
+        ops.kill(key)
+    status.update(key, paused=True, pausing=None, pause_comment=t.worker_comment[0] if posted else None,
+                  paused_at=ops.now().isoformat(timespec="seconds"), undelivered=None)
+    status.queue_paused(key, s["launch_dir"])
+    if posted or t is None:  # Jira not read this check: whether it posted is unknown, so no claim either way
+        return f"{key}: paused"
+    return f"{key}: paused without a Jira comment"
+
+
+def _tick_pausing(key: str, alive: bool, s: dict, t: Ticket | None, ops: Ops) -> str | None:
+    pausing = s["pausing"]
+    if not (warned := pausing.get("warned_at")):
+        if not alive:  # nothing running to warn: pause it now rather than resume it only to pause it
+            return _pause(key, alive, s, t, ops)
+        if s.get("state") not in AT_PROMPT:
+            return None  # busy: warned once at its prompt (the screen says "pause pending")
+        if _gave_up(key, s, "the pause warning"):
+            return None
+        minutes = CLOSE_GRACE.seconds // 60
+        if not (sent := _send_confirmed(key, PAUSING.format(reason=pausing["reason"], minutes=minutes, key=key), ops)):
+            return _lost(key, s, "the pause warning", ops)
+        status.update(key, pausing=pausing | {"warned_at": sent}, undelivered=None)
+        return f"{key}: pausing ({pausing['reason']}), closing in {minutes} min"
+    if alive and _prompts_since(s, warned) > 1:  # our warning, then the owner typed: the owner keeps it running
+        status.update(key, pausing=None, keep_running=True)
+        return f"{key}: pause cancelled (owner typed)"
+    if not alive or ops.now() - datetime.fromisoformat(warned) >= CLOSE_GRACE:
+        return _pause(key, alive, s, t, ops)
+    return None
+
+
 def _tick_one(key: str, alive: bool, t: Ticket | None, ops: Ops) -> str | None:
     s = status.read(key)
+    if s.get("pausing"):  # in its pause grace, nothing else is typed into the tab (it would count as the owner)
+        return _tick_pausing(key, alive, s, t, ops)
     if not alive:
         # Run from the launch folder: Claude finds a session to resume by the folder it started in.
         ops.new_window(key, s["launch_dir"], _claude(key, f"--resume {s['session_id']} {shlex.quote(NUDGE)}"))
